@@ -15,7 +15,7 @@ t = LinRange(0.2, 0.4, 100) |> collect
 ##
 plot(t, map(x -> t₁_analytic(x, loading, plr), t))
 ##
-function integrand(t_, t, loading::Triangular, constit_eqn::PowerLawRheology)
+function PLR_integrand(t_, t, loading::Triangular, constit_eqn::PowerLawRheology)
     v = loading.v
     E₀, t₀, γ = constit_eqn.E₀, constit_eqn.t₀, constit_eqn.γ
     return v * E₀ * ((t - t_) / t₀)^(-γ)
@@ -24,3 +24,15 @@ end
 integrand(t_, params) = integrand(t_, params...)
 ##
 IntegralProblem(integrand, 0.17696173488041395, 0.2, p=[])
+
+##
+# KWW model
+
+kww = KWW(1.0, 2.0)
+t = LinRange(0.2, 0.4, 100)
+
+function KWW_integrand(t_, t, constit_eqn::KWW)
+    τ, β = constit_eqn.τ, constit_eqn.β
+    return @. exp((-(t-t_)/τ)^β)
+end
+

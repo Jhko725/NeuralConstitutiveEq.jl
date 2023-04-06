@@ -5,3 +5,8 @@ struct PowerLawRheology <: AbstractConstitutiveEqn
     t₀::Float32
     γ::Float32
 end
+
+struct KWW <: AbstractConstitutiveEqn
+    τ::Float32
+    β::Float32
+end
