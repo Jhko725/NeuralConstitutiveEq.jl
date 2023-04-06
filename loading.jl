@@ -1,6 +1,6 @@
 abstract type AbstractLoading end
 
 struct Triangular <: AbstractLoading
-    v::Float32
-    t_max::Float32
+    v::Float64
+    t_max::Float64
 end
