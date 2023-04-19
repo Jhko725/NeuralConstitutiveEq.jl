@@ -18,14 +18,27 @@ t = LinRange(0.2, 0.4, 100)
 ##
 plot(t, map(x -> t₁_analytic(x, loading, plr), t))
 ##
-function integrand(t_::Float64, t::Float64, loading::Triangular, constit_eqn::PowerLawRheology)::Float64
+function PLR_integrand(t_::Float64, t::Float64, loading::Triangular, constit_eqn::PowerLawRheology)::Float64
     v = loading.v
     E₀, t₀, γ = constit_eqn.E₀, constit_eqn.t₀, constit_eqn.γ
     return v * E₀ * ((t - t_) / t₀)^(-γ)
 end
 
-integrand(t_, params) = integrand(t_, params...)
+PRL_integrand(t_, params) = PLR_integrand(t_, params...)
 ##
+IntegralProblem(integrand, 0.17696173488041395, 0.2, p=[])
+
+##
+# KWW model
+
+kww = KWW(1.0, 2.0)
+t = LinRange(0.2, 0.4, 100)
+
+function KWW_integrand(t_, t, constit_eqn::KWW)
+    τ, β = constit_eqn.τ, constit_eqn.β
+    return @. exp((-(t-t_)/τ)^β)
+end
+
 prob = IntegralProblem(integrand, 0.17696173488041395, 0.2, [0.21, loading, plr], batch=0)
 solve(prob, QuadGKJL())
 ##

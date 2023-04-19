@@ -1,6 +1,7 @@
 abstract type AbstractLoading end
 
-struct Triangular <: AbstractLoading
-    v::Float64
-    t_max::Float64
+struct Triangular{T<:AbstractFloat} <: AbstractLoading
+    v::T
+    t_max::T
 end
+
