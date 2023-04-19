@@ -31,9 +31,21 @@ function stress_relaxation_modulus(constit_eqn::PowerLawRheology{T}) where {T<:A
     ϕ(t::T)::T = E₀ * (t / t₀)^(-γ)
     return ϕ
 end
+
+function memory_function_Z(constit_eqn::PowerLawRheology{T}, Δt::T) where {T<:AbstractFloat}
+    E₀, t₀, γ = constit_eqn.E₀, constit_eqn.t₀, constit_eqn.γ
+    Q(z::Complex{T})::Complex{T} = E₀ * (t₀ / Δt)^γ * SpecialFunctions.gamma(one(T) - γ) * (one(T) - one(T) / z)^γ
+    return Q
+end
 ##
-loading = Triangular(10.0, 0.2)
-plr = PowerLawRheology(572.0, 1.0, 0.42)
+function memory_function_Z2(constit_eqn::PowerLawRheology{T}, Δt::T) where {T<:AbstractFloat}
+    E₀, t₀, γ = constit_eqn.E₀, constit_eqn.t₀, constit_eqn.γ
+    Q(z::Complex{T})::Complex{T} = E₀ * (t₀ / Δt)^γ * SpecialFunctions.gamma(one(T) - γ) * T(2.0)^γ*(one(T) - T(2.0) / (z+one(T)))^γ
+    return Q
+end
+##
+loading = Triangular(10.0, 0.2) # 10um/s, 0.2
+plr = PowerLawRheology(0.572, 1.0, 0.42) # 572Pa -> 0.572
 tip = Conical(π / 10.0)
 t₁ = analytic_t₁(plr, loading)
 F = analytic_force(plr, loading, tip)
@@ -52,7 +64,7 @@ let
 end
 ##
 function weight_powerlaw_decay(X::AbstractVector{T}, r::T) where {T<:AbstractFloat}
-    exponent = zero(T):length(X).-one(T)
+    exponent = zero(T):(length(X)-one(T))
     return @. X * (r^-exponent)
 end
 
@@ -63,26 +75,37 @@ function MDFT(X::AbstractVector{T}, r::T) where {T<:AbstractFloat}
 end
 ##
 let
-    r = 1.1
+    r = 1.01
     t_data = LinRange(0.0, 0.2, 100) |> collect
     h_data = loading.v * t_data
     f_data = F.(t_data)
     f_mdft = MDFT(f_data, r)
     h_mdft = MDFT(h_data .^ β(tip), r)
+    freqs = FFTW.rfftfreq(length(t_data))
     ratio = f_mdft ./ (α(tip) * h_mdft)
-    plot(real.(ratio))
-    plot(imag.(ratio))
+    ratio = ratio
+    plot_real = plot(freqs, real.(ratio))
+    plot_imag = plot(freqs, imag.(ratio))
+
+    Q = memory_function_Z(plr, t_data[2] - t_data[1])
+    z = @. r * exp(im * freqs * 2π)
+    q_true = Q.(z)
+    plot!(plot_real, freqs, real.(q_true))
+    plot!(plot_imag, freqs, imag.(q_true))
+
+
+    Q = memory_function_Z2(plr, t_data[2] - t_data[1])
+    z = @. r * exp(im * freqs * 2π)
+    q_true = Q.(z)
+    plot!(plot_real, freqs, real.(q_true))
+    plot!(plot_imag, freqs, imag.(q_true))
+
+    plot(plot_real, plot_imag, layout=(1, 2))
+    #plot(imag.(ratio))
 end
 ##
 let
-    r = 1.1
-    t_data = LinRange(0.01, 0.2, 100) |> collect
-    ϕ = stress_relaxation_modulus(plr)
-    ϕ_data = ϕ.(t_data)
-    ω = FFTW.rfftfreq(length(ϕ_data))
-    z = r * exp.(1.0im .* ω)
-    ϕ_mdft = MDFT(ϕ_data, r)
-    q_mdft = ϕ_mdft .* (1.0 .- 1.0 ./ z)
-    plot(real.(q_mdft))
-    plot(imag.(q_mdft))
+
 end
+##
+
