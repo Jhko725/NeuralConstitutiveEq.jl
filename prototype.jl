@@ -40,10 +40,10 @@ function KWW_integrand(t_, t, constit_eqn::KWW)
 end
 
 prob = IntegralProblem(integrand, 0.17696173488041395, 0.2, [0.21, loading, plr], batch=0)
-solve(prob, CubatureJLp())
+solve(prob, QuadGKJL())
 ##
 prob = IntegralProblem(integrand, 0.2, 0.21, [0.21, loading, plr])
-solve(prob, CubatureJLh(), abstol=1e-10)
+solve(prob, QuadGKJL(), abstol=1e-10)
 ##
 function ting_residual(t₁, t, loading::Triangular, constit_eqn::PowerLawRheology)
     t_max = loading.t_max |> Float64
