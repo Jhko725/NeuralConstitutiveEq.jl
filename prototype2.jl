@@ -40,7 +40,15 @@ end
 ##
 function memory_function_Z2(constit_eqn::PowerLawRheology{T}, Δt::T) where {T<:AbstractFloat}
     E₀, t₀, γ = constit_eqn.E₀, constit_eqn.t₀, constit_eqn.γ
-    Q(z::Complex{T})::Complex{T} = E₀ * (t₀ / Δt)^γ * SpecialFunctions.gamma(one(T) - γ) * T(2.0)^γ*(one(T) - T(2.0) / (z+one(T)))^γ
+    coeff = E₀ * (2t₀ / Δt)^γ * SpecialFunctions.gamma(one(T) - γ)
+    Q(z::Complex{T})::Complex{T} = coeff * ((z - one(T)) / (z + one(T)))^γ
+    return Q
+end
+##
+function memory_function_Z3(constit_eqn::PowerLawRheology{T}, Δt::T) where {T<:AbstractFloat}
+    E₀, t₀, γ = constit_eqn.E₀, constit_eqn.t₀, constit_eqn.γ
+    coeff = E₀ * (t₀ / Δt)^γ * SpecialFunctions.gamma(one(T) - γ)
+    Q(z::Complex{T})::Complex{T} = coeff * (log(z))^γ
     return Q
 end
 ##
@@ -51,13 +59,15 @@ t₁ = analytic_t₁(plr, loading)
 F = analytic_force(plr, loading, tip)
 ##
 let
-    t_data = LinRange(0.0, 0.4, 100) |> collect
+    t_s = 2e-3
+    t_data = 0.0:t_s:2*loading.t_max
     f_data = F.(t_data)
     plot(t_data, f_data)
 end
 ##
 let
-    t_data = LinRange(0.0, 0.2, 100) |> collect
+    t_s = 2e-3
+    t_data = 0.0:t_s:loading.t_max
     h_data = loading.v * t_data
     f_data = F.(t_data)
     plot(h_data, f_data)
@@ -70,31 +80,84 @@ end
 
 function MDFT(X::AbstractVector{T}, r::T) where {T<:AbstractFloat}
     X_weighted = weight_powerlaw_decay(X, r)
-    X_fft = FFTW.rfft(X_weighted)
+    X_fft = FFTW.fft(X_weighted)
     return X_fft
 end
 ##
 let
+    r = 1.005
+    t_s = 2e-3
+    t_data = 0.0:t_s:loading.t_max
+    h_data = loading.v * t_data
+    f_data = F.(t_data)
+    f_mdft = MDFT(f_data, r) |> FFTW.fftshift
+    freqs = FFTW.fftfreq(length(t_data)) |> FFTW.fftshift
+
+    plot_real = plot(freqs, real.(f_mdft))
+    plot_imag = plot(freqs, imag.(f_mdft))
+    plot(plot_real, plot_imag, layout=(1, 2))
+    #freqs
+end
+##
+##
+let
     r = 1.01
-    t_data = LinRange(0.0, 0.2, 100) |> collect
+    t_s = 2e-3
+    t_data = 0.0:t_s:loading.t_max
+    h_data = loading.v * t_data
+    f_data = F.(t_data)
+    f_mdft = MDFT(f_data, r) |> FFTW.fftshift
+    h_mdft = MDFT(h_data .^ β(tip), r) |> FFTW.fftshift
+    freqs = FFTW.fftfreq(length(t_data)) |> FFTW.fftshift
+    ratio = f_mdft ./ (α(tip) * h_mdft)
+    plot_real = plot(freqs, real.(ratio))
+    plot_imag = plot(freqs, imag.(ratio))
+    plot(plot_real, plot_imag, layout=(1, 2))
+end
+##
+let
+    r = 1.5
+    t_s = 2e-4
+    t_data = 0.0:t_s:loading.t_max
     h_data = loading.v * t_data
     f_data = F.(t_data)
     f_mdft = MDFT(f_data, r)
-    h_mdft = MDFT(h_data .^ β(tip), r)
-    freqs = FFTW.rfftfreq(length(t_data))
+    print(typeof(f_mdft))
+    freqs = FFTW.fftfreq(length(t_data)) |> FFTW.fftshift
+    z = @. r * exp(im * freqs * 2π)
+    print(typeof(z))
+    FFTW.fftshift(f_mdft)
+    freqs
+end
+##
+let
+    r = 1.05
+    t_s = 2e-4
+    t_data = 0.0:t_s:loading.t_max
+    h_data = loading.v * t_data
+    f_data = F.(t_data)
+    f_mdft = MDFT(f_data, r) |> FFTW.fftshift
+    h_mdft = MDFT(h_data .^ β(tip), r) |> FFTW.fftshift
+    freqs = FFTW.fftfreq(length(t_data)) |> FFTW.fftshift
     ratio = f_mdft ./ (α(tip) * h_mdft)
-    ratio = ratio
+
     plot_real = plot(freqs, real.(ratio))
     plot_imag = plot(freqs, imag.(ratio))
 
-    Q = memory_function_Z(plr, t_data[2] - t_data[1])
+    Q = memory_function_Z(plr, t_s)
     z = @. r * exp(im * freqs * 2π)
     q_true = Q.(z)
     plot!(plot_real, freqs, real.(q_true))
     plot!(plot_imag, freqs, imag.(q_true))
 
 
-    Q = memory_function_Z2(plr, t_data[2] - t_data[1])
+    Q = memory_function_Z2(plr, t_s)
+    z = @. r * exp(im * freqs * 2π)
+    q_true = Q.(z)
+    plot!(plot_real, freqs, real.(q_true))
+    plot!(plot_imag, freqs, imag.(q_true))
+
+    Q = memory_function_Z3(plr, t_s)
     z = @. r * exp(im * freqs * 2π)
     q_true = Q.(z)
     plot!(plot_real, freqs, real.(q_true))
