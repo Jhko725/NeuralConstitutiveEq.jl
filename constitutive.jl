@@ -27,4 +27,4 @@ struct KWW <: ConstitutiveEqn
     β::Float32
 end
 
-relaxation_time(constit::KelvinVoigt{T})::T where {T} = constit.η / constit.E
+(relaxation_time(constit::KelvinVoigt{T})::T) where {T} = constit.η / constit.E

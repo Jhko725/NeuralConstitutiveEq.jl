@@ -21,7 +21,7 @@ function t₁(t, constit::KelvinVoigt{T}, indent::Triangular{T}) where {T}
     return v * clamp(2t_max - t - τ, zero(T), Inf)
 end
 
-function _force(t, constit::PowerLawRheology{T}, indent::Triangular{T}, tip::TipGeometry{T}) where {T}
+function _force(t, constit::PowerLawRheology{T}, indent::Triangular{T}, tip::TipGeometry) where {T}
     E₀, t₀, γ = constit.E₀, constit.t₀, constit.γ
     v = indent.v
     a, b = α(tip), β(tip)

@@ -4,32 +4,12 @@ using Plots
 include("./constitutive.jl")
 include("./indentation.jl")
 include("./tipgeometry.jl")
-
-function analytic_t₁(constit_eqn::PowerLawRheology{T}, loading::Triangular{T})::Function where {T<:AbstractFloat}
-    γ = constit_eqn.γ
-    t_max = loading.t_max
-    coeff = T(2.0^(1.0 / (1.0 - γ)))
-
-    t₁(t::T)::T = clamp(t - coeff * (t - t_max), zero(T), Inf)
-    return t₁
-end
-
-function analytic_force(constit_eqn::PowerLawRheology{T}, loading::Triangular{T}, tip::AbstractTipGeometry)::Function where {T<:AbstractFloat}
-    E₀, t₀, γ = constit_eqn.E₀, constit_eqn.t₀, constit_eqn.γ
-    v, t_max = loading.v, loading.t_max
-    a, b = α(tip), β(tip)
-    coeff = E₀ * t₀^γ * a * b * v^b * SpecialFunctions.beta(b, 1 - γ)
-    t₁ = analytic_t₁(constit_eqn, loading)
-
-    F(t::T)::T = t <= t_max ? coeff * t^(b - γ) : coeff * t₁(t)^(b - γ)
-    return F
-end
+include("force.jl")
 ##
 loading = Triangular(10.0, 0.2) # 10um/s, 0.2
 plr = PowerLawRheology(0.572, 1.0, 0.2) # 572Pa -> 0.572
 tip = Conical(π / 10.0)
-t₁ = analytic_t₁(plr, loading)
-F = analytic_force(plr, loading, tip)
+F(t) = force(t, plr, loading, tip)
 ##
 let
     t_s = 2e-3
@@ -49,8 +29,8 @@ let
     f_data = f_true + noise
 
     function f_fit(t, params)
-        force_func = analytic_force(PowerLawRheology(params[1], 1.0, params[2]), loading, tip)
-        return force_func.(t)
+        _force(t) = force(t, PowerLawRheology(params[1], 1.0, params[2]), loading, tip)
+        return _force.(t)
     end
 
 
@@ -63,7 +43,7 @@ function run_experiment(E₀, γ, noise_amp, t_s, app_only=true)
     tip = Conical(π / 10.0)
     loading = Triangular(10.0, 0.2) # 10um/s, 0.2
     plr = PowerLawRheology(E₀, 1.0, γ)
-    F = analytic_force(plr, loading, tip)
+    F(t) = force(t, plr, loading, tip)
 
     if app_only
         t_end = t_s
@@ -76,8 +56,8 @@ function run_experiment(E₀, γ, noise_amp, t_s, app_only=true)
     f_data = f_true + noise
 
     function f_fit(t, params)
-        force_func = analytic_force(PowerLawRheology(params[1], 1.0, params[2]), loading, tip)
-        return force_func.(t)
+        _force(t) = force(t, PowerLawRheology(params[1], 1.0, params[2]), loading, tip)
+        return _force.(t)
     end
 
     fit = curve_fit(f_fit, t_data, f_data, [0.1, 0.5], lower=[0.0, 0.0], upper=[1.0, Inf])
