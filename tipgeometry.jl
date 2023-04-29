@@ -1,10 +1,10 @@
-abstract type AbstractTipGeometry end
+abstract type TipGeometry end
 
-struct Spherical{T<:AbstractFloat} <: AbstractTipGeometry
+struct Spherical{T<:AbstractFloat} <: TipGeometry
     R::T
 end
 
-struct Conical{T<:AbstractFloat} <: AbstractTipGeometry
+struct Conical{T<:AbstractFloat} <: TipGeometry
     θ::T
 end
 

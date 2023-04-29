@@ -1,9 +1,8 @@
 ##
-import SpecialFunctions
 using LsqFit
 using Plots
 include("./constitutive.jl")
-include("./loading.jl")
+include("./indentation.jl")
 include("./tipgeometry.jl")
 
 function analytic_t₁(constit_eqn::PowerLawRheology{T}, loading::Triangular{T})::Function where {T<:AbstractFloat}
