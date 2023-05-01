@@ -2,11 +2,7 @@
 
 julia_version = "1.8.5"
 manifest_format = "2.0"
-<<<<<<< HEAD
-project_hash = "195563eaf1e3bdc9e0c6724e8ac8fa89cb1360dc"
-=======
 project_hash = "253a035543a042368fee29d3ba7da92475b0d4fe"
->>>>>>> d85dd49cd7ac392ffe8a215c2266fc68a4e8c389
 
 [[deps.ADTypes]]
 git-tree-sha1 = "e6103228c92462a331003248fa31f00dcf41c577"
@@ -135,15 +131,9 @@ version = "0.2.0"
 
 [[deps.CUDA_Runtime_jll]]
 deps = ["Artifacts", "CUDA_Driver_jll", "JLLWrappers", "LazyArtifacts", "Libdl", "TOML"]
-<<<<<<< HEAD
-git-tree-sha1 = "9ac3ffda60eeae5291be20f35ca264eb8e95bbc6"
-uuid = "76a88914-d11a-5bdc-97e0-2f5a05c973a2"
-version = "0.5.0+1"
-=======
 git-tree-sha1 = "81eed046f28a0cdd0dc1f61d00a49061b7cc9433"
 uuid = "76a88914-d11a-5bdc-97e0-2f5a05c973a2"
 version = "0.5.0+2"
->>>>>>> d85dd49cd7ac392ffe8a215c2266fc68a4e8c389
 
 [[deps.CUDNN_jll]]
 deps = ["Artifacts", "CUDA_Runtime_jll", "JLLWrappers", "LazyArtifacts", "Libdl", "TOML"]

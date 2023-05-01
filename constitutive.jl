@@ -10,3 +10,8 @@ struct KWW <: AbstractConstitutiveEqn
     τ::Float32
     β::Float32
 end
+
+struct KV{T<:AbstractFloat} <: AbstractConstitutiveEqn
+    E::T
+    η::T
+end
