@@ -8,13 +8,25 @@ include("force.jl")
 ##
 loading = Triangular(10.0, 0.2) # 10um/s, 0.2
 plr = PowerLawRheology(0.572, 1.0, 0.2) # 572Pa -> 0.572
+kv = KelvinVoigt(1.614, 0.025) # 1614Pa -> 1.614, 25Pa.s -> 0.025 Pa.s
 tip = Conical(π / 10.0)
 F(t) = force(t, plr, loading, tip)
+F_kv(t) = force_kv(t, kv, loading, tip)
+
 ##
 let
     t_s = 2e-3
     t_data = 0.0:t_s:2*loading.t_max
     f_true = F.(t_data)
+    p = plot(t_data, f_true)
+    noise = randn(Float64, size(f_true)) * 0.04
+    scatter!(t_data, f_true + noise)
+end
+##
+let
+    t_s = 2e-3
+    t_data = 0.0:t_s:2*loading.t_max
+    f_true = F_kv(t_data)
     p = plot(t_data, f_true)
     noise = randn(Float64, size(f_true)) * 0.04
     scatter!(t_data, f_true + noise)
@@ -65,6 +77,15 @@ function run_experiment(E₀, γ, noise_amp, t_s, app_only=true)
     se = standard_errors(fit)
     return cat(param, se, dims=2)
 end
+##
+
+
+
+
+
+
+
+
 ##
 let
     E₀_true, γ_true = 0.572, 0.42
