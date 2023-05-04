@@ -25,7 +25,7 @@ end
 function t₁(t, constit::KelvinVoigt{T}, indent::Triangular{T}) where {T}
     τ = relaxation_time(constit)
     v, t_max = indent.v, max_indent_time(indent)
-    return v * clamp(2t_max - t - τ, zero(T), Inf)
+    return clamp(2t_max - t - τ, zero(T), Inf)
 end
 
 function _force(t, constit::PowerLawRheology{T}, indent::Triangular{T}, tip::TipGeometry) where {T}
