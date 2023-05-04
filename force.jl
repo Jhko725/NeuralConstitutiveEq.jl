@@ -9,6 +9,18 @@ function force(t, constit::ConstitutiveEqn, indent::Indentation, tip::TipGeometr
     return t <= t_max ? F(t) : F(t₁(t, constit, indent))
 end
 
+function force2(t, constit::ConstitutiveEqn, indent::Indentation, tip::TipGeometry)
+    t_max = max_indent_time(indent)
+    E₀, t₀, γ = constit.E₀, constit.t₀, constit.γ
+    v = indent.v
+    a, b = α(tip), β(tip)
+    f = E₀ * t₀^γ * a * b * v^b * t^(b - γ) * SpecialFunctions.beta(b, 1 - γ)
+    if t <= t_max
+        return f
+    else
+        z = t₁(t, constit, indent) / t
+        return f * SpecialFunctions.beta_inc(b, 1 - γ, z)[1]
+    end
 function force_kv(t, constit::ConstitutiveEqn, indent::Indentation, tip::TipGeometry)
     t_max = max_indent_time(indent)
     F1(t) = kv_force_app(t, constit, indent, tip)
@@ -36,6 +48,13 @@ function _force(t, constit::PowerLawRheology{T}, indent::Triangular{T}, tip::Tip
     return coeff * t^(b - γ)
 end
 
+function _force2(t, constit::PowerLawRheology{T}, indent::Triangular{T}, tip::TipGeometry) where {T}
+    E₀, t₀, γ = constit.E₀, constit.t₀, constit.γ
+    v = indent.v
+    a, b = α(tip), β(tip)
+    coeff = E₀ * t₀^γ * a * b * v^b * SpecialFunctions.beta(b, 1 - γ)
+    return coeff * t^(b - γ)
+end
 function kv_force_app(t, constit::KelvinVoigt{T}, indent::Triangular{T}, tip::TipGeometry) where {T}
     E, η = constit.E, constit.η
     v = indent.v

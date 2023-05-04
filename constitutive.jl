@@ -27,4 +27,8 @@ struct KWW <: ConstitutiveEqn
     β::Float32
 end
 
-(relaxation_time(constit::KelvinVoigt{T})::T) where {T} = 3 * constit.η / constit.E
+(relaxation_time(constit::KelvinVoigt{T})::T) where {T} = constit.η / constit.E
+
+function stress_relaxation(t, constit::PowerLawRheology{T}) where {T}
+    return constit.E₀ * (t / constit.t₀)^(-constit.γ)
+end
