@@ -21,6 +21,8 @@ function force2(t, constit::ConstitutiveEqn, indent::Indentation, tip::TipGeomet
         z = t₁(t, constit, indent) / t
         return f * SpecialFunctions.beta_inc(b, 1 - γ, z)[1]
     end
+end
+
 function force_kv(t, constit::ConstitutiveEqn, indent::Indentation, tip::TipGeometry)
     t_max = max_indent_time(indent)
     F1(t) = kv_force_app(t, constit, indent, tip)

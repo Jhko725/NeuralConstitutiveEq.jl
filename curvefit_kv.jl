@@ -17,7 +17,7 @@ let
     t_s = 2e-3
     t_data = 0.0:t_s:2*loading.t_max
     f_true = F_kv.(t_data)
-    p = plot(t_data, f_true, label="KV_Analytic")
+    p = plot(t_data, f_true, xlabel = "Time(s)", ylabel="Force(nN)", label="KV_Analytic")
     noise = randn(Float64, size(f_true)) * 0.04
     scatter!(t_data, f_true+noise, label="KV_Simulation")
 end

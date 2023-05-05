@@ -16,9 +16,9 @@ let
     t_s = 2e-3
     t_data = 0.0:t_s:2*loading.t_max
     f_true = F.(t_data)
-    p = plot(t_data, f_true)
+    p = plot(t_data, f_true, xlabel="Time(s)", ylabel="Force(nN)", label="PLR_Analytic")
     noise = randn(Float64, size(f_true)) * 0.04
-    scatter!(t_data, f_true + noise)
+    scatter!(t_data, f_true + noise, label="PLR_Simulation")
 end
 ##
 let
@@ -35,7 +35,7 @@ let
         return _force.(t)
     end
 
-    fit = curve_fit(f_fit, t_data, f_data, [0.1, 0.5], lower=[0.0, 0.0], upper=[1.0, Inf])
+    fit = curve_fit(f_fit, t_data, f_data, [0.1, 0.5], lower=[0.0, 0.0], upper=[Inf, 1.0])
     print(fit.param)
     print(standard_errors(fit))
     print(fit.resid)
@@ -68,10 +68,6 @@ function run_experiment(E₀, γ, noise_amp, t_s, app_only=true)
     param = fit.param
     se = standard_errors(fit)
     return cat(param, se, dims=2)
-end
-##
-let 
-   run_experiment_kv(1.614, 0.08, 0.02, 2e-3)[2,1] 
 end
 ##
 let

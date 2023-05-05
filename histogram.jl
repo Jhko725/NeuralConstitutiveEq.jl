@@ -133,10 +133,10 @@ end
 let 
    using Plots
    gr()
-   plr_to_kv_app = run_experiment(0.572, 0.2, 0.02, 2e-3, true)
-   kv_to_plr_app = run_experiment_kv(1.614, 0.025, 0.02, 2e-3, true)
-   plr_to_kv_total = run_experiment(0.572, 0.2, 0.02, 2e-3, false)
-   kv_to_plr_total = run_experiment_kv(1.614, 0.025, 0.02, 2e-3, false)
+   plr_to_kv_app = run_experiment(1.0, 0.1, 0.02, 2e-3, true)
+   kv_to_plr_app = run_experiment_kv(1.0, 0.1, 0.02, 2e-3, true)
+   plr_to_kv_total = run_experiment(1.0, 0.1, 0.02, 2e-3, false)
+   kv_to_plr_total = run_experiment_kv(1.0, 0.1, 0.02, 2e-3, false)
    plot(bar([plr_to_kv_app,kv_to_plr_app,plr_to_kv_total,kv_to_plr_total], label=["plr_to_kv_app","kv_to_plr_app","plr_to_kv_total","kv_to_plr_total"]))
 end
 ##

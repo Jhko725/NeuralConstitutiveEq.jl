@@ -21,7 +21,6 @@ function analytic_force(constit_eqn::PowerLawRheology{T}, loading::Triangular{T}
     a, b = α(tip), β(tip)
     coeff = E₀ * t₀^γ * a * b * v^b * SpecialFunctions.beta(b, 1 - γ)
     t₁ = analytic_t₁(constit_eqn, loading)
-
     F(t::T)::T = t <= t_max ? coeff * t^(b - γ) : coeff * t₁(t)^(b - γ)
     return F
 end
