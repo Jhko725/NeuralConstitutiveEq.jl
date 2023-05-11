@@ -16,10 +16,10 @@ struct Maxwell{T<:AbstractFloat} <: ConstitutiveEqn
     η::T
 end
 
-struct StandardLinearSolid{T<:AbstractFloat} <: ConstitutiveEqn
-    E₀::T
+struct SLS{T<:AbstractFloat} <: ConstitutiveEqn
     E₁::T
-    η₁::T
+    E₂::T
+    η::T
 end
 
 struct KWW <: ConstitutiveEqn

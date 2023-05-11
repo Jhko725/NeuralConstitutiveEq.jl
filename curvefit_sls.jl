@@ -1,6 +1,7 @@
 ##
 using LsqFit
 using Plots
+using Roots
 include("./constitutive.jl")
 include("./indentation.jl")
 include("./tipgeometry.jl")
@@ -9,10 +10,12 @@ include("force.jl")
 loading = Triangular(10.0, 0.2) # 10um/s, 0.2
 plr = PowerLawRheology(0.572, 1.0, 0.2) # 572Pa -> 0.572
 kv = KelvinVoigt(1.614, 0.025) # 1614Pa -> 1.614, 25Pa.s -> 0.025 Pa.s
+sls = StandardLinearSolid(0.2, 0.3, 0.5)
 tip = Conical(π / 10.0)
 F(t) = force(t, plr, loading, tip)
-F_kv(t) = force_kv(t, kv, loading, tip)
-t1(t) = 
+
+F_sls(t) = force_sls(t, t₁, sls, loading, tip)
+
 ##
 let
     t_s = 2e-3
