@@ -1,5 +1,6 @@
 import SpecialFunctions
 using Roots
+
 include("constitutive.jl")
 include("indentation.jl")
 include("tipgeometry.jl")
@@ -33,9 +34,9 @@ end
 
 function force_sls(t, constit::ConstitutiveEqn, indent::Indentation, tip::TipGeometry)
     t_max = max_indent_time(indent)
-    F1(t) = sls_force_app(t, consitit, indent, tip)
-    F2(t, t₁) = sls_force_ret(t, t₁, constit, indent, tip)
-    return t <= tmax ? F1(t) : F2(t, t₁)
+    F1(t) = sls_force_app(t, constit, indent, tip)
+    F2(t) = sls_force_ret(t, t₁(t, constit, indent), constit, indent, tip)
+    return t <= t_max ? F1(t) : F2(t)
 end
 
 function t₁(t, constit::PowerLawRheology{T}, indent::Triangular{T}) where {T}
@@ -50,13 +51,14 @@ function t₁(t, constit::KelvinVoigt{T}, indent::Triangular{T}) where {T}
     return clamp(2t_max - t - τ, zero(T), Inf)
 end
 
-function t₁(t::T, constit::SLS{T}, indent::Triangular{T}) where {T}
+function t₁(t, constit::SLS{T}, indent::Triangular{T}) where {T}
     E₁ = constit.E₁
     E₂ = constit.E₂
     η = constit.η
-    f = (E₁/(3*η))(t-t₁) + 1 - exp(-(E₂(t-t₁)/(3*η)))
-    t₁ = zero_find(f, zero(T), Inf)
-    return t₁
+    t_max = max_indent_time(indent)
+    f(t₁) = E₁*(2*t_max-t₁-t) + 3*η*(2*exp(-(E₂*(t-t_max)/(3*η)))-exp(-(E₂*(t-t₁)/(3*η)))-1)
+    t₁ = find_zero(f, [-1,1])
+    return clamp(t₁, zero(T), Inf)
 end
 
 function _force(t, constit::PowerLawRheology{T}, indent::Triangular{T}, tip::TipGeometry) where {T}

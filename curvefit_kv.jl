@@ -12,7 +12,6 @@ kv = KelvinVoigt(1.614, 0.025) # 1614Pa -> 1.614, 25Pa.s -> 0.025 Pa.s
 tip = Conical(π / 10.0)
 F(t) = force(t, plr, loading, tip)
 F_kv(t) = force_kv(t, kv, loading, tip)
-t1(t) = 
 ##
 let
     t_s = 2e-3
