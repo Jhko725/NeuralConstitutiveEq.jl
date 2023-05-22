@@ -62,4 +62,4 @@ sol2 = find_zero(f,[-Inf, Inf])
 print(sol[1].interval)
 ##
 a = Interval(1.0,2.0)
-print(first(a))
+a.mean
