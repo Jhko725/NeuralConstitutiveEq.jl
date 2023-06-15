@@ -131,7 +131,7 @@ model = nn.Sequential(
     nn.Softplus(),
 )
 ting_nn = TingApproach(model, tip, lr=1e-3)
-ting_bern = TingApproach(BernsteinNN(model, 50), tip, lr=1e-3)
+ting_bern = TingApproach(BernsteinNN(model, 100), tip, lr=1e-3)
 with torch.no_grad():
     f_true = ting_true(
         dataset.time.view(-1), dataset.velocity.view(-1), dataset.indent.view(-1)
@@ -191,7 +191,7 @@ with torch.no_grad():
         dataset.time.view(-1), dataset.velocity.view(-1), dataset.indent.view(-1)
     )
     axes[0].plot(t, f_true, label="Ground truth")
-    # axes[0].plot(t, f_nn, label="Untrained NN")
+    axes[0].plot(t, f_nn, label="Untrained NN")
     axes[0].plot(t, f_bern, label="Trained Bernstein NN")
     axes[0].legend()
     axes[0].set_ylabel("$F(t)$")

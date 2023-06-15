@@ -36,10 +36,17 @@ class BernsteinNN(nn.Module):
             "weights", torch.tensor(w, dtype=torch.float32)
         )  # shape: (n,)
         self.func = func  # should map (n, 1) -> (n, 1)
+        self.scale = nn.Parameter(torch.tensor(1.0))
+        self.offset = nn.Parameter(torch.tensor(0.0))
+        self._initalize_scale()
+
+    def _initalize_scale(self, t0: float = 1e-3):
+        y0 = self(torch.tensor([t0]))
+        self.scale.data /= y0[0]
 
     def forward(self, t):  # t has shape (d,); b: batch size
         t = t.view(-1)
         x = self.nodes / t  # (n, d)
         f = self.func(x.view(-1, 1)).view(x.shape)  # (n, d) -> (nd, 1) -> (n, d)
         y = torch.mv(f.T, self.weights)  # (d, n)*(n,) -> (d,)
-        return y / t
+        return self.scale * (y / t) + self.offset
