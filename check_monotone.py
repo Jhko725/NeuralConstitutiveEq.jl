@@ -70,8 +70,12 @@ class BernsteinNN(nn.Module):
     def __init__(self, func: Callable, n: int):
         super().__init__()
         x, w = scipy.special.roots_laguerre(n)
-        self.register_buffer("nodes", torch.tensor(x, dtype = torch.float32).view(-1, 1))  # shape: (n, 1)
-        self.register_buffer("weights", torch.tensor(w, dtype = torch.float32))  # shape: (n,)
+        self.register_buffer(
+            "nodes", torch.tensor(x, dtype=torch.float32).view(-1, 1)
+        )  # shape: (n, 1)
+        self.register_buffer(
+            "weights", torch.tensor(w, dtype=torch.float32)
+        )  # shape: (n,)
         self.func = func  # should map (n, 1) -> (n, 1)
 
     def forward(self, t):  # t has shape (d,); b: batch size
@@ -97,12 +101,11 @@ t = torch.linspace(0.1, 3.0, 100)
 with torch.no_grad():
     y_nn = model(t.view(-1, 1)).view(-1)
     y_bern = bernstein(t)
-#%%
-fig, axes = plt.subplots(2, 1, figsize = (5, 4), sharex=True)
-axes[0].plot(t, y_nn, label = "Neural Network (naive)")
-axes[1].plot(t, y_bern, label = "Bernstein Neural Network")
+# %%
+fig, axes = plt.subplots(2, 1, figsize=(5, 4), sharex=True)
+axes[0].plot(t, y_nn, label="Neural Network (naive)")
+axes[1].plot(t, y_bern, label="Bernstein Neural Network")
 axes[1].set_xlabel("$t$")
 # %%
-%%timeit
 y_bern = bernstein(t)
 # %%
