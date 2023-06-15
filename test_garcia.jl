@@ -31,14 +31,16 @@ let
     t_s = 2e-3
     t_data = 0.0:t_s:2*max_indent_time(loading)
     f_true = map(x -> force_numerical(x, plr, loading, tip), t_data)
-    ax = plot(t_data, f_true)
+    ax = plot(t_data, f_true, label="Numerical", linewidth=2.0, alpha=0.7)
 
     F(t) = force(t, plr, loading, tip)
     f_garcia = F.(t_data)
-    plot!(ax, t_data, f_garcia)
+    plot!(ax, t_data, f_garcia, label="Garcia", lineiwdth=1.0)
 
     f_me = map(x -> force2(x, plr, loading, tip), t_data)
-    plot!(ax, t_data, f_me)
+    plot!(ax, t_data, f_me, label="Correction", linewidth=1.0)
+    xlabel!(ax, "Time")
+    ylabel!(ax, "Force")
 end
 
 
