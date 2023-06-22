@@ -14,15 +14,17 @@ class FullyConnectedNetwork(nn.Module):
         self.hidden_layers = nn.ModuleList(layers[:-1])
         self.output_layer = layers[-1]
         self.activation = activation
+        self.final_activation = nn.functional.softplus
 
     def _build_layers(self):
         return [nn.Linear(n_in, n_out) for n_in, n_out in pairwise(self.nodes)]
 
     def forward(self, x):
+        x = torch.log10(x)
         for layer in self.hidden_layers:
             x = self.activation(layer(x))
         x = self.output_layer(x)  # output activation is identity
-        return x
+        return self.final_activation(x)
 
 
 class BernsteinNN(nn.Module):
@@ -35,7 +37,7 @@ class BernsteinNN(nn.Module):
         self.register_buffer(
             "weights", torch.tensor(w, dtype=torch.float32)
         )  # shape: (n,)
-        self.func = func  # should map (n, 1) -> (n, 1)
+        self._func = func  # should map (n, 1) -> (n, 1)
         self.scale = nn.Parameter(torch.tensor(1.0))
         self.offset = nn.Parameter(torch.tensor(0.0))
         self._initalize_scale()
@@ -43,6 +45,9 @@ class BernsteinNN(nn.Module):
     def _initalize_scale(self, t0: float = 1e-3):
         y0 = self(torch.tensor([t0]))
         self.scale.data /= y0[0]
+
+    def func(self, t):
+        return torch.abs(self._func(t))
 
     def forward(self, t):  # t has shape (d,); b: batch size
         t = t.view(-1)

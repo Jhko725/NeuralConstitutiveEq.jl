@@ -6,15 +6,15 @@ import matplotlib.pyplot as plt
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
 
-from NeuralNetwork.utils import beta
-from NeuralNetwork.tipgeometry import TipGeometry, Conical
-from NeuralNetwork.constitutive import (
+from neuralconstitutive.utils import beta
+from neuralconstitutive.tipgeometry import TipGeometry, Conical
+from neuralconstitutive.constitutive import (
     ConstitutiveEqn,
     PowerLawRheology,
     StandardLinearSolid,
 )
-from NeuralNetwork.dataset import IndentationDataset, split_app_ret
-from NeuralNetwork.models import FullyConnectedNetwork, BernsteinNN
+from neuralconstitutive.dataset import IndentationDataset, split_app_ret
+from neuralconstitutive.models import FullyConnectedNetwork, BernsteinNN
 
 plr = PowerLawRheology(0.572, 0.42)
 sls = StandardLinearSolid(8, 0.05)
@@ -48,9 +48,9 @@ def approach_trapz(
     dI_beta = v * I ** (b - 1)
 
     def _inner(ind: int):
+        # assuming that the data are equally spaced in time
         phi_ = torch.flip(phi[0 : ind + 1], dims=(0,))
         t_ = t[0 : ind + 1]
-        # phi_ = constit(t_[-1] - t_)
         dI_beta_ = dI_beta[0 : ind + 1]
         return torch.trapz(phi_ * dI_beta_, x=t_).view(-1)
 
@@ -69,9 +69,20 @@ with torch.no_grad():
     ax.legend()
 # %%
 tip = Conical(torch.pi / 18)
-t = torch.linspace(1e-3, 0.2, 100)
+t = torch.linspace(1e-2, 0.2, 200)
 f = simulate_approach(sls, tip, 10, t)
 dataset = IndentationDataset(t, 10 * t, 10 * torch.ones_like(t), f)
+# %%
+fig, axes = plt.subplots(3, 1, figsize=(5, 6), sharex=True)
+t = dataset.time.view(-1)
+yvals = (dataset.indent.view(-1), dataset.velocity.view(-1), dataset.force.view(-1))
+ylabels = ("Indentation", "Velocity", "Force")
+for ax, y, ylab in zip(axes, yvals, ylabels):
+    ax.plot(t, y)
+    ax.set_ylabel(ylab)
+axes[-1].set_xlabel("Time")
+# %%
+dataset.force
 
 
 # %%
@@ -120,16 +131,17 @@ class TingApproach(pl.LightningModule):
 # %%
 fig, axes = plt.subplots(2, 1, figsize=(5, 5), sharex=True)
 ting_true = TingApproach(sls, tip)
-model = nn.Sequential(
-    nn.Linear(1, 20),
-    nn.GELU(),
-    nn.Linear(20, 20),
-    nn.GELU(),
-    nn.Linear(20, 20),
-    nn.GELU(),
-    nn.Linear(20, 1),
-    nn.Softplus(),
-)
+# model = nn.Sequential(
+#     nn.Linear(1, 20),
+#     nn.GELU(),
+#     nn.Linear(20, 20),
+#     nn.GELU(),
+#     nn.Linear(20, 20),
+#     nn.GELU(),
+#     nn.Linear(20, 1),
+#     nn.Softplus(),
+# )
+model = FullyConnectedNetwork([1, 20, 20, 20, 1], torch.nn.functional.elu)
 ting_nn = TingApproach(model, tip, lr=1e-3)
 ting_bern = TingApproach(BernsteinNN(model, 100), tip, lr=1e-3)
 with torch.no_grad():
@@ -157,6 +169,8 @@ with torch.no_grad():
     axes[1].legend()
     axes[1].set_ylabel("$\phi(t)$")
     axes[1].set_xlabel("$t$")
+# %%
+dataset.velocity.shape
 # %%
 f_bern
 # %%
@@ -205,6 +219,38 @@ with torch.no_grad():
     axes[1].legend()
     axes[1].set_ylabel("$\phi(t)$")
     axes[1].set_xlabel("$t$")
+# %%
+fig, axes = plt.subplots(2, 1, figsize=(5, 5), sharex=True)
+with torch.no_grad():
+    f_bern = ting_bern(
+        dataset.time.view(-1), dataset.velocity.view(-1), dataset.indent.view(-1)
+    )
+    axes[0].plot(dataset.time.view(-1), dataset.force.view(-1), label="Ground truth")
+    axes[0].plot(dataset.time.view(-1), f_bern, label="Trained Bernstein NN")
+    axes[0].legend()
+    axes[0].set_ylabel("$F(t)$")
+
+    phi_bern = ting_bern.stress_relaxation(dataset.time.view(-1))
+    axes[1].plot(dataset.time.view(-1), phi_bern)
+    axes[1].legend()
+    axes[1].set_ylabel("$\phi(t)$")
+    axes[1].set_xlabel("$t$")
+
+# %%
+with torch.no_grad():
+    phi_start = ting_bern.stress_relaxation(dataset.time.view(-1))
+    plt.plot(dataset.time.view(-1), phi_start)
+# %%
+fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+with torch.no_grad():
+    # h = ting.model.func(dataset.time.view(-1, 1)).view(-1)
+    # ax.plot(dataset.time.view(-1), h)
+    t = torch.logspace(-4, 4, 10000, dtype=torch.float32)
+    h = ting_bern.model.func(t.view(-1, 1)).view(-1)
+    ax.plot(t, h)
+# ax.set_yscale("log")
+ax.set_xscale("log")
+ax.set_ylabel("$h(x)$")
 
 
 # %%

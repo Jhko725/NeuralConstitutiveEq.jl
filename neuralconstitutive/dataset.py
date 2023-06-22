@@ -13,16 +13,21 @@ class IndentationDataBatch(TypedDict):
 
 class IndentationDataset(Dataset):
     def __init__(
-        self, time: Tensor, indentation: Tensor, velocity: Tensor, force: Tensor
+        self,
+        time: Tensor,
+        indentation: Tensor,
+        velocity: Tensor,
+        force: Tensor,
+        dtype=torch.float32,
     ):
         # May want to check the shapes of the tensors
         # Expect all of them to be (1, n_time)
         # Later, may generalize to (n_samples, n_time)
         super().__init__()
-        self.time = torch.tensor(time).view(1, -1)
-        self.indent = torch.tensor(indentation).view(1, -1)
-        self.velocity = torch.tensor(velocity).view(1, -1)
-        self.force = torch.tensor(force).view(1, -1)
+        self.time = torch.tensor(time, dtype=dtype).view(1, -1)
+        self.indent = torch.tensor(indentation, dtype=dtype).view(1, -1)
+        self.velocity = torch.tensor(velocity, dtype=dtype).view(1, -1)
+        self.force = torch.tensor(force, dtype=dtype).view(1, -1)
 
     def __len__(self):
         return self.time.shape[0]

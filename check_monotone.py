@@ -22,6 +22,9 @@ def gauss_laguerre(t, func: Callable[[float], float], n: int = 100):
     return np.dot(w, f) / t
 
 
+x, w = scipy.special.roots_laguerre(100)
+
+
 def gauss_laguerre2(t, func: Callable[[float], float], x, w):
     f = func(x / t)
     return np.dot(w, f) / t
@@ -29,11 +32,10 @@ def gauss_laguerre2(t, func: Callable[[float], float], x, w):
 
 def func(x):
     # Can be changed to be any positive function
-    return x
+    return np.heaviside(0.1 - x, 0.0)
 
 
-x, w = scipy.special.roots_laguerre(100)
-t = np.linspace(0.1, 3.0, 100)
+t = np.linspace(0.01, 3.0, 100)
 # %%
 
 out = np.array([laplace_1d(t_, func)[0] for t_ in t])
@@ -51,7 +53,15 @@ ax.plot(t, out2, ".", label="gauss_laguerre", **plot_kwargs)
 ax.set_xlabel("$t$")
 ax.set_ylabel("$\phi(t)$")
 ax.legend()
-
+# %%
+N = 100
+x, w = scipy.special.roots_laguerre(N)
+fig, axes = plt.subplots(1, 2, figsize=(6, 3))
+axes[0].hist(x, bins=50, label=f"Quadrature nodes: {N=}")
+axes[1].hist(w, bins=50, label=f"Quadrature weights: {N=}")
+for ax in axes:
+    ax.legend()
+    ax.set_xscale("symlog")
 
 # %%
 
