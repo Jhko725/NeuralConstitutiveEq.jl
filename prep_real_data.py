@@ -1,18 +1,11 @@
 # %%
 from typing import Callable
-from configparser import ConfigParser
-from pathlib import Path
 import numpy as np
-from numpy import ndarray
-from numpy.polynomial.polynomial import Polynomial
-import xarray as xr
 import scipy
 import torch
-from torch import nn
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
 import matplotlib.pyplot as plt
-from jhelabtoolkit.io.nanosurf import nanosurf
 
 from neuralconstitutive.tipgeometry import Conical
 from neuralconstitutive.models import BernsteinNN, FullyConnectedNetwork
@@ -20,13 +13,7 @@ from neuralconstitutive.ting import TingApproach
 from neuralconstitutive.dataset import IndentationDataset
 from neuralconstitutive.preprocessing import process_approach_data, estimate_derivative
 
-datapath = "data/230602_highlyentangled_preliminary/Hydrogel(liquid, 10nN, 10s)-2.nid"
-
-config, data = nanosurf.read_nid(datapath)
-
-
-# %%
-
+datapath = "data/230602_highlyentangled_preliminary/Hydrogel(liquid, 50nN, 10s).nid"
 
 # %%
 time, indent, force = process_approach_data(datapath, contact_point=1.64e-6, k=0.2)
@@ -51,8 +38,8 @@ tip = Conical(torch.pi / 36)
 #     nn.ELU(),
 #     nn.Linear(20, 1),
 # )
-model = FullyConnectedNetwork([1, 20, 20, 20, 1], torch.nn.functional.elu)
-ting = TingApproach(BernsteinNN(model, 100), tip, lr=1e-3)
+model = FullyConnectedNetwork([1, 200, 1], torch.nn.functional.elu)
+ting = TingApproach(BernsteinNN(model, 100), tip, lr=1e-2)
 # dataset = IndentationDataset(
 #     time[1:] / 10,
 #     indent[1:] * 1e6,
@@ -62,14 +49,14 @@ ting = TingApproach(BernsteinNN(model, 100), tip, lr=1e-3)
 # )
 
 dataset = IndentationDataset(
-    time[1:],
+    time[1:] * 100,
     indent[1:] * 1e6,
-    12.6 * np.ones_like(indent[1:]),
+    0.126 * np.ones_like(indent[1:]),
     force[1:] * 2e9,
     dtype=torch.float32,
 )
 # %%
-dataset.force
+dataset.time
 # %%
 # ting = ting.double()
 # %%
@@ -133,10 +120,9 @@ with torch.no_grad():
     axes[1].legend()
     axes[1].set_ylabel("$\phi(t)$")
     axes[1].set_xlabel("$t$")
+
+
 # %%
-ting.model.offset
-
-
 # %%
 def laplace_1d(t, func: Callable[[float], float]):
     def integrand(x):
@@ -151,7 +137,7 @@ def func(x):
     return val.numpy()
 
 
-x, w = scipy.special.roots_laguerre(100)
+x, w = scipy.special.roots_laguerre(150)
 x, w = np.float32(x), np.float32(w)
 
 

@@ -12,7 +12,7 @@ from jhelabtoolkit.utils.plotting import configure_matplotlib_defaults
 
 configure_matplotlib_defaults()
 
-filepath = "data/230602_highlyentangled_preliminary/Hydrogel(liquid, 10nN, 10s)-2.nid"
+filepath = "data/230602_highlyentangled_preliminary/Hydrogel(liquid, 50nN, 10s).nid"
 config, data = nanosurf.read_nid(filepath)
 
 
