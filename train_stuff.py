@@ -1,30 +1,117 @@
 # %%
 import torch
 from torch import Tensor, nn
+import numpy as np
+from numpy import ndarray
+import scipy
 from scipy.integrate import quad
+from tqdm import tqdm
 import matplotlib.pyplot as plt
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
 
 from neuralconstitutive.utils import beta
-from neuralconstitutive.tipgeometry import TipGeometry, Conical
+from neuralconstitutive.tipgeometry import TipGeometry, Conical, Spherical
 from neuralconstitutive.constitutive import (
     ConstitutiveEqn,
     PowerLawRheology,
     StandardLinearSolid,
 )
+from neuralconstitutive.indentation import Indentation, Triangular
 from neuralconstitutive.dataset import IndentationDataset, split_app_ret
 from neuralconstitutive.models import FullyConnectedNetwork, BernsteinNN
 from neuralconstitutive.ting import TingApproach
 
 plr = PowerLawRheology(0.572, 0.42)
-sls = StandardLinearSolid(8, 0.05)
+sls = StandardLinearSolid(8, 0.01, 2)
+indent = Triangular(10.0, 0.2)
 t = torch.linspace(0, 0.2, 100)
+# tip = Conical(torch.pi / 18)
+tip = Spherical(1)
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
 with torch.no_grad():
     ax.plot(t, plr(t), label="PLR")
     ax.plot(t, sls(t), label="SLS")
     ax.legend()
+
+
+# %%
+def F(
+    t: Tensor, constit: ConstitutiveEqn, indent: Indentation, tip: TipGeometry
+) -> Tensor:
+    a, b = tip.alpha, tip.beta
+    velocity, indent = indent.v_app, indent.i_app
+
+    def _integrand(t_: ndarray, t: float) -> ndarray:
+        with torch.no_grad():
+            t_ = torch.tensor(t_).view(-1)
+            dF = constit(t - t_) * velocity(t_) * indent(t_) ** (b - 1)
+        return dF.numpy()
+
+    f = torch.tensor([quad(_integrand, 0, t_i, args=(t_i,))[0] for t_i in t])
+    return a * f
+
+
+# %%
+def find_t1(t: float, phi: Callable, v: float, t_max: float):
+    def _inner(t1):
+        term1 = scipy.integrate.quad(lambda t_: phi(t - t_) * v, t1, t_max)[0]
+        term2 = scipy.integrate.quad(lambda t_: -phi(t - t_) * v, t_max, t)[0]
+        return term1 + term2
+
+    if _inner(0.0) <= 0:
+        return 0.0
+    else:
+        return scipy.optimize.root_scalar(
+            _inner, method="bisect", bracket=(0.0, t_max)
+        ).root
+
+
+# %%
+def find_t1(t: Tensor, constit: ConstitutiveEqn, indent: Indentation) -> Tensor:
+    v_app, v_ret = indent.v_app, indent.v_ret
+    t_max = indent.t_max
+
+    def _integrand_ret(t_: ndarray, t: float) -> ndarray:
+        with torch.no_grad():
+            t_ = torch.tensor(t_).view(-1)
+            out = constit(t - t_) * v_ret(t_)
+        return out.numpy()
+
+    def _integrand_app(t_: ndarray, t: float) -> ndarray:
+        with torch.no_grad():
+            t_ = torch.tensor(t_).view(-1)
+            out = constit(t - t_) * v_app(t_)
+        return out.numpy()
+
+    def _equation(t1: ndarray, t: float) -> ndarray:
+        I1 = quad(_integrand_app, t1, t_max, args=(t,))[0]
+        I2 = quad(_integrand_ret, t_max, t, args=(t,))[0]
+        return I1 + I2
+
+    def _find_t1(t: float) -> float:
+        if _equation(0.0, t) <= 0:
+            return 0.0
+        else:
+            result = scipy.optimize.root_scalar(
+                _equation, args=(t,), method="bisect", bracket=(0, t_max)
+            )
+            return result.root
+
+    return torch.tensor([_find_t1(t_i) for t_i in tqdm(t)])
+
+
+# %%
+F_app = F(t, sls, indent, tip)
+plt.plot(t, F_app)
+# %%
+t_ret = torch.linspace(0.2, 0.4, 100)
+t1 = find_t1(t_ret, sls, indent)
+# %%
+plt.plot(t_ret, t1)
+# %%
+F_ret = F(t1, sls, indent, tip)
+plt.plot(t_ret, F_ret)
 
 
 # %%

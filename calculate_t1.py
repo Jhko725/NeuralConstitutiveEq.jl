@@ -12,7 +12,7 @@ from neuralconstitutive.constitutive import (
     StandardLinearSolid,
 )
 
-sls = StandardLinearSolid(8, 0.05)
+sls = StandardLinearSolid(8, 0.01, 2)
 # t = torch.linspace(0, 0.4, 200)
 # t_app, t_ret = t[t <= 0.2], t[t > 0.2]
 t_app = torch.linspace(0, 0.2, 100)
