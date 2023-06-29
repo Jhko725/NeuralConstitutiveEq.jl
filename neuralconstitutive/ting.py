@@ -13,12 +13,12 @@ class TingApproach(pl.LightningModule):
         self.loss_func = torch.nn.MSELoss()
         self.lr = lr
 
-    def stress_relaxation(self, t: Tensor):
+    def stress_relaxation(self, t: Tensor) -> Tensor:
         return self.model(t.view(-1, 1)).view(-1)
 
     def forward(self, t: Tensor, v: Tensor, I: Tensor):
-        phi = self.stress_relaxation(t)
-        dI_beta = v * I ** (self.beta - 1)
+        phi = self.stress_relaxation(t)  # phi_total calculated
+        dI_beta = self.beta * v * I ** (self.beta - 1)
 
         def _inner(ind: int):
             phi_ = torch.flip(phi[0 : ind + 1], dims=(0,))
