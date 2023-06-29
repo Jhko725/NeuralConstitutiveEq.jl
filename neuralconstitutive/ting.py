@@ -13,14 +13,14 @@ class TingApproach(pl.LightningModule):
         self.loss_func = torch.nn.MSELoss()
         self.lr = lr
 
-    def stress_relaxation(self, t: Tensor):
+    def stress_relaxation(self, t: Tensor) -> Tensor:
         return self.model(t.view(-1, 1)).view(-1)
 
     def forward(self, t: Tensor, v: Tensor, I: Tensor):
-        phi = self.stress_relaxation(t)
-        dI_beta = v * I ** (self.beta - 1)
+        phi = self.stress_relaxation(t)  # phi_total calculated
+        dI_beta = self.beta * v * I ** (self.beta - 1)  # dI^beta_total calculated
 
-        def _inner(ind: int):
+        def _inner(ind: int):  # ind \in [0, M]; t_max = M\Delta t
             phi_ = torch.flip(phi[0 : ind + 1], dims=(0,))
             t_ = t[0 : ind + 1]
             dI_beta_ = dI_beta[0 : ind + 1]

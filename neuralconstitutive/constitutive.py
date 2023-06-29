@@ -17,14 +17,19 @@ class ConstitutiveEqn(nn.Module):
 
 
 class PowerLawRheology(ConstitutiveEqn):
-    def __init__(self, E0: float, gamma: float, t0: float = 1):
+    def __init__(
+        self, E0: float, gamma: float, E_inf: float = 0.0, t_offset: float = 1e-3
+    ):
         super().__init__()
         self.E0 = to_parameter(E0)
         self.gamma = to_parameter(gamma)
-        self.t0 = to_parameter(t0)
+        self.E_inf = to_parameter(E_inf)
+        self.t_offset = to_parameter(t_offset)
 
     def stress_relaxation(self, t: Tensor) -> Tensor:
-        return self.E0 * (t / self.t0) ** (-self.gamma)
+        return self.E_inf + (self.E0 - self.E_inf) * (1 + t / self.t_offset) ** (
+            -self.gamma
+        )
 
 
 class StandardLinearSolid(ConstitutiveEqn):

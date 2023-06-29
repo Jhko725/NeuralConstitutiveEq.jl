@@ -22,7 +22,7 @@ from neuralconstitutive.dataset import IndentationDataset, split_app_ret
 from neuralconstitutive.models import FullyConnectedNetwork, BernsteinNN
 from neuralconstitutive.ting import TingApproach
 
-plr = PowerLawRheology(0.572, 0.42)
+plr = PowerLawRheology(4.0, 0.42)
 sls = StandardLinearSolid(8, 0.01, 2)
 indent = Triangular(10.0, 0.2)
 t = torch.linspace(0, 0.2, 100)
@@ -50,21 +50,6 @@ def F(
 
     f = torch.tensor([quad(_integrand, 0, t_i, args=(t_i,))[0] for t_i in t])
     return a * f
-
-
-# %%
-def find_t1(t: float, phi: Callable, v: float, t_max: float):
-    def _inner(t1):
-        term1 = scipy.integrate.quad(lambda t_: phi(t - t_) * v, t1, t_max)[0]
-        term2 = scipy.integrate.quad(lambda t_: -phi(t - t_) * v, t_max, t)[0]
-        return term1 + term2
-
-    if _inner(0.0) <= 0:
-        return 0.0
-    else:
-        return scipy.optimize.root_scalar(
-            _inner, method="bisect", bracket=(0.0, t_max)
-        ).root
 
 
 # %%
@@ -102,11 +87,11 @@ def find_t1(t: Tensor, constit: ConstitutiveEqn, indent: Indentation) -> Tensor:
 
 
 # %%
-F_app = F(t, sls, indent, tip)
+F_app = F(t, plr, indent, tip)
 plt.plot(t, F_app)
 # %%
 t_ret = torch.linspace(0.2, 0.4, 100)
-t1 = find_t1(t_ret, sls, indent)
+t1 = find_t1(t_ret, plr, indent)
 # %%
 plt.plot(t_ret, t1)
 # %%

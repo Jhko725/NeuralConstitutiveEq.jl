@@ -1,22 +1,42 @@
 # %%
 from typing import Callable
 import torch
+from torch import Tensor
 import scipy
 import numpy as np
 from tqdm import tqdm
 import matplotlib.pyplot as plt
+import pytorch_lightning as pl
 
 from neuralconstitutive.constitutive import (
     ConstitutiveEqn,
     PowerLawRheology,
     StandardLinearSolid,
 )
+from neuralconstitutive.tipgeometry import TipGeometry
 
 sls = StandardLinearSolid(8, 0.01, 2)
 # t = torch.linspace(0, 0.4, 200)
 # t_app, t_ret = t[t <= 0.2], t[t > 0.2]
 t_app = torch.linspace(0, 0.2, 100)
 t_ret = torch.linspace(0.2, 0.4, 100)
+
+
+# %%
+class Ting(pl.LightningModule):
+    def __init__(self, model: Callable[[Tensor], Tensor], tip: TipGeometry, lr: float):
+        self.model = model
+        self.tip = tip
+        self._register_tip_params()
+        self.lr = lr
+
+    def _register_tip_params(self) -> None:
+        a, b = self.tip.alpha, self.tip.beta
+        self.register_buffer("a", torch.tensor(a))
+        self.register_buffer("b", torch.tensor(b))
+
+    def forward(self, t: Tensor) -> Tensor:
+        pass
 
 
 # %%
@@ -94,4 +114,9 @@ ax.set_xlabel("$t$ (retraction)")
 ax.set_ylabel("$t_1$")
 # %%
 inds
+# %%
+import torch
+
+test = torch.tensor([1.0, 2.0, 3.0, 3.0, 3.0])
+torch.where(test, torch.max(test))
 # %%

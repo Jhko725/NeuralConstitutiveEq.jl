@@ -13,6 +13,7 @@ from neuralconstitutive.ting import TingApproach
 from neuralconstitutive.dataset import IndentationDataset
 from neuralconstitutive.preprocessing import process_approach_data, estimate_derivative
 
+pl.seed_everything(10)
 datapath = "data/230602_highlyentangled_preliminary/Hydrogel(liquid, 50nN, 10s).nid"
 
 # %%
@@ -69,7 +70,7 @@ for ax, y, ylab in zip(axes, yvals, ylabels):
 axes[-1].set_xlabel("Time")
 
 # %%
-with torch.no_grad():
+with torch.no_grad():  # context manager
     phi_start = ting.stress_relaxation(dataset.time.view(-1))
     plt.plot(dataset.time.view(-1), phi_start)
 # %%
@@ -86,7 +87,7 @@ ax.set_ylabel("$h(x)$")
 # %%
 print(ting.model.scale, ting.model.offset)
 # %%
-logger = WandbLogger(project="hydrogel", entity="jhelab")
+logger = WandbLogger(project="hydrogel", entity="jhelab_team")
 dataloader = torch.utils.data.DataLoader(
     dataset,
     batch_size=1,
