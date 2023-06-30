@@ -15,7 +15,6 @@ configure_matplotlib_defaults()
 filepath = "data/230602_highlyentangled_preliminary/Hydrogel(liquid, 50nN, 10s).nid"
 config, data = nanosurf.read_nid(filepath)
 
-
 # %%
 def get_sampling_rate(nid_config: ConfigParser) -> float:
     spec_config = dict(config[r"DataSet\DataSetInfos\Spec"])
@@ -23,7 +22,6 @@ def get_sampling_rate(nid_config: ConfigParser) -> float:
     # May later use the pint library to parse unitful quantites
     modulation_time = float(spec_config["modulation time"].split(" ")[0])
     return num_points / modulation_time
-
 
 get_sampling_rate(config)
 # %%
