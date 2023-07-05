@@ -14,7 +14,6 @@ configure_matplotlib_defaults()
 
 filepath = "data/230602_highlyentangled_preliminary/Hydrogel(liquid, 50nN, 10s).nid"
 config, data = nanosurf.read_nid(filepath)
-
 # %%
 def get_sampling_rate(nid_config: ConfigParser) -> float:
     spec_config = dict(config[r"DataSet\DataSetInfos\Spec"])
@@ -98,19 +97,19 @@ cp = find_contact_point(dist_fwd, defl_fwd)
 cp
 # %%
 # ROV method
-# N = 20
-# rov_fwd = find_contact_point(defl_fwd, N)[0]
-# idx_fwd = find_contact_point(defl_fwd, N)[1]
-# rov_fwd_max = find_contact_point(defl_fwd, N)[2]
+N = 20
+rov_fwd = find_contact_point1(defl_fwd, N)[0]
+idx_fwd = find_contact_point1(defl_fwd, N)[1]
+rov_fwd_max = find_contact_point1(defl_fwd, N)[2]
 
-# rov_bwd = find_contact_point(defl_bwd, N)[0]
-# idx_bwd = find_contact_point(defl_bwd, N)[1]
-# rov_bwd_max = find_contact_point(defl_bwd, N)[2]
+rov_bwd = find_contact_point1(defl_bwd, N)[0]
+idx_bwd = find_contact_point1(defl_bwd, N)[1]
+rov_bwd_max = find_contact_point1(defl_bwd, N)[2]
 # %%
-# fig, ax = plt.subplots(1, 1, figsize = (7, 5))
-# ax.plot(dist_fwd[N:np.size(dist_fwd)-N], find_contact_point(defl_fwd, N)[0])
-# ax.set_xlabel("Distance(forward)")
-# ax.set_ylabel("ROV")
+fig, ax = plt.subplots(1, 1, figsize = (7, 5))
+ax.plot(dist_fwd[N:np.size(dist_fwd)-N], find_contact_point1(defl_fwd, N)[0])
+ax.set_xlabel("Distance(forward)")
+ax.set_ylabel("ROV")
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(7, 5))
 ax.plot(dist_fwd, defl_fwd, label="forward")
