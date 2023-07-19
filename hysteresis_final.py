@@ -61,7 +61,49 @@ def fit_baseline_polynomial(
     return Polynomial.fit(
         distance[pre_contact], deflection[pre_contact], deg=degree, domain=domain)
 
-def hysteresis(filepath: str, ROV_window: int) -> float:
+def hysteresis(filepath: str, ROV_window: int, n_interval: int = 10000) -> float:
+    config, data = read_nid_file(filepath)
+    forward, backward = data["spec forward"],data["spec backward"]
+    z_fwd, defl_fwd = get_z_and_defl(forward) 
+    z_bwd, defl_bwd = get_z_and_defl(backward) 
+    dist_fwd = calc_tip_distance(z_fwd, defl_fwd) 
+    dist_bwd = calc_tip_distance(z_bwd, defl_bwd) 
+    idx_fwd = dist_fwd.argsort()
+    dist_fwd = dist_fwd[idx_fwd]
+    defl_fwd = defl_fwd[idx_fwd]
+    idx_bwd = dist_bwd.argsort()
+    dist_bwd = dist_bwd[idx_bwd]
+    defl_bwd = defl_bwd[idx_bwd]
+    cp_fwd = contact_point_ROV(defl_fwd, ROV_window)
+    cp_bwd = contact_point_ROV(defl_bwd, ROV_window)
+    cp_fwd_idx = cp_fwd[1]
+    cp_bwd_idx = cp_bwd[1]
+    cp_fwd = dist_fwd[ROV_window+cp_fwd_idx]
+    cp_bwd = dist_bwd[ROV_window+cp_bwd_idx]
+    baseline_poly_fwd = fit_baseline_polynomial(dist_fwd, defl_fwd, cp_fwd)
+    defl_processed_fwd = defl_fwd - baseline_poly_fwd(dist_fwd)
+    baseline_poly_bwd = fit_baseline_polynomial(dist_bwd, defl_bwd, cp_bwd)
+    defl_processed_bwd = defl_bwd - baseline_poly_bwd(dist_bwd)
+    interp_start = max(np.min(dist_fwd), np.min(dist_bwd))
+    interp_end = min(np.max(dist_fwd), np.max(dist_bwd))
+    cubic_spline_fwd = CubicSpline(dist_fwd, defl_processed_fwd)
+    cubic_spline_bwd = CubicSpline(dist_bwd, defl_processed_bwd)
+    dist_interp = np.linspace(interp_start, interp_end, n_interval)
+    interp_fwd=cubic_spline_fwd(dist_interp)
+    interp_bwd=cubic_spline_bwd(dist_interp)
+    area_functinon = interp_fwd - interp_bwd
+    area = integrate.simpson(area_functinon, dist_interp)
+    fig, ax = plt.subplots(1, 1, figsize = (5, 3))
+    ax.plot(dist_interp * 1e6, interp_fwd * 1e9, label = "forward (interpolation)")
+    ax.plot(dist_interp * 1e6, interp_bwd * 1e9, label = "backward (interpolation)")
+    ax.set_xlabel("Distance(μm)")
+    ax.set_ylabel("Force(nN)")
+    plt.axvline(cp_fwd * 1e6, color="grey", linestyle="--", linewidth=1)
+    plt.axvline(cp_bwd * 1e6, color="grey", linestyle="--", linewidth=1)
+    ax.legend()
+    return area
+# %%
+def drift(filepath: str, ROV_window: int, n_interval: int = 10000) -> float:
     config, data = read_nid_file(filepath)
     forward, backward = data["spec forward"],data["spec backward"]
     z_fwd, defl_fwd = get_z_and_defl(forward) 
@@ -78,6 +120,38 @@ def hysteresis(filepath: str, ROV_window: int) -> float:
     defl_processed_fwd = defl_fwd - baseline_poly_fwd(dist_fwd)
     baseline_poly_bwd = fit_baseline_polynomial(dist_bwd, defl_bwd, cp_bwd)
     defl_processed_bwd = defl_bwd - baseline_poly_bwd(dist_bwd)
+    # idx_fwd = dist_fwd.argsort()
+    # dist_fwd = dist_fwd[idx_fwd]
+    # defl_fwd = defl_fwd[idx_fwd]
+    # idx_bwd = dist_bwd.argsort()
+    # dist_bwd = dist_bwd[idx_bwd]
+    # defl_bwd = defl_bwd[idx_bwd]
+    # interp_start = max(np.min(dist_fwd), np.min(dist_bwd))
+    # interp_end = min(np.max(dist_fwd), np.max(dist_bwd))
+    # cubic_spline_fwd = CubicSpline(dist_fwd, defl_processed_fwd)
+    # cubic_spline_bwd = CubicSpline(dist_bwd, defl_processed_bwd)
+    # dist_interp = np.linspace(interp_start, interp_end, n_interval)
+    # interp_fwd=cubic_spline_fwd(dist_interp)
+    # interp_bwd=cubic_spline_bwd(dist_interp)
+    # area_functinon = interp_fwd - interp_bwd
+    # area = integrate.simpson(area_functinon, dist_interp)
+    # fig, ax = plt.subplots(1, 1, figsize = (15, 10))
+    # ax.plot(dist_interp * 1e6, interp_fwd * 1e9, label = "forward (interpolation)")
+    # ax.plot(dist_interp * 1e6, interp_bwd * 1e9, label = "backward (interpolation)")
+    # ax.set_xlabel("Distance(μm)")
+    # ax.set_ylabel("Force(nN)")
+    # plt.axvline(cp_fwd * 1e6, color="grey", linestyle="--", linewidth=1)
+    # plt.axvline(cp_bwd * 1e6, color="grey", linestyle="--", linewidth=1)
+    # ax.legend()
+    return baseline_poly_fwd.coef[1], baseline_poly_bwd.coef[1]
+
+def hysteresis_original(filepath: str, ROV_window: int, n_interval: int = 10000) -> float:
+    config, data = read_nid_file(filepath)
+    forward, backward = data["spec forward"],data["spec backward"]
+    z_fwd, defl_fwd = get_z_and_defl(forward) 
+    z_bwd, defl_bwd = get_z_and_defl(backward) 
+    dist_fwd = calc_tip_distance(z_fwd, defl_fwd) 
+    dist_bwd = calc_tip_distance(z_bwd, defl_bwd) 
     idx_fwd = dist_fwd.argsort()
     dist_fwd = dist_fwd[idx_fwd]
     defl_fwd = defl_fwd[idx_fwd]
@@ -86,9 +160,9 @@ def hysteresis(filepath: str, ROV_window: int) -> float:
     defl_bwd = defl_bwd[idx_bwd]
     interp_start = max(np.min(dist_fwd), np.min(dist_bwd))
     interp_end = min(np.max(dist_fwd), np.max(dist_bwd))
-    cubic_spline_fwd = CubicSpline(dist_fwd, defl_processed_fwd)
-    cubic_spline_bwd = CubicSpline(dist_bwd, defl_processed_bwd)
-    dist_interp = np.linspace(interp_start, interp_end, 1000)
+    cubic_spline_fwd = CubicSpline(dist_fwd, defl_fwd)
+    cubic_spline_bwd = CubicSpline(dist_bwd, defl_bwd)
+    dist_interp = np.linspace(interp_start, interp_end, n_interval)
     interp_fwd=cubic_spline_fwd(dist_interp)
     interp_bwd=cubic_spline_bwd(dist_interp)
     area_functinon = interp_fwd - interp_bwd
@@ -98,7 +172,5 @@ def hysteresis(filepath: str, ROV_window: int) -> float:
     ax.plot(dist_interp * 1e6, interp_bwd * 1e9, label = "backward (interpolation)")
     ax.set_xlabel("Distance(μm)")
     ax.set_ylabel("Force(nN)")
-    plt.axvline(cp_fwd * 1e6, color="grey", linestyle="--", linewidth=1)
-    plt.axvline(cp_bwd * 1e6, color="grey", linestyle="--", linewidth=1)
     ax.legend()
     return area

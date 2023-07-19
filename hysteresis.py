@@ -173,16 +173,6 @@ area_fwd = integrate.simpson(cubic_spline_fwd(dist_bwd), dist_bwd)
 area_bwd = integrate.simpson(defl_processed_bwd, dist_bwd)
 print(area, area_fwd, area_bwd)
 #%%
-
-#%%
-
-
-
-
-
-
-
-
 # Truncation
 dist_fwd = dist_fwd[cp_idx+N:]
 dist_bwd = dist_bwd[cp_idx+N:]
