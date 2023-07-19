@@ -16,7 +16,7 @@ filepath = "Hydrogel AFM data/SD-Sphere-CONT-S/Highly Entangled Hydrogel(10nN, 1
 config, data = nanosurf.read_nid(filepath)
 # %%
 def get_sampling_rate(nid_config: ConfigParser) -> float:
-    spec_config = dict(config[r"DataSet\DataSetInfos\Spec"])
+    spec_config = dict(nid_config[r"DataSet\DataSetInfos\Spec"])
     num_points = int(spec_config["data points"])
     # May later use the pint library to parse unitful quantites
     modulation_time = float(spec_config["modulation time"].split(" ")[0])

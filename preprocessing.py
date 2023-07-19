@@ -12,7 +12,7 @@ from jhelabtoolkit.utils.plotting import configure_matplotlib_defaults
 
 configure_matplotlib_defaults()
 
-filepath = "data/230602_highlyentangled_preliminary/Hydrogel(liquid, 50nN, 10s).nid"
+filepath = "Hydrogel AFM data/SD-Sphere-CONT-L/Highly Entangled Hydrogel(10nN, 1s, liquid).nid"
 config, data = nanosurf.read_nid(filepath)
 # %%
 def get_sampling_rate(nid_config: ConfigParser) -> float:
@@ -97,7 +97,7 @@ cp = find_contact_point(dist_fwd, defl_fwd)
 cp
 # %%
 # ROV method
-N = 20
+N = 4
 rov_fwd = find_contact_point1(defl_fwd, N)[0]
 idx_fwd = find_contact_point1(defl_fwd, N)[1]
 rov_fwd_max = find_contact_point1(defl_fwd, N)[2]

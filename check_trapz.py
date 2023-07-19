@@ -1,4 +1,86 @@
 # %%
+from functools import partial
+
+import jax
+from jax import Array
+import jax.numpy as jnp
+import jaxopt
+
+def SLS(t: jax.Array, E0: float, E_inf: float, tau: float) -> jax.Array:
+    return E_inf+(E0-E_inf)*jnp.exp(-t/tau)
+
+sls = partial(SLS, E0=8.0, E_inf = 2.0, tau = 0.01)
+t_app = jnp.linspace(0, 0.2, 100)
+t_ret = jnp.linspace(0.2, 0.4, 100)
+sls(t_app)
+v_app = 10.0*jnp.ones_like(t_app)
+v_ret = -10.0*jnp.ones_like(t_ret)
+#%%
+@jax.jit
+def integrate_to(y: Array, x: Array, x_upper: float) -> Array:
+    return jax.lax.cond(x_upper>x[0], _integrate_to, lambda *_: jnp.array(0.0), y, x, x_upper)
+    
+def _integrate_to(y: Array, x: Array, x_upper: float) -> Array:
+    ind = jnp.searchsorted(x, x_upper)
+    mask = jnp.arange(x.shape[0]) < ind
+    y_, x_ = jnp.where(mask, y, 0), jnp.where(mask, x, 0)
+    y2, y1 = y[ind], y[ind-1]
+    x2, x1 = x[ind], x[ind-1]
+    y_upper = ((x_upper-x1)*y2+(x2-x_upper)*y1)/(x2-x1)
+    return jnp.trapz(y_, x=x_)+0.5*(y1+y_upper)*(x_upper-x1)
+
+def integrate_from(y: Array, x: Array, x_lower: float) -> Array:
+    ind = jnp.searchsorted(x, x_lower)
+    mask = jnp.arange(x.shape[0]) > ind
+    y_, x_ = jnp.where(mask, y, 0), jnp.where(mask, x, 0)
+    y2, y1 = y[ind], y[ind-1]
+    x2, x1 = x[ind], x[ind-1]
+#%%
+jax.grad(integrate_to, argnums=2)(v_ret, t_ret, 0.19)
+#%%
+def app_integral(t1, t, t_app, phi, v):
+    inds = t_app >= t1
+    t_, v_ = t_app[inds], v[inds]
+    return jnp.trapz(phi(t-t_)*v_, x=t_)
+
+def ret_integral(t, t_ret, phi, v):
+    inds = t_ret <= t
+    t_, v_ = t_ret[inds], v[inds]
+    return jnp.trapz(phi(t-t_)*v_, x=t_)
+
+def calc_t1(t, phi, t_app, t_ret, v_app, v_ret):
+    def objective(t1):
+        return app_integral(t1, t, t_app, phi, v_app) - ret_integral(t, t_ret, phi, v_ret)
+    jax.lax.cond(objective(0.0)<=0, jnp.ones_like)
+print(ret_integral(0.3, t_ret, sls, v_ret))
+print(app_integral(0.0, 0.3, t_app, sls, v_app))
+# %%
+t1_list = []
+for t in t_ret:
+    try:
+        bisect = jaxopt.Bisection(lambda t1: app_integral(t1, t, t_app, sls, v_app)+ret_integral(t, t_ret, sls, v_ret), lower=0.0, upper=0.2, jit=False)
+        t1_list.append(bisect.run().params)
+    except ValueError:
+        t1_list.append(0.0)
+t1_list = jnp.array(t1_list)
+#%%
+t1_list
+#%%
+import matplotlib.pyplot as plt
+plt.plot(t_ret, t1_list)
+
+#%%
+def t1_from_params(t, E0, E_inf, tau, t_app, t_ret, v_app, v_ret):
+    
+    def objective(t1, t, E0, E_inf, tau):
+        sls = partial(SLS, E0=E0, E_inf = E_inf, tau = tau)
+        return app_integral(t1, t, t_app, sls, v_app)+ret_integral(t, t_ret, sls, v_ret)
+    bisect = jaxopt.Bisection(objective, lower=0.0, upper=0.2, jit=False)
+    return bisect.run(t=t, E0=E0, E_inf=E_inf, tau=tau).params
+
+jax.grad(t1_from_params, argnums=2)(0.21, 8.0, 2.0, 0.01, t_app, t_ret, v_app, v_ret)
+
+#%%
 import jax
 import jax.numpy as jnp
 import diffrax
