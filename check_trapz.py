@@ -1,86 +1,206 @@
 # %%
+from typing import Callable
 from functools import partial
 
 import jax
+from jax import config
 from jax import Array
 import jax.numpy as jnp
+import equinox as eqx
 import jaxopt
 
-def SLS(t: jax.Array, E0: float, E_inf: float, tau: float) -> jax.Array:
-    return E_inf+(E0-E_inf)*jnp.exp(-t/tau)
+config.update("jax_enable_x64", True)
 
-sls = partial(SLS, E0=8.0, E_inf = 2.0, tau = 0.01)
+
+class SimpleLinearSolid(eqx.Module):
+    E0: float
+    E_inf: float
+    tau: float
+
+    def __init__(self, E0: float, E_inf: float, tau: float):
+        self.E0 = E0
+        self.E_inf = E_inf
+        self.tau = tau
+
+    def __call__(self, t: jax.Array) -> jax.Array:
+        return self.E_inf + (self.E0 - self.E_inf) * jnp.exp(-t / self.tau)
+
+
+sls = SimpleLinearSolid(E0=8.0, E_inf=2.0, tau=0.01)
 t_app = jnp.linspace(0, 0.2, 100)
 t_ret = jnp.linspace(0.2, 0.4, 100)
 sls(t_app)
-v_app = 10.0*jnp.ones_like(t_app)
-v_ret = -10.0*jnp.ones_like(t_ret)
-#%%
+v_app = 10.0 * jnp.ones_like(t_app)
+v_ret = -10.0 * jnp.ones_like(t_ret)
+# %%
+grads = jax.grad(lambda t, model: model(t), argnums=1)(0.1, sls)
+grads.E0
+
+
+# %%
 @jax.jit
-def integrate_to(y: Array, x: Array, x_upper: float) -> Array:
-    return jax.lax.cond(x_upper>x[0], _integrate_to, lambda *_: jnp.array(0.0), y, x, x_upper)
-    
-def _integrate_to(y: Array, x: Array, x_upper: float) -> Array:
+def integrate_to(x_upper: float, x: Array, y: Array) -> Array:
+    return jax.lax.cond(
+        x_upper > x[0], _integrate_to, lambda *_: jnp.array(0.0), x_upper, x, y
+    )
+
+
+def _integrate_to(x_upper: float, x: Array, y: Array) -> Array:
     ind = jnp.searchsorted(x, x_upper)
     mask = jnp.arange(x.shape[0]) < ind
-    y_, x_ = jnp.where(mask, y, 0), jnp.where(mask, x, 0)
-    y2, y1 = y[ind], y[ind-1]
-    x2, x1 = x[ind], x[ind-1]
-    y_upper = ((x_upper-x1)*y2+(x2-x_upper)*y1)/(x2-x1)
-    return jnp.trapz(y_, x=x_)+0.5*(y1+y_upper)*(x_upper-x1)
+    y_, x_ = jnp.where(mask, y, 0), jnp.where(mask, x, x[ind - 1])
+    y2, y1 = y[ind], y[ind - 1]
+    x2, x1 = x[ind], x[ind - 1]
+    y_upper = ((x_upper - x1) * y2 + (x2 - x_upper) * y1) / (x2 - x1)
+    return jnp.trapz(y_, x=x_) + 0.5 * (y1 + y_upper) * (x_upper - x1)
 
-def integrate_from(y: Array, x: Array, x_lower: float) -> Array:
-    ind = jnp.searchsorted(x, x_lower)
+
+@jax.jit
+def integrate_from(x_lower: float, x: Array, y: Array) -> Array:
+    return jax.lax.cond(
+        x_lower < x[-1], _integrate_from, lambda *_: jnp.array(0.0), x_lower, x, y
+    )
+
+
+def _integrate_from(x_lower: float, x: Array, y: Array) -> Array:
+    ind = jnp.searchsorted(x, x_lower, side="right")
     mask = jnp.arange(x.shape[0]) > ind
-    y_, x_ = jnp.where(mask, y, 0), jnp.where(mask, x, 0)
-    y2, y1 = y[ind], y[ind-1]
-    x2, x1 = x[ind], x[ind-1]
-#%%
-jax.grad(integrate_to, argnums=2)(v_ret, t_ret, 0.19)
-#%%
+    y_, x_ = jnp.where(mask, y, 0), jnp.where(mask, x, x[ind])
+    y2, y1 = y[ind], y[ind - 1]
+    x2, x1 = x[ind], x[ind - 1]
+    y_lower = ((x_lower - x1) * y2 + (x2 - x_lower) * y1) / (x2 - x1)
+    return jnp.trapz(y_, x=x_) + 0.5 * (y1 + y_lower) * (x_lower - x1)
+
+
+# %%
+x = jnp.arange(10)
+x_upper = 7.5
+ind = jnp.searchsorted(x, x_upper)
+mask = jnp.arange(x.shape[0]) < ind
+print(x[ind], x[ind - 1])
+x_ = jnp.where(mask, x, x[ind - 1])
+x_
+# %%
+x = jnp.arange(10)
+x_lower = 0.0
+ind = jnp.searchsorted(x, x_lower, side="right")
+mask = jnp.arange(x.shape[0]) >= ind
+print(x[ind], x[ind - 1])
+x_ = jnp.where(mask, x, x[ind])
+x_
+# %%
+jax.grad(integrate_to)(0.25, t_ret, v_ret)
+# %%
+jax.grad(integrate_from)(0.2, t_app, v_app)
+# %%
+jnp.trapz(jnp.array([1, 2, 3]), x=jnp.array([1, 1, 2]))
+
+
+# %%
 def app_integral(t1, t, t_app, phi, v):
     inds = t_app >= t1
     t_, v_ = t_app[inds], v[inds]
-    return jnp.trapz(phi(t-t_)*v_, x=t_)
+    return jnp.trapz(phi(t - t_) * v_, x=t_)
+
 
 def ret_integral(t, t_ret, phi, v):
     inds = t_ret <= t
     t_, v_ = t_ret[inds], v[inds]
-    return jnp.trapz(phi(t-t_)*v_, x=t_)
+    return jnp.trapz(phi(t - t_) * v_, x=t_)
+
 
 def calc_t1(t, phi, t_app, t_ret, v_app, v_ret):
     def objective(t1):
-        return app_integral(t1, t, t_app, phi, v_app) - ret_integral(t, t_ret, phi, v_ret)
-    jax.lax.cond(objective(0.0)<=0, jnp.ones_like)
+        return app_integral(t1, t, t_app, phi, v_app) - ret_integral(
+            t, t_ret, phi, v_ret
+        )
+
+    jax.lax.cond(objective(0.0) <= 0, jnp.ones_like)
+
+
 print(ret_integral(0.3, t_ret, sls, v_ret))
 print(app_integral(0.0, 0.3, t_app, sls, v_app))
+
+
+# %%
+def objective(
+    t1: float,
+    t: float,
+    model: Callable,
+    t_app: Array,
+    t_ret: Array,
+    v_app: Array,
+    v_ret: Array,
+) -> Array:
+    phi_app, phi_ret = model(t - t_app), model(t - t_ret)
+    return integrate_from(t1, t_app, phi_app * v_app) + integrate_to(
+        t, t_ret, phi_ret * v_ret
+    )
+
+
+def find_t1(
+    t: float,
+    model: Callable,
+    t_app: Array,
+    t_ret: Array,
+    v_app: Array,
+    v_ret: Array,
+) -> Array:
+    return jax.lax.cond(
+        objective(0.0, t, model, t_app, t_ret, v_app, v_ret) <= 0,
+        lambda *_: jnp.array(0.0),
+        _find_t1,
+        t,
+        model,
+        t_app,
+        t_ret,
+        v_app,
+        v_ret,
+    )
+
+
+def _find_t1(
+    t: float,
+    model: Callable,
+    t_app: Array,
+    t_ret: Array,
+    v_app: Array,
+    v_ret: Array,
+) -> Array:
+    root_finder = jaxopt.Bisection(optimality_fun=objective, lower=0.0, upper=0.2)
+    return root_finder.run(
+        t=t,
+        model=model,
+        t_app=t_app,
+        t_ret=t_ret,
+        v_app=v_app,
+        v_ret=v_ret,
+    ).params
+
+
+objective(0.0, 0.3, sls, t_app, t_ret, v_app, v_ret)
+# %%
+_find_t1(0.3, sls, t_app, t_ret, v_app, v_ret)
 # %%
 t1_list = []
 for t in t_ret:
     try:
-        bisect = jaxopt.Bisection(lambda t1: app_integral(t1, t, t_app, sls, v_app)+ret_integral(t, t_ret, sls, v_ret), lower=0.0, upper=0.2, jit=False)
-        t1_list.append(bisect.run().params)
+        t1_list.append(_find_t1(t, sls, t_app, t_ret, v_app, v_ret))
     except ValueError:
         t1_list.append(0.0)
 t1_list = jnp.array(t1_list)
-#%%
+# %%
 t1_list
-#%%
+# %%
 import matplotlib.pyplot as plt
+
 plt.plot(t_ret, t1_list)
+# %%
+jax.grad(_find_t1, argnums=1)(0.3, sls, t_app, t_ret, v_app, v_ret).tau
 
-#%%
-def t1_from_params(t, E0, E_inf, tau, t_app, t_ret, v_app, v_ret):
-    
-    def objective(t1, t, E0, E_inf, tau):
-        sls = partial(SLS, E0=E0, E_inf = E_inf, tau = tau)
-        return app_integral(t1, t, t_app, sls, v_app)+ret_integral(t, t_ret, sls, v_ret)
-    bisect = jaxopt.Bisection(objective, lower=0.0, upper=0.2, jit=False)
-    return bisect.run(t=t, E0=E0, E_inf=E_inf, tau=tau).params
+# %%
 
-jax.grad(t1_from_params, argnums=2)(0.21, 8.0, 2.0, 0.01, t_app, t_ret, v_app, v_ret)
-
-#%%
+# %%
 import jax
 import jax.numpy as jnp
 import diffrax
