@@ -1,130 +1,126 @@
 # %%
+from typing import Callable
+from functools import partial
+
 import jax
+from jax import Array, jit
 import jax.numpy as jnp
-import diffrax
+
+import jaxopt
 import matplotlib.pyplot as plt
-from tqdm import tqdm
+
+from neuralconstitutive.jax.constitutive import SimpleLinearSolid
+from neuralconstitutive.jax.integrate import integrate_from, integrate_to
+
+jax.config.update("jax_enable_x64", True)
 
 
-def PLR_relaxation(t, E0, gamma, t0):
-    return E0 * ((t + 1e-7) / t0) ** (-gamma)
-
-
-def indentation(t, v, t_max):
-    return v * (t_max - jnp.abs(t - t_max))
+sls = SimpleLinearSolid(E0=8.0, E_inf=2.0, tau=0.01)
+t_app = jnp.linspace(0, 0.2, 100)
+t_ret = jnp.linspace(0.2, 0.4, 100)
+sls(t_app)
+d_app = 10.0 * t_app
+v_app = 10.0 * jnp.ones_like(t_app)
+v_ret = -10.0 * jnp.ones_like(t_ret)
+# %%
+grads = jax.grad(lambda t, model: model(t), argnums=1)(0.1, sls)
+grads.E0
 
 
 # %%
-@jax.jit
-def cumtrapz(y, x):
-    # y, x: 1D arrays
-    dx = jnp.diff(x)
-    y_mid = (y[0:-1] + y[1:]) / 2
-    return jnp.insert(jnp.cumsum(y_mid * dx), 0, 0.0)
-
-
-# Check if our cumtrapz implementation works
-t = jnp.linspace(0, 2 * jnp.pi, 100)
-y = jnp.cos(t)  # jnp.sin(t)
-Y = cumtrapz(y, t)
-Y.shape
-# %%
-fig, ax = plt.subplots(1, 1, figsize=(7, 5))
-ax.plot(t, y, label="original")
-ax.plot(t, Y, label="Trapz")
-ax.legend()
-# %%
-v = 10
-t = jnp.linspace(0.0, 0.2, 100)
-I = v * t
-dI_beta = 2 * v * I  # 2IdI=2vI
-phi = PLR_relaxation(t, 0.572, 0.42, 1.0)
-phi_r = jnp.flip(phi)
-
-
-def F(i):
-    n = len(dI_beta)
-    y = phi_r[n - i - 1 :] * dI_beta[: i + 1]
-    return jnp.trapz(y, x=t[: i + 1])
-
-
-force = [F(i) for i in tqdm(range(len(dI_beta)))]
-# %%
-plt.plot(t, force)
-
-
-# %%
-def d_force(t_, u, args):
-    E0, gamma, t0, v, t_max, t = args
-    phi = PLR_relaxation(t - t_, E0, gamma, t0)
-    df = phi * 2 * v * jnp.sign(t_max - t_) * indentation(t_, v, t_max)
-    return df
-
-
-def force_true(t, args):
-    E0, gamma, t0, v, t_max = args
-    b = 2.0
-    coeff = (
-        E0
-        * t0**gamma
-        * b
-        * v**b
-        * jnp.exp(jax.scipy.special.betaln(b, 1.0 - gamma))
+def objective(
+    t1: float,
+    t: float,
+    model: Callable,
+    t_app: Array,
+    t_ret: Array,
+    v_app: Array,
+    v_ret: Array,
+) -> Array:
+    phi_app, phi_ret = model(t - t_app), model(t - t_ret)
+    return integrate_from(t1, t_app, phi_app * v_app) + integrate_to(
+        t, t_ret, phi_ret * v_ret
     )
-    return coeff * t ** (b - gamma)
 
 
-args = (0.572, 0.42, 1.0, 10, 0.2, 0.1)
-d_force(0.19, jnp.array([0.0]), args)
+@partial(jax.vmap, in_axes=(0, None, None, None, None, None))
+def find_t1(
+    t: float,
+    model: Callable,
+    t_app: Array,
+    t_ret: Array,
+    v_app: Array,
+    v_ret: Array,
+) -> Array:
+    sol_exists = objective(0.0, t, model, t_app, t_ret, v_app, v_ret) > 0.0
+    return jnp.where(
+        sol_exists, _find_t1(t, model, t_app, t_ret, v_app, v_ret), jnp.asarray(0.0)
+    )
+
+
+def _find_t1(
+    t: float,
+    model: Callable,
+    t_app: Array,
+    t_ret: Array,
+    v_app: Array,
+    v_ret: Array,
+) -> Array:
+    root_finder = jaxopt.Bisection(
+        optimality_fun=objective, lower=0.0, upper=0.2, check_bracket=False
+    )
+    return root_finder.run(
+        t=t,
+        model=model,
+        t_app=t_app,
+        t_ret=t_ret,
+        v_app=v_app,
+        v_ret=v_ret,
+    ).params
 
 
 # %%
-def force_trapz(t, ts):
-    args = (0.572, 0.42, 1.0, 10, 0.2, t)
-    ts_ = ts[ts <= t]
-    df = d_force(ts_, None, args)
-    return jnp.trapz(df, x=ts_)
+find_t1(t_ret, sls, t_app, t_ret, v_app, v_ret)
 
 
-ts = jnp.linspace(0, 0.199, 100)
-out_trapz = jnp.stack([force_trapz(t, ts) for t in tqdm(ts)], axis=-1)
-out_trapz
 # %%
-out_trapz
+@partial(jax.vmap, in_axes=(0, None, None, None, None, None, None))
+def force_approach(
+    t: float,
+    model: Callable,
+    t_app: Array,
+    d_app: Array,
+    v_app: Array,
+    a: float,
+    b: float,
+):
+    phi_app: Array = model(t - t_app)
+    integrand = phi_app * v_app * d_app ** (b - 1)
+    return integrate_to(t, t_app, integrand) * a
+
+
+@partial(jax.vmap, in_axes=(0, 0, None, None, None, None, None, None))
+def force_retract(
+    t: float,
+    t1: float,
+    model: Callable,
+    t_app: Array,
+    d_app: Array,
+    v_app: Array,
+    a: float,
+    b: float,
+):
+    phi_app: Array = model(t - t_app)
+    integrand = phi_app * v_app * d_app ** (b - 1)
+    return integrate_to(t1, t_app, integrand) * a
+
+
 # %%
-solver = diffrax.Midpoint()
-term = diffrax.ODETerm(d_force)
-sol = diffrax.diffeqsolve(term, solver, 0.0, 0.21, 0.1, jnp.array([0.0]), args=args)
-# %%
-sol.ys
-# %%
-ts = jnp.linspace(0, 0.2, 100)
-out = jnp.concatenate(
-    [
-        diffrax.diffeqsolve(
-            term,
-            solver,
-            0.0,
-            t,
-            0.01,
-            jnp.array([0.0]),
-            args=(0.572, 0.42, 1.0, 10, 0.2, t),
-        ).ys
-        for t in ts
-    ],
-    axis=-1,
-)
-# %%
-out
-# %%
-out_true = force_true(ts, (0.572, 0.42, 1.0, 10, 0.2))
-# %%
-out_true.shape
-# %%
-fig, ax = plt.subplots(1, 1, figsize=(7, 5))
-ax.plot(ts, out[0], label="ODESolve", alpha=0.5)
-ax.plot(ts, force, label="trapz", alpha=0.5)
-ax.plot(ts, out_true, label="analytical", alpha=0.5)
+fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+F_app = force_approach(t_app, sls, t_app, d_app, v_app, 1.0, 2.0)
+t1 = find_t1(t_ret, sls, t_app, t_ret, v_app, v_ret)
+F_ret = force_retract(t_ret, t1, sls, t_app, d_app, v_app, 1.0, 2.0)
+ax.plot(t_app, F_app, label="approach")
+ax.plot(t_ret, F_ret, label="retract")
 ax.legend()
-# %%
-# %%
+fig

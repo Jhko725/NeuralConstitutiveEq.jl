@@ -5,19 +5,20 @@ import scipy
 import torch
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
+from pytorch_lightning.callbacks import ModelCheckpoint
 import matplotlib.pyplot as plt
 
-from neuralconstitutive.tipgeometry import Conical
+from neuralconstitutive.tipgeometry import Conical, Spherical
 from neuralconstitutive.models import BernsteinNN, FullyConnectedNetwork
 from neuralconstitutive.ting import TingApproach
 from neuralconstitutive.dataset import IndentationDataset
 from neuralconstitutive.preprocessing import process_approach_data, estimate_derivative
 
 pl.seed_everything(10)
-datapath = "data/230602_highlyentangled_preliminary/Hydrogel(liquid, 50nN, 10s).nid"
+datapath = "Hydrogel AFM data/SD-Sphere-CONT-M/Highly Entangled Hydrogel(10nN, 1s, liquid).nid"
 
 # %%
-time, indent, force = process_approach_data(datapath, contact_point=1.64e-6, k=0.2)
+time, indent, force = process_approach_data(datapath, contact_point=-1.7937788208936754e-06, k=0.2)
 velocity = estimate_derivative(time, indent)
 fig, axes = plt.subplots(3, 1, figsize=(5, 5), sharex=True)
 yvals = (indent, velocity, force)
@@ -29,7 +30,7 @@ axes[-1].set_xlabel("Time (s)")
 
 
 # %%
-tip = Conical(torch.pi / 36)
+tip = Spherical(1.0) # diameter 0.8, 2.0, 4 -> R=0.4, 1.0, 2.0
 # model = nn.Sequential(
 #     nn.Linear(1, 20),
 #     nn.ELU(),
@@ -52,12 +53,12 @@ ting = TingApproach(BernsteinNN(model, 100), tip, lr=1e-2)
 dataset = IndentationDataset(
     time[1:] * 100,
     indent[1:] * 1e6,
-    0.126 * np.ones_like(indent[1:]),
+    velocity[1:]*1e4,
     force[1:] * 2e9,
     dtype=torch.float32,
 )
 # %%
-dataset.time
+dataset.velocity
 # %%
 # ting = ting.double()
 # %%
@@ -65,7 +66,7 @@ fig, axes = plt.subplots(3, 1, figsize=(5, 5), sharex=True)
 yvals = (dataset.indent.view(-1), dataset.velocity.view(-1), dataset.force.view(-1))
 ylabels = ("Indentation", "Velocity", "Force")
 for ax, y, ylab in zip(axes, yvals, ylabels):
-    ax.plot(dataset.time.view(-1), y)
+    ax.plot(dataset.time.view(-1), y, ".")
     ax.set_ylabel(ylab)
 axes[-1].set_xlabel("Time")
 
@@ -101,6 +102,12 @@ trainer = pl.Trainer(
     accelerator="gpu",
     devices=1,
     logger=logger,
+    callbacks=[ModelCheckpoint(
+                    monitor="train_loss",
+                    mode="min",
+                    save_top_k=1,
+                    filename="best_{epoch}-{step}",
+                ),]
 )
 trainer.fit(ting, dataloader)
 
@@ -124,6 +131,7 @@ with torch.no_grad():
 
 
 # %%
+torch.cuda.is_available()
 # %%
 def laplace_1d(t, func: Callable[[float], float]):
     def integrand(x):

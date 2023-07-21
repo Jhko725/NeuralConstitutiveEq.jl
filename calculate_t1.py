@@ -64,8 +64,20 @@ t1 = np.array([find_t1(t_, phi, 10.0, 0.2) for t_ in tqdm(t_ret)])
 fig, ax = plt.subplots(1, 1, figsize=(7, 5))
 ax.plot(t_ret.numpy(), t1, label="scipy")
 ax.legend()
+#%%
+def find_t1_torch(t:tuple[Tensor, Tensor], v:tuple[Tensor, Tensor], phi: ConstitutiveEqn):
+    t_app, t_ret = t
+    v_app, v_ret = v
+    M, N = len(t_app)-1, len(t_ret)-1
+    phi_total = torch.cat([phi(t_app), phi(t_ret[1:])])
 
+    def _ret_integral(m: int)->Tensor:
+        roi = slice(0, m-M+1)
+        phi_ = torch.flip(phi_total[roi], dims=(0,))
+        return torch.trapz(phi_*v_ret[roi], x=t_ret[roi])
 
+    def _app_integral(m1: int, m: int) -> Tensor:
+        
 # %%
 def ret_integral(t, t_ret, v_ret, phi):
     t_ret_ = t_ret[t_ret <= t]
