@@ -10,7 +10,7 @@ import jaxopt
 import matplotlib.pyplot as plt
 
 from neuralconstitutive.jax.constitutive import SimpleLinearSolid
-from neuralconstitutive.jax.integrate import integrate_from, integrate_to
+from neuralconstitutive.jax.ting import force_approach, force_retract, find_t1
 
 jax.config.update("jax_enable_x64", True)
 
@@ -20,101 +20,52 @@ t_app = jnp.linspace(0, 0.2, 100)
 t_ret = jnp.linspace(0.2, 0.4, 100)
 sls(t_app)
 d_app = 10.0 * t_app
+d_ret = -10.0 * t_ret
 v_app = 10.0 * jnp.ones_like(t_app)
 v_ret = -10.0 * jnp.ones_like(t_ret)
+
+
+# %%
+def simulate_data(
+    model: Callable,
+    t_app: Array,
+    t_ret: Array,
+    d_app: Array,
+    d_ret: Array,
+    v_app: Array,
+    v_ret: Array,
+    noise_strength: float,
+    random_seed: int,
+) -> tuple[Array, Array]:
+    key = jax.random.PRNGKey(random_seed)
+    f_app = force_approach(t_app, model, t_app, d_app, v_app, 1.0, 1.5)
+    t1 = find_t1(t_ret, model, t_app, t_ret, v_app, v_ret)
+    f_ret = force_retract(t_ret, t1, model, t_app, d_app, v_app, 1.0, 1.5)
+    noise_scale = jnp.max(f_app)
+    noise_app = jax.random.normal(key, f_app.shape) * noise_strength * noise_scale
+    noise_ret = (
+        jax.random.normal(jax.random.split(key, num=1), f_ret.shape)
+        * noise_strength
+        * noise_scale
+    )
+    return f_app + noise_app, f_ret + noise_ret
+
+
+# %%
+f_app, f_ret = simulate_data(sls, t_app, t_ret, d_app, d_ret, v_app, v_ret, 5e-3, 0)
+fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+ax.plot(t_app, f_app, ".", label="approach")
+ax.plot(t_ret, f_ret, ".", label="retract")
+ax.legend()
+fig
 # %%
 grads = jax.grad(lambda t, model: model(t), argnums=1)(0.1, sls)
 grads.E0
-
-
 # %%
-def objective(
-    t1: float,
-    t: float,
-    model: Callable,
-    t_app: Array,
-    t_ret: Array,
-    v_app: Array,
-    v_ret: Array,
-) -> Array:
-    phi_app, phi_ret = model(t - t_app), model(t - t_ret)
-    return integrate_from(t1, t_app, phi_app * v_app) + integrate_to(
-        t, t_ret, phi_ret * v_ret
-    )
-
-
-@partial(jax.vmap, in_axes=(0, None, None, None, None, None))
-def find_t1(
-    t: float,
-    model: Callable,
-    t_app: Array,
-    t_ret: Array,
-    v_app: Array,
-    v_ret: Array,
-) -> Array:
-    sol_exists = objective(0.0, t, model, t_app, t_ret, v_app, v_ret) > 0.0
-    return jnp.where(
-        sol_exists, _find_t1(t, model, t_app, t_ret, v_app, v_ret), jnp.asarray(0.0)
-    )
-
-
-def _find_t1(
-    t: float,
-    model: Callable,
-    t_app: Array,
-    t_ret: Array,
-    v_app: Array,
-    v_ret: Array,
-) -> Array:
-    root_finder = jaxopt.Bisection(
-        optimality_fun=objective, lower=0.0, upper=0.2, check_bracket=False
-    )
-    return root_finder.run(
-        t=t,
-        model=model,
-        t_app=t_app,
-        t_ret=t_ret,
-        v_app=v_app,
-        v_ret=v_ret,
-    ).params
-
-
+k = jax.random.PRNGKey(0)
+k
 # %%
-find_t1(t_ret, sls, t_app, t_ret, v_app, v_ret)
-
-
-# %%
-@partial(jax.vmap, in_axes=(0, None, None, None, None, None, None))
-def force_approach(
-    t: float,
-    model: Callable,
-    t_app: Array,
-    d_app: Array,
-    v_app: Array,
-    a: float,
-    b: float,
-):
-    phi_app: Array = model(t - t_app)
-    integrand = phi_app * v_app * d_app ** (b - 1)
-    return integrate_to(t, t_app, integrand) * a
-
-
-@partial(jax.vmap, in_axes=(0, 0, None, None, None, None, None, None))
-def force_retract(
-    t: float,
-    t1: float,
-    model: Callable,
-    t_app: Array,
-    d_app: Array,
-    v_app: Array,
-    a: float,
-    b: float,
-):
-    phi_app: Array = model(t - t_app)
-    integrand = phi_app * v_app * d_app ** (b - 1)
-    return integrate_to(t1, t_app, integrand) * a
-
-
+jax.random.split(k, num=2)
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
 F_app = force_approach(t_app, sls, t_app, d_app, v_app, 1.0, 2.0)
@@ -124,3 +75,5 @@ ax.plot(t_app, F_app, label="approach")
 ax.plot(t_ret, F_ret, label="retract")
 ax.legend()
 fig
+
+# %%
