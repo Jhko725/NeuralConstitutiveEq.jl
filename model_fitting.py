@@ -8,6 +8,7 @@ import kneed
 from numpy.polynomial.polynomial import Polynomial
 from scipy.interpolate import interp1d
 from scipy.integrate import quad
+from scipy.optimize import root_scalar
 import matplotlib.pyplot as plt
 from jhelabtoolkit.io.nanosurf import nanosurf
 from jhelabtoolkit.utils.plotting import configure_matplotlib_defaults
@@ -87,8 +88,6 @@ def fit_baseline_polynomial(
     return Polynomial.fit(
         distance[pre_contact], deflection[pre_contact], deg=degree, domain=domain
     )
-
-
 # %%
 z_fwd, defl_fwd = get_z_and_defl(forward)
 z_bwd, defl_bwd = get_z_and_defl(backward)
@@ -182,8 +181,31 @@ max_ind = np.argmax(indentation)
 t_max = time[max_ind]
 t_max
 indent_max = indentation[max_ind]
+#%%
+# max_ind(a[:max_ind+1])
+max_ind += 1
+F_app = force[:max_ind]
+F_ret = force[max_ind:]
+#%%
+# t_max 부분을 겹치게 해야 문제가 안생김
+indentation_app = indentation[:max_ind]
+indentation_ret = indentation[max_ind-1:]
+# print(len(time[:max_ind]), len(indentation_app))
+# print(len(time[max_ind:]), len(indentation_ret))
+time_app = time[:max_ind]
+time_ret = time[max_ind-1:]
+
+velocity_app = estimate_derivative(time_app, indentation_app)
+velocity_ret = estimate_derivative(time_ret, indentation_ret)
+
+indentation_app_func = interp1d(time_app, indentation_app)
+indentation_ret_func = interp1d(time_ret, indentation_ret)
+velocity_app_func = interp1d(time_app, velocity_app)
+velocity_ret_func = interp1d(time_ret, velocity_ret)
 
 #%%
+velocity_app_func
+# %%
 # PLR model fitting
 def PLR_constit_integand(t_, t, E0, alpha, t_prime, velocity, indentation, tip):
     a = tip.alpha
@@ -205,35 +227,18 @@ def F_app_integral(t__, E0_, alpha_, t_prime_, velocity_, indentation_, tip_):
         F.append(quad(integrand_, 0, i)[0])
     return F
 #%%
-F_app = force[:max_ind]
-F_ret = force[max_ind:]
-#%%
-indentation_app = indentation[:max_ind]
-indentation_ret = indentation[max_ind:]
-# print(len(time[:max_ind]), len(indentation_app))
-# print(len(time[max_ind:]), len(indentation_ret))
-time_app = time[:max_ind]
-time_ret = time[max_ind:]
-
-velocity_app = estimate_derivative(time_app, indentation_app)
-velocity_ret = estimate_derivative(time_ret, indentation_ret)
-
-indentation_app_func = interp1d(time_app, indentation_app)
-indentation_ret_func = interp1d(time_ret, indentation_ret)
-velocity_app_func = interp1d(time_app, velocity_app)
-velocity_ret_func = interp1d(time_ret, velocity_ret)
-# %%
 # Determination of Variable
 tip = Spherical(0.8*1e-6)
 E0 = 0.562
 alpha = 0.2
 time = time_app
 Force = F_app_integral(t__= time, E0_= E0, alpha_=alpha, t_prime_=1e-5, indentation_=indentation_app_func, velocity_=velocity_app_func, tip_=tip)
-#%%
+
 # Curve Fitting(PLR model)
 F_app_func = partial(F_app_integral, t_prime_=1e-5, indentation_=indentation_app_func, velocity_=velocity_app_func, tip_=tip)
 popt, pcov = curve_fit(F_app_func, time_app, F_app)
 F_app_curvefit = np.array(F_app_func(time, *popt))
+print(popt)
 # %%
 fig, ax = plt.subplots(1,1, figsize=(7,5))
 ax.plot(time, F_app*1e9, color="red")
@@ -241,5 +246,48 @@ ax.plot(time, F_app_curvefit*1e9, color="blue")
 ax.set_xlabel("Time(s)")
 ax.set_ylabel("Force(nN)")
 # %%
-
+# Find t1
+def Integrand(t_, E0, t, t_prime, alpha, velocity):
+    return (E0 * (1 + (t-t_)/t_prime) ** (-alpha)) * velocity(t_)
+#%%
+def Quadrature(t1, t_, t_max_, E0_, t_prime_, alpha_, velocity_app, velocity_ret):
+    integrand_app = partial(Integrand, E0=E0_, t=t_, t_prime=t_prime_, alpha=alpha_, velocity=velocity_app)
+    integrand_ret = partial(Integrand, E0=E0_, t=t_, t_prime=t_prime_, alpha=alpha_, velocity=velocity_ret)
+    quad_app = quad(integrand_app, t1, t_max_)
+    quad_ret = quad(integrand_ret, t_max_, t_)
+    return quad_app[0] + quad_ret[0]
+#%%
+def Calculation_t1(time_ret, t_max__, E0__, t_prime__, alpha__, velocity_app__, velocity_ret__):
+    t1 = []
+    for i in time_ret:
+        quadrature = partial(Quadrature, 
+                        t_=i, 
+                        t_max_=t_max__,
+                        E0_=E0__,
+                        t_prime_ = t_prime__,
+                        alpha_ = alpha__,
+                        velocity_app=velocity_app__,
+                        velocity_ret=velocity_ret__)
+        if quadrature(t1=0)*quadrature(t1=t_max__) > 0:
+            t1.append(0)       
+        else :
+            t_1 = root_scalar(quadrature, method='bisect', bracket=(0, t_max))
+            t1.append(t_1.root)
+    return t1
+# %%
+t1 = Calculation_t1(time_ret, t_max, E0, 1e-5, 0.2, velocity_app_func, velocity_ret_func)
+print(t1)
+# %%
+tip = Spherical(0.8*1e-6)
+E0 = 0.562
+alpha = 0.2
+time = time_app
+# velocity_ret, indentation_ret은 t1에 해당하는 값을 못먹음(interpolation 범위를 넘어섬)
+Force = F_app_integral(t__= t1, E0_= E0, alpha_=alpha, t_prime_=1e-5, indentation_=indentation_app_func, velocity_=velocity_app_func, tip_=tip)
+Force = np.array(Force)
+# %%
+fig, ax = plt.subplots(1,1, figsize=(7,5))
+ax.plot(time_ret, Force*1e9, color="red")
+ax.set_xlabel("Time(s)")
+ax.set_ylabel("Force(nN)")
 # %%
