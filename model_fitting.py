@@ -139,7 +139,7 @@ defl_processed_bwd = defl_bwd - baseline_poly_bwd(dist_bwd)
 baseline_poly_bwd
 # baseline_poly_bwd
 # %%
-fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+fig, ax = plt.subplots(1, 1, figsize=(7, 5))
 ax.plot(dist_fwd*1e6, defl_fwd*1e9, label="forward")
 ax.plot(dist_bwd*1e6, defl_bwd*1e9, label="backward")
 ax.set_xlabel("Distance(μm)")
@@ -147,7 +147,7 @@ ax.set_ylabel("Force(nN)")
 plt.axvline(cp_fwd, color="grey", linestyle="--", linewidth=1)
 ax.legend()
 # %%
-fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+fig, ax = plt.subplots(1, 1, figsize=(7, 5))
 ax.plot(dist_fwd*1e6, defl_processed_fwd*1e9, label="forward")
 ax.plot(dist_bwd*1e6, defl_processed_bwd*1e9, label="backward")
 ax.set_xlabel("Distance(μm)")
@@ -164,8 +164,8 @@ dist_total = np.concatenate((dist_fwd, dist_bwd[::-1]), axis=-1)
 defl_total = np.concatenate((defl_fwd, defl_bwd[::-1]), axis=-1)
 is_contact = dist_total >= 0
 indentation = dist_total[is_contact]
-k = 0.2  # N/m
-force = defl_total[is_contact] * k
+# k = 0.2  # N/m
+force = defl_total[is_contact]
 sampling_rate = get_sampling_rate(config)
 time = np.arange(len(indentation)) / sampling_rate
 print(len(time))
@@ -179,21 +179,17 @@ axes[1].plot(time, force*1e9)
 # %%
 max_ind = np.argmax(indentation)
 t_max = time[max_ind]
-t_max
 indent_max = indentation[max_ind]
 #%%
-# max_ind(a[:max_ind+1])
-max_ind += 1
-F_app = force[:max_ind]
+F_app = force[:max_ind+1]
 F_ret = force[max_ind:]
 #%%
 # t_max 부분을 겹치게 해야 문제가 안생김
-indentation_app = indentation[:max_ind]
-indentation_ret = indentation[max_ind-1:]
-# print(len(time[:max_ind]), len(indentation_app))
-# print(len(time[max_ind:]), len(indentation_ret))
-time_app = time[:max_ind]
-time_ret = time[max_ind-1:]
+indentation_app = indentation[:max_ind+1]
+indentation_ret = indentation[max_ind:]
+
+time_app = time[:max_ind+1]
+time_ret = time[max_ind:]
 
 velocity_app = estimate_derivative(time_app, indentation_app)
 velocity_ret = estimate_derivative(time_ret, indentation_ret)
@@ -202,9 +198,6 @@ indentation_app_func = interp1d(time_app, indentation_app)
 indentation_ret_func = interp1d(time_ret, indentation_ret)
 velocity_app_func = interp1d(time_app, velocity_app)
 velocity_ret_func = interp1d(time_ret, velocity_ret)
-
-#%%
-velocity_app_func
 # %%
 # PLR model fitting
 def PLR_constit_integand(t_, t, E0, alpha, t_prime, velocity, indentation, tip):
@@ -226,6 +219,21 @@ def F_app_integral(t__, E0_, alpha_, t_prime_, velocity_, indentation_, tip_):
             tip=tip_)
         F.append(quad(integrand_, 0, i)[0])
     return F
+
+def F_ret_integral(t__, t___, E0_, alpha_, t_prime_, velocity_, indentation_, tip_):
+    F = []
+    for i, j in zip(t__, t___):
+        integrand_ = partial(
+            PLR_constit_integand, 
+            t=j,
+            E0=E0_, 
+            alpha=alpha_, 
+            t_prime=t_prime_, 
+            velocity=velocity_, 
+            indentation=indentation_,
+            tip=tip_)
+        F.append(quad(integrand_, 0, i)[0])
+    return F
 #%%
 # Determination of Variable
 tip = Spherical(0.8*1e-6)
@@ -234,7 +242,7 @@ alpha = 0.2
 time = time_app
 Force = F_app_integral(t__= time, E0_= E0, alpha_=alpha, t_prime_=1e-5, indentation_=indentation_app_func, velocity_=velocity_app_func, tip_=tip)
 
-# Curve Fitting(PLR model)
+# Curve Fitting(PLR model) Approach Region
 F_app_func = partial(F_app_integral, t_prime_=1e-5, indentation_=indentation_app_func, velocity_=velocity_app_func, tip_=tip)
 popt, pcov = curve_fit(F_app_func, time_app, F_app)
 F_app_curvefit = np.array(F_app_func(time, *popt))
@@ -278,16 +286,50 @@ def Calculation_t1(time_ret, t_max__, E0__, t_prime__, alpha__, velocity_app__, 
 t1 = Calculation_t1(time_ret, t_max, E0, 1e-5, 0.2, velocity_app_func, velocity_ret_func)
 print(t1)
 # %%
+# Test Retraction Region
 tip = Spherical(0.8*1e-6)
-E0 = 0.562
-alpha = 0.2
-time = time_app
+E0 = popt[0]
+alpha = popt[1]
+time = time_ret
+
 # velocity_ret, indentation_ret은 t1에 해당하는 값을 못먹음(interpolation 범위를 넘어섬)
-Force = F_app_integral(t__= t1, E0_= E0, alpha_=alpha, t_prime_=1e-5, indentation_=indentation_app_func, velocity_=velocity_app_func, tip_=tip)
+Force = F_ret_integral(t__= t1, t___ = time_ret, E0_= E0, alpha_=alpha, t_prime_=1e-5, indentation_=indentation_app_func, velocity_=velocity_app_func, tip_=tip)
 Force = np.array(Force)
 # %%
-fig, ax = plt.subplots(1,1, figsize=(7,5))
+fig, ax = plt.subplots(1, 1, figsize=(7,5))
 ax.plot(time_ret, Force*1e9, color="red")
 ax.set_xlabel("Time(s)")
 ax.set_ylabel("Force(nN)")
+#%%
+# Curve Fitting(PLR model) Retraction Region
+def F_ret_integral_test(t__, E0_, alpha_, t_prime_, indentation_, tip_, velocity_app, velocity_ret):
+    t1 = Calculation_t1(t__, t__[0], E0_, t_prime_, alpha_, velocity_app, velocity_ret)
+    F = []
+    for i, j in zip(t__, t1):
+        integrand_ = partial(
+            PLR_constit_integand, 
+            t=i,
+            E0=E0_, 
+            alpha=alpha_, 
+            t_prime=t_prime_, 
+            velocity=velocity_app, 
+            indentation=indentation_,
+            tip=tip_)
+        F.append(quad(integrand_, 0, j)[0])
+    return F
+#%%
+F_ret_integral_test(
+    t__ = time_ret, 
+    E0_= E0, 
+    alpha_=alpha, 
+    t_prime_=1e-5, 
+    indentation_=indentation_app_func,
+    velocity_app=velocity_app_func, 
+    velocity_ret=velocity_ret_func, 
+    tip_=tip) 
+# %%
+F_ret_func = partial(F_ret_integral_test, t_prime_=1e-5, indentation_=indentation_app_func, velocity_app=velocity_app_func, velocity_ret=velocity_ret_func, tip_=tip)
+popt, pcov = curve_fit(F_ret_func, time_ret, F_ret)
+F_ret_curvefit = np.array(F_ret_func(time, *popt))
+print(popt)
 # %%
