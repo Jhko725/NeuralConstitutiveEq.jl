@@ -4,7 +4,6 @@ from functools import partial
 import numpy as np
 from numpy import ndarray
 import xarray as xr
-import kneed
 from numpy.polynomial.polynomial import Polynomial
 from scipy.interpolate import interp1d
 from scipy.integrate import quad
@@ -332,4 +331,72 @@ F_ret_func = partial(F_ret_integral_test, t_prime_=1e-5, indentation_=indentatio
 popt, pcov = curve_fit(F_ret_func, time_ret, F_ret)
 F_ret_curvefit = np.array(F_ret_func(time, *popt))
 print(popt)
+# %%
+fig, ax = plt.subplots(1,1, figsize=(7,5))
+ax.plot(time_ret, F_ret*1e9, color="red")
+ax.plot(time_ret, F_ret_curvefit*1e9, color="blue")
+ax.set_xlabel("Time(s)")
+ax.set_ylabel("Force(nN)")
+# %%
+def F_total_integral(time, E0_, alpha_, max_ind, t_prime_, indentation_, tip_, velocity_app, velocity_ret):
+    time_app = time[:max_ind+1]
+    time_ret = time[max_ind:]
+    t1 = Calculation_t1(time_ret, time_ret[0], E0_, t_prime_, alpha_, velocity_app, velocity_ret)
+    F_app = []
+    for i in time_app:
+        integrand_ = partial(
+            PLR_constit_integand, 
+            t=i,
+            E0=E0_, 
+            alpha=alpha_, 
+            t_prime=t_prime_, 
+            velocity=velocity_app, 
+            indentation=indentation_,
+            tip=tip_)
+        F_app.append(quad(integrand_, 0, i)[0])
+
+    F_ret = []
+    for i, j in zip(time_ret, t1):
+        integrand_ = partial(
+            PLR_constit_integand, 
+            t=i,
+            E0=E0_, 
+            alpha=alpha_, 
+            t_prime=t_prime_, 
+            velocity=velocity_app, 
+            indentation=indentation_,
+            tip=tip_)
+        F_ret.append(quad(integrand_, 0, j)[0])
+    
+    F = F_app[:-1] + F_ret
+    return F
+#%%
+tip = Spherical(0.8*1e-6)
+E0 = 0.562
+alpha = 0.2
+a = F_total_integral(time=time, max_ind=max_ind, E0_= E0, alpha_=alpha, t_prime_=1e-5, indentation_=indentation_app_func, velocity_app=velocity_app_func, velocity_ret=velocity_ret_func, tip_=tip)
+# %%
+fig, ax = plt.subplots(1,1, figsize=(7,5))
+ax.plot(time, a, color="red")
+ax.set_xlabel("Time(s)")
+ax.set_ylabel("Force(nN)")
+# %%
+F_total_func = partial(
+    F_total_integral,
+    max_ind=max_ind,
+    t_prime_=1e-5, 
+    indentation_=indentation_app_func, 
+    velocity_app=velocity_app_func, 
+    velocity_ret=velocity_ret_func, 
+    tip_=tip)
+# %%
+popt, pcov = curve_fit(F_total_func, time, force)
+F_total_curvefit = np.array(F_total_func(time, *popt))
+print(popt)
+#%%
+fig, ax = plt.subplots(1,1, figsize=(7,5))
+ax.plot(time, F_total_curvefit*1e9)
+ax.plot(time, force*1e9)
+ax.set_xlabel("Time(s)")
+ax.set_ylabel("Force(nN)")
 # %%
