@@ -41,22 +41,7 @@ def get_z_and_defl(spectroscopy_data: xr.DataArray) -> tuple[ndarray, ndarray]:
 def calc_tip_distance(piezo_z_pos: ndarray, deflection: ndarray) -> ndarray:
     return piezo_z_pos - deflection
 
-
-def find_contact_point(distance: ndarray, deflection: ndarray) -> float:
-    # Right now, only support 1D arrays of tip_distance and tip_deflection
-    locator = kneed.KneeLocator(
-        distance,
-        deflection,
-        S=10,
-        curve="convex",
-        direction="increasing",
-        interp_method="polynomial",
-        polynomial_degree=7,
-    )
-    return locator.knee
-
-
-def find_contact_point1(deflection: ndarray, N: int) -> ndarray:
+def find_contact_point(deflection: ndarray, N: int) -> ndarray:
     # Ratio of Variance
     rov = np.array([])
     length = np.arange(np.size(deflection))
@@ -92,22 +77,20 @@ z_fwd, defl_fwd = get_z_and_defl(forward)
 z_bwd, defl_bwd = get_z_and_defl(backward)
 dist_fwd = calc_tip_distance(z_fwd, defl_fwd)
 dist_bwd = calc_tip_distance(z_bwd, defl_bwd)
-cp = find_contact_point(dist_fwd, defl_fwd)
-# %%
-cp
+#cp = find_contact_point(dist_fwd, defl_fwd)
 # %%
 # ROV method
 N = 10
-rov_fwd = find_contact_point1(defl_fwd, N)[0]
-idx_fwd = find_contact_point1(defl_fwd, N)[1]
-rov_fwd_max = find_contact_point1(defl_fwd, N)[2]
+rov_fwd = find_contact_point(defl_fwd, N)[0]
+idx_fwd = find_contact_point(defl_fwd, N)[1]
+rov_fwd_max = find_contact_point(defl_fwd, N)[2]
 
-rov_bwd = find_contact_point1(defl_bwd, N)[0]
-idx_bwd = find_contact_point1(defl_bwd, N)[1]
-rov_bwd_max = find_contact_point1(defl_bwd, N)[2]
+rov_bwd = find_contact_point(defl_bwd, N)[0]
+idx_bwd = find_contact_point(defl_bwd, N)[1]
+rov_bwd_max = find_contact_point(defl_bwd, N)[2]
 # %%
 fig, ax = plt.subplots(1, 1, figsize = (5, 3))
-ax.plot(dist_fwd[N:np.size(dist_fwd)-N], find_contact_point1(defl_fwd, N)[0])
+ax.plot(dist_fwd[N:np.size(dist_fwd)-N], find_contact_point(defl_fwd, N)[0])
 ax.set_xlabel("Distance(forward)")
 ax.set_ylabel("ROV")
 plt.axvline(dist_fwd[N+idx_fwd], color="black", linestyle="--", linewidth=1.5, label="maximum point")
@@ -381,6 +364,7 @@ ax.plot(time, a, color="red")
 ax.set_xlabel("Time(s)")
 ax.set_ylabel("Force(nN)")
 # %%
+tip = Spherical(0.8*1e-6)
 F_total_func = partial(
     F_total_integral,
     max_ind=max_ind,
@@ -394,7 +378,7 @@ popt, pcov = curve_fit(F_total_func, time, force)
 F_total_curvefit = np.array(F_total_func(time, *popt))
 print(popt)
 #%%
-fig, ax = plt.subplots(1,1, figsize=(7,5))
+fig, ax = plt.subplots(1,1, figsize=(10,7))
 ax.plot(time, F_total_curvefit*1e9)
 ax.plot(time, force*1e9)
 ax.set_xlabel("Time(s)")
