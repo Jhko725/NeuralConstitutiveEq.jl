@@ -36,8 +36,6 @@ get_sampling_rate(config)
 # %%
 forward, backward = data["spec forward"], data["spec backward"]
 
-forward
-
 
 # %%
 def get_z_and_defl(spectroscopy_data: xr.DataArray) -> tuple[ndarray, ndarray]:
@@ -50,7 +48,7 @@ def calc_tip_distance(piezo_z_pos: ndarray, deflection: ndarray) -> ndarray:
     return piezo_z_pos - deflection
 
 
-def find_contact_point1(deflection: ndarray, N: int) -> ndarray:
+def find_contact_point(deflection: ndarray, N: int) -> ndarray:
     # Ratio of Variance
     rov = np.array([])
     length = np.arange(np.size(deflection))
@@ -76,7 +74,7 @@ def find_contact_point1(deflection: ndarray, N: int) -> ndarray:
 def fit_baseline_polynomial(
     distance: ndarray, deflection: ndarray, contact_point: float = 0.0, degree: int = 1
 ) -> Polynomial:
-    pre_contact = distance < contact_point
+    pre_contact = distance <= contact_point
     domain = (np.amin(distance), np.amax(distance))
     return Polynomial.fit(
         distance[pre_contact], deflection[pre_contact], deg=degree, domain=domain
@@ -88,19 +86,20 @@ z_fwd, defl_fwd = get_z_and_defl(forward)
 z_bwd, defl_bwd = get_z_and_defl(backward)
 dist_fwd = calc_tip_distance(z_fwd, defl_fwd)
 dist_bwd = calc_tip_distance(z_bwd, defl_bwd)
+# cp = find_contact_point(dist_fwd, defl_fwd)
 # %%
 # ROV method
 N = 10
-rov_fwd = find_contact_point1(defl_fwd, N)[0]
-idx_fwd = find_contact_point1(defl_fwd, N)[1]
-rov_fwd_max = find_contact_point1(defl_fwd, N)[2]
+rov_fwd = find_contact_point(defl_fwd, N)[0]
+idx_fwd = find_contact_point(defl_fwd, N)[1]
+rov_fwd_max = find_contact_point(defl_fwd, N)[2]
 
-rov_bwd = find_contact_point1(defl_bwd, N)[0]
-idx_bwd = find_contact_point1(defl_bwd, N)[1]
-rov_bwd_max = find_contact_point1(defl_bwd, N)[2]
+rov_bwd = find_contact_point(defl_bwd, N)[0]
+idx_bwd = find_contact_point(defl_bwd, N)[1]
+rov_bwd_max = find_contact_point(defl_bwd, N)[2]
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-ax.plot(dist_fwd[N : np.size(dist_fwd) - N], find_contact_point1(defl_fwd, N)[0])
+ax.plot(dist_fwd[N : np.size(dist_fwd) - N], find_contact_point(defl_fwd, N)[0])
 ax.set_xlabel("Distance(forward)")
 ax.set_ylabel("ROV")
 plt.axvline(
@@ -164,6 +163,7 @@ is_contact = dist_total >= 0
 indentation = dist_total[is_contact]
 # k = 0.2  # N/m
 force = defl_total[is_contact]
+force -= force[0]
 sampling_rate = get_sampling_rate(config)
 time = np.arange(len(indentation)) / sampling_rate
 print(len(time))
@@ -196,6 +196,13 @@ indentation_app_func = interp1d(time_app, indentation_app)
 indentation_ret_func = interp1d(time_ret, indentation_ret)
 velocity_app_func = interp1d(time_app, velocity_app)
 velocity_ret_func = interp1d(time_ret, velocity_ret)
+# %%
+# Truncation negrative force region
+negative_idx = np.where(F_ret < 0)[0]
+negative_idx = negative_idx[0]
+# %%
+F_ret = F_ret[:negative_idx]
+time_ret = time_ret[:negative_idx]
 
 
 # %%
@@ -252,9 +259,9 @@ def F_ret_integral(t__, t___, E0_, alpha_, t_prime_, velocity_, indentation_, ti
 tip = Spherical(0.8 * 1e-6)
 E0 = 0.562
 alpha = 0.2
-time = time_app
+# %%
 Force = F_app_integral(
-    t__=time,
+    t__=time_app,
     E0_=E0,
     alpha_=alpha,
     t_prime_=1e-5,
@@ -271,13 +278,13 @@ F_app_func = partial(
     velocity_=velocity_app_func,
     tip_=tip,
 )
-popt, pcov = curve_fit(F_app_func, time_app, F_app)
-F_app_curvefit = np.array(F_app_func(time, *popt))
-print(popt)
+popt_app, pcov_app = curve_fit(F_app_func, time_app, F_app)
+F_app_curvefit = np.array(F_app_func(time_app, *popt_app))
+print(popt_app)
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(7, 5))
-ax.plot(time, F_app * 1e9, color="red")
-ax.plot(time, F_app_curvefit * 1e9, color="blue")
+ax.plot(time_app, F_app * 1e9, color="red")
+ax.plot(time_app, F_app_curvefit * 1e9, color="blue")
 ax.set_xlabel("Time(s)")
 ax.set_ylabel("Force(nN)")
 
@@ -333,9 +340,9 @@ print(t1)
 # %%
 # Test Retraction Region
 tip = Spherical(0.8 * 1e-6)
-E0 = popt[0]
-alpha = popt[1]
-time = time_ret
+E0 = popt_app[0]
+alpha = popt_app[1]
+# time = time_ret
 
 # velocity_ret, indentation_ret은 t1에 해당하는 값을 못먹음(interpolation 범위를 넘어섬)
 Force = F_ret_integral(
@@ -379,17 +386,6 @@ def F_ret_integral_test(
 
 
 # %%
-F_ret_integral_test(
-    t__=time_ret,
-    E0_=E0,
-    alpha_=alpha,
-    t_prime_=1e-5,
-    indentation_=indentation_app_func,
-    velocity_app=velocity_app_func,
-    velocity_ret=velocity_ret_func,
-    tip_=tip,
-)
-# %%
 F_ret_func = partial(
     F_ret_integral_test,
     t_prime_=1e-5,
@@ -398,9 +394,9 @@ F_ret_func = partial(
     velocity_ret=velocity_ret_func,
     tip_=tip,
 )
-popt, pcov = curve_fit(F_ret_func, time_ret, F_ret)
-F_ret_curvefit = np.array(F_ret_func(time, *popt))
-print(popt)
+popt_ret, pcov_ret = curve_fit(F_ret_func, time_ret, F_ret)
+F_ret_curvefit = np.array(F_ret_func(time_ret, *popt_ret))
+print(popt_ret)
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(7, 5))
 ax.plot(time_ret, F_ret * 1e9, color="red")
@@ -452,24 +448,33 @@ def F_total_integral(
 
 # %%
 tip = Spherical(0.8 * 1e-6)
-E0 = 0.562
-alpha = 0.2
-a = F_total_integral(
+length = len(time_app) + len(time_ret) - 1
+time = time[:length]
+force = force[:length]
+force_app_parameter = F_total_integral(
     time=time,
     max_ind=max_ind,
-    E0_=E0,
-    alpha_=alpha,
+    E0_=popt_app[0],
+    alpha_=popt_app[1],
     t_prime_=1e-5,
     indentation_=indentation_app_func,
     velocity_app=velocity_app_func,
     velocity_ret=velocity_ret_func,
     tip_=tip,
 )
-# %%
-fig, ax = plt.subplots(1, 1, figsize=(7, 5))
-ax.plot(time, a, color="red")
-ax.set_xlabel("Time(s)")
-ax.set_ylabel("Force(nN)")
+force_ret_parameter = F_total_integral(
+    time=time,
+    max_ind=max_ind,
+    E0_=popt_ret[0],
+    alpha_=popt_ret[1],
+    t_prime_=1e-5,
+    indentation_=indentation_app_func,
+    velocity_app=velocity_app_func,
+    velocity_ret=velocity_ret_func,
+    tip_=tip,
+)
+force_app_parameter = np.array(force_app_parameter)
+force_ret_parameter = np.array(force_ret_parameter)
 # %%
 F_total_func = partial(
     F_total_integral,
@@ -481,13 +486,23 @@ F_total_func = partial(
     tip_=tip,
 )
 # %%
-popt, pcov = curve_fit(F_total_func, time, force)
-F_total_curvefit = np.array(F_total_func(time, *popt))
-print(popt)
+popt_total, pcov_total = curve_fit(F_total_func, time, force)
+F_total_curvefit = np.array(F_total_func(time, *popt_total))
+print(popt_total)
 # %%
-fig, ax = plt.subplots(1, 1, figsize=(7, 5))
-ax.plot(time, F_total_curvefit * 1e9)
-ax.plot(time, force * 1e9)
+fig, ax = plt.subplots(1, 1, figsize=(10, 7))
+ax.plot(time, F_total_curvefit * 1e9, label="total curvefit")
+ax.plot(time, force * 1e9, ".", label="experiment data")
+ax.plot(time, force_app_parameter * 1e9, label="approach curvefit")
+ax.plot(time, force_ret_parameter * 1e9, label="retraction curvefit")
 ax.set_xlabel("Time(s)")
 ax.set_ylabel("Force(nN)")
+ax.legend()
+# %%
+x = ["Approach", "Retraction", "Total"]
+modulus = [popt_app[0], popt_ret[0], popt_total[0]]
+alpha = [popt_app[1], popt_ret[1], popt_total[1]]
+fig, axes = plt.subplots(1, 2, figsize=(15, 7))
+axes[0].plot(x, modulus)
+axes[1].plot(x, alpha)
 # %%
