@@ -400,3 +400,39 @@ fig, axes = plt.subplots(1, 2, figsize=(15,7))
 axes[0].plot(x, modulus)
 axes[1].plot(x, alpha)
 # %%
+F_at_rp = F_app_integral(t__= time_app, E0_= popt_ret[0], alpha_=popt_ret[1], t_prime_=1e-5, indentation_=indentation_app_func, velocity_=velocity_app_func, tip_=tip)
+F_at_tp = F_app_integral(t__= time_app, E0_= popt_total[0], alpha_=popt_total[1], t_prime_=1e-5, indentation_=indentation_app_func, velocity_=velocity_app_func, tip_=tip)
+
+t1_rt_ap = Calculation_t1(time_ret, t_max, popt_app[0], 1e-5, popt_app[1], velocity_app_func, velocity_ret_func)
+t1_rt_tp = Calculation_t1(time_ret, t_max, popt_total[0], 1e-5,  popt_total[1], velocity_app_func, velocity_ret_func)
+F_rt_ap = F_ret_integral(t__ = t1_rt_ap, t___= time_ret, E0_= popt_app[0], alpha_=popt_app[1], t_prime_=1e-5, indentation_=indentation_app_func, velocity_=velocity_app_func, tip_=tip)
+F_rt_tp = F_ret_integral(t__ = t1_rt_tp, t___= time_ret, E0_= popt_total[0], alpha_=popt_total[1], t_prime_=1e-5, indentation_=indentation_app_func, velocity_=velocity_app_func, tip_=tip)
+# %%
+MSE_apptime_appparams =np.sum(np.square(F_app_curvefit-F_app))
+MSE_apptime_retparams = np.sum(np.square(F_at_rp-F_app))
+MSE_apptime_totparams = np.sum(np.square(F_at_tp-F_app))
+
+MSE_rettime_appparams = np.sum(np.square(F_rt_ap-F_ret))
+MSE_rettime_retparams = np.sum(np.square(F_ret_curvefit-F_ret))
+MSE_rettime_totparams = np.sum(np.square(F_rt_tp-F_ret))
+
+MSE_tottime_totparams = np.sum(np.square(F_total_curvefit-force))
+MSE_tottime_appparams = np.sum(np.square(force_app_parameter-force))
+MSE_tottime_retparams = np.sum(np.square(force_ret_parameter-force))
+MSE_tottime_totparams = np.sum(np.square(F_total_curvefit-force))
+# %%
+fig,ax = plt.subplots(1, 1, figsize=(7, 5))
+tot_time = ["app time - app params", "app time - ret params", "app time - tot params"]
+MSE_app = [MSE_apptime_appparams, MSE_apptime_retparams, MSE_apptime_totparams]
+ax.bar(tot_time, MSE_app)
+#%%
+fig,ax = plt.subplots(1, 1, figsize=(7, 5))
+tot_time = ["ret time - app params", "ret time - ret params", "ret time - tot params"]
+MSE_ret = [MSE_rettime_appparams, MSE_rettime_retparams, MSE_rettime_totparams]
+ax.bar(tot_time, MSE_ret)
+# %%
+fig,ax = plt.subplots(1, 1, figsize=(7, 5))
+tot_time = ["tot time - app params", "tot time - ret params", "tot time - tot params"]
+MSE_tot = [MSE_tottime_appparams, MSE_tottime_retparams, MSE_tottime_totparams]
+ax.bar(tot_time, MSE_tot)
+# %% 
