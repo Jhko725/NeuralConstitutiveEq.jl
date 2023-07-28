@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import sklearn
 from random import *
-import utils
+from neuralconstitutive import utils
 import math
 #%%
 E = 0.572 # 572Pa
@@ -58,8 +58,8 @@ fig, ax = plt.subplots(figsize=(10,7))
 ax.set_xlabel("Time(s)")
 ax.set_ylabel("Force(nN)")
 ax.set_title("PLR model simulation")
-ax.plot(t_array, total)
-ax.scatter(t_array, total+noise, c="orange", s=20, alpha=1)
+ax.plot(t_array_app, total)
+ax.scatter(t_array_app, total+noise, c="orange", s=20, alpha=1)
 #%%
 F_app = total
 I = t_array_app * v

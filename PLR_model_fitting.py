@@ -17,12 +17,8 @@ from scipy.optimize import curve_fit
 
 configure_matplotlib_defaults()
 
-filepath = (
-    "Hydrogel AFM data/SD-Sphere-CONT-S/Highly Entangled Hydrogel(10nN, 1s, liquid).nid"
-)
+filepath = ("Hydrogel AFM data/SD-Sphere-CONT-S/Highly Entangled Hydrogel(10nN, 1s, liquid).nid")
 config, data = nanosurf.read_nid(filepath)
-
-
 # %%
 def get_sampling_rate(nid_config: ConfigParser) -> float:
     spec_config = dict(config[r"DataSet\DataSetInfos\Spec"])
@@ -31,12 +27,9 @@ def get_sampling_rate(nid_config: ConfigParser) -> float:
     modulation_time = float(spec_config["modulation time"].split(" ")[0])
     return num_points / modulation_time
 
-
 get_sampling_rate(config)
 # %%
 forward, backward = data["spec forward"], data["spec backward"]
-
-
 # %%
 def get_z_and_defl(spectroscopy_data: xr.DataArray) -> tuple[ndarray, ndarray]:
     piezo_z = spectroscopy_data["z-axis sensor"].to_numpy()
@@ -79,8 +72,6 @@ def fit_baseline_polynomial(
     return Polynomial.fit(
         distance[pre_contact], deflection[pre_contact], deg=degree, domain=domain
     )
-
-
 # %%
 z_fwd, defl_fwd = get_z_and_defl(forward)
 z_bwd, defl_bwd = get_z_and_defl(backward)
@@ -541,4 +532,3 @@ fig,ax = plt.subplots(1, 1, figsize=(7, 5))
 tot_time = ["tot time - app params", "tot time - ret params", "tot time - tot params"]
 MSE_tot = [MSE_tottime_appparams, MSE_tottime_retparams, MSE_tottime_totparams]
 ax.bar(tot_time, MSE_tot)
-# %% 

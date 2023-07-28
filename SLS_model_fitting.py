@@ -29,8 +29,6 @@ def get_sampling_rate(nid_config: ConfigParser) -> float:
 get_sampling_rate(config)
 # %%
 forward, backward = data["spec forward"], data["spec backward"]
-
-forward
 # %%
 def get_z_and_defl(spectroscopy_data: xr.DataArray) -> tuple[ndarray, ndarray]:
     piezo_z = spectroscopy_data["z-axis sensor"].to_numpy()
@@ -62,7 +60,6 @@ def find_contact_point(deflection: ndarray, N: int) -> ndarray:
     rov = rov[N : np.size(rov) - N]
     idx = np.argmax(rov)
     return rov, idx, rov[idx]
-
 
 def fit_baseline_polynomial(
     distance: ndarray, deflection: ndarray, contact_point: float = 0.0, degree: int = 1
@@ -438,4 +435,3 @@ fig,ax = plt.subplots(1, 1, figsize=(7, 5))
 tot_time = ["tot time - app params", "tot time - ret params", "tot time - tot params"]
 MSE_tot = [MSE_tottime_appparams, MSE_tottime_retparams, MSE_tottime_totparams]
 ax.bar(tot_time, MSE_tot)
-# %%
