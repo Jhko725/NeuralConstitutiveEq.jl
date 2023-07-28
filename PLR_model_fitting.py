@@ -11,7 +11,13 @@ from scipy.optimize import root_scalar
 import matplotlib.pyplot as plt
 from jhelabtoolkit.io.nanosurf import nanosurf
 from jhelabtoolkit.utils.plotting import configure_matplotlib_defaults
-from neuralconstitutive.preprocessing import process_approach_data, estimate_derivative
+from neuralconstitutive.preprocessing import (
+    process_approach_data,
+    estimate_derivative,
+    get_sampling_rate,
+    get_z_and_defl,
+    calc_tip_distance,
+)
 from neuralconstitutive.tipgeometry import Spherical
 from scipy.optimize import curve_fit
 
@@ -22,30 +28,8 @@ filepath = (
 )
 config, data = nanosurf.read_nid(filepath)
 
-
-# %%
-def get_sampling_rate(nid_config: ConfigParser) -> float:
-    spec_config = dict(config[r"DataSet\DataSetInfos\Spec"])
-    num_points = int(spec_config["data points"])
-    # May later use the pint library to parse unitful quantites
-    modulation_time = float(spec_config["modulation time"].split(" ")[0])
-    return num_points / modulation_time
-
-
-get_sampling_rate(config)
 # %%
 forward, backward = data["spec forward"], data["spec backward"]
-
-
-# %%
-def get_z_and_defl(spectroscopy_data: xr.DataArray) -> tuple[ndarray, ndarray]:
-    piezo_z = spectroscopy_data["z-axis sensor"].to_numpy()
-    defl = spectroscopy_data["deflection"].to_numpy()
-    return piezo_z.squeeze(), defl.squeeze()
-
-
-def calc_tip_distance(piezo_z_pos: ndarray, deflection: ndarray) -> ndarray:
-    return piezo_z_pos - deflection
 
 
 def find_contact_point(deflection: ndarray, N: int) -> ndarray:

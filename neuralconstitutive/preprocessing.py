@@ -39,6 +39,10 @@ def get_z_and_defl(spectroscopy_data: xr.DataArray) -> tuple[ndarray, ndarray]:
     return piezo_z.squeeze(), defl.squeeze()
 
 
+def calc_tip_distance(piezo_z_pos: ndarray, deflection: ndarray) -> ndarray:
+    return piezo_z_pos - deflection
+
+
 def fit_baseline_polynomial(
     distance: ndarray, deflection: ndarray, contact_point: float = 0.0, degree: int = 1
 ) -> Polynomial:
