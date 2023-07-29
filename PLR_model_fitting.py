@@ -170,11 +170,11 @@ max_ind = np.argmax(indentation)
 t_max = time[max_ind]
 indent_max = indentation[max_ind]
 # %%
-F_app = force[: max_ind + 1]
+F_app = force[:max_ind + 1]
 F_ret = force[max_ind:]
 # %%
 # t_max 부분을 겹치게 해야 문제가 안생김
-indentation_app = indentation[: max_ind + 1]
+indentation_app = indentation[:max_ind + 1]
 indentation_ret = indentation[max_ind:]
 
 time_app = time[: max_ind + 1]
@@ -194,8 +194,6 @@ negative_idx = negative_idx[0]
 # %%
 F_ret = F_ret[:negative_idx]
 time_ret = time_ret[:negative_idx]
-
-
 # %%
 # PLR model fitting
 def PLR_constit_integand(t_, t, E0, alpha, t_prime, velocity, indentation, tip):
