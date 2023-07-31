@@ -17,7 +17,7 @@ from neuralconstitutive.preprocessing import (
     ratio_of_variances,
     fit_baseline_polynomial,
 )
-from neuralconstitutive.tipgeometry import Spherical
+from neuralconstitutive.tipgeometry import Spherical, TipGeometry
 
 configure_matplotlib_defaults()
 
@@ -26,7 +26,6 @@ filepath = (
 )
 config, data = nanosurf.read_nid(filepath)
 
-get_sampling_rate(config)
 # %%
 forward, backward = data["spec forward"], data["spec backward"]
 
@@ -100,6 +99,7 @@ fig, ax = plt.subplots(1, 1, figsize=(7, 5))
 ax.plot(dist_fwd, z_fwd, label="forward")
 ax.plot(dist_bwd, z_bwd, label="backward")
 ax.legend()
+
 # %%
 dist_total = np.concatenate((dist_fwd, dist_bwd[::-1]), axis=-1)
 defl_total = np.concatenate((defl_fwd, defl_bwd[::-1]), axis=-1)
@@ -141,7 +141,7 @@ indentation_ret_func = interp1d(time_ret, indentation_ret)
 velocity_app_func = interp1d(time_app, velocity_app)
 velocity_ret_func = interp1d(time_ret, velocity_ret)
 # %%
-# Truncation negrative force region
+# Truncate negetive force region
 negative_idx = np.where(F_ret < 0)[0]
 negative_idx = negative_idx[0]
 # %%
@@ -150,79 +150,96 @@ time_ret = time_ret[:negative_idx]
 
 
 # %%
+from typing import Callable
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True, slots=True)
+class PowerLawRheology:
+    E0: float
+    gamma: float
+    t0: float
+
+    def __call__(self, t: np.ndarray) -> np.ndarray:
+        return self.E0 * (1 + t / self.t0) ** (-self.gamma)
+
+
 # PLR model fitting
-def PLR_constit_integand(t_, t, E0, alpha, t_prime, velocity, indentation, tip):
+def make_force_integand(
+    constit: Callable[[np.ndarray], np.ndarray],
+    velocity: Callable[[np.ndarray], np.ndarray],
+    indentation: Callable[[np.ndarray], np.ndarray],
+    tip: TipGeometry,
+) -> Callable[[np.ndarray, float], np.ndarray]:
     a = tip.alpha
     b = tip.beta
-    return (
-        a
-        * b
-        * E0
-        * (1 + (t - t_) / t_prime) ** (-alpha)
-        * velocity(t_)
-        * indentation(t_) ** (b - 1)
-    )
+
+    def _force_integrand(t_: np.ndarray, t: float) -> np.ndarray:
+        return a * b * constit(t - t_) * velocity(t_) * indentation(t_) ** (b - 1)
+
+    return _force_integrand
 
 
-def F_app_integral(t__, E0_, alpha_, t_prime_, velocity_, indentation_, tip_):
-    F = []
-    for i in t__:
-        integrand_ = partial(
-            PLR_constit_integand,
-            t=i,
-            E0=E0_,
-            alpha=alpha_,
-            t_prime=t_prime_,
-            velocity=velocity_,
-            indentation=indentation_,
-            tip=tip_,
-        )
-        F.append(quad(integrand_, 0, i)[0])
+def F_app_integral(
+    t__: np.ndarray,
+    constit: Callable[[np.ndarray], np.ndarray],
+    velocity: Callable[[np.ndarray], np.ndarray],
+    indentation: Callable[[np.ndarray], np.ndarray],
+    tip: TipGeometry,
+) -> np.ndarray:
+    integrand_ = make_force_integand(constit, velocity, indentation, tip)
+    F = np.stack([quad(integrand_, 0, t_i, args=(t_i,))[0] for t_i in t__], axis=0)
     return F
 
 
-def F_ret_integral(t__, t___, E0_, alpha_, t_prime_, velocity_, indentation_, tip_):
-    F = []
-    for i, j in zip(t__, t___):
-        integrand_ = partial(
-            PLR_constit_integand,
-            t=j,
-            E0=E0_,
-            alpha=alpha_,
-            t_prime=t_prime_,
-            velocity=velocity_,
-            indentation=indentation_,
-            tip=tip_,
-        )
-        F.append(quad(integrand_, 0, i)[0])
+def F_ret_integral(
+    t__,
+    t___,
+    constit: Callable[[np.ndarray], np.ndarray],
+    velocity: Callable[[np.ndarray], np.ndarray],
+    indentation: Callable[[np.ndarray], np.ndarray],
+    tip: TipGeometry,
+) -> np.ndarray:
+    integrand_ = make_force_integand(constit, velocity, indentation, tip)
+    F = np.stack(
+        [quad(integrand_, 0, t1_i, args=(t_i,))[0] for (t1_i, t_i) in zip(t__, t___)],
+        axis=0,
+    )
     return F
 
 
 # %%
 # Determination of Variable
 tip = Spherical(0.8 * 1e-6)
-E0 = 0.562
-alpha = 0.2
+plr = PowerLawRheology(0.562, 0.2, 1e-5)
+
 # %%
 Force = F_app_integral(
     t__=time_app,
-    E0_=E0,
-    alpha_=alpha,
-    t_prime_=1e-5,
-    indentation_=indentation_app_func,
-    velocity_=velocity_app_func,
-    tip_=tip,
+    constit=plr,
+    velocity=velocity_app_func,
+    indentation=indentation_app_func,
+    tip=tip,
 )
 
+
+# %%
+def make_curvefit_function(constit, velocity, indentation, tip, **fixed_constit_args):
+    constit_ = partial(constit, **fixed_constit_args)
+
+    def _objective(t_array, *constit_args):
+        return F_app_integral(
+            t_array, constit_(*constit_args), velocity, indentation, tip
+        )
+
+    return _objective
+
+
 # Curve Fitting(PLR model) Approach Region
-F_app_func = partial(
-    F_app_integral,
-    t_prime_=1e-5,
-    indentation_=indentation_app_func,
-    velocity_=velocity_app_func,
-    tip_=tip,
+F_app_func = make_curvefit_function(
+    PowerLawRheology, velocity_app_func, indentation_app_func, tip, t0=1e-5
 )
-popt_app, pcov_app = curve_fit(F_app_func, time_app, F_app)
+popt_app, pcov_app = curve_fit(F_app_func, time_app, F_app, p0=(0.5, 0.5))
 F_app_curvefit = np.array(F_app_func(time_app, *popt_app))
 print(popt_app)
 # %%
@@ -507,19 +524,25 @@ F_rt_tp = F_ret_integral(
     velocity_=velocity_app_func,
     tip_=tip,
 )
+
+
 # %%
-MSE_apptime_appparams = np.sum(np.square(F_app_curvefit - F_app))
-MSE_apptime_retparams = np.sum(np.square(F_at_rp - F_app))
-MSE_apptime_totparams = np.sum(np.square(F_at_tp - F_app))
+def mean_squared_error(data: np.ndarray, target: np.ndarray) -> float:
+    return np.mean((data - target) ** 2)
 
-MSE_rettime_appparams = np.sum(np.square(F_rt_ap - F_ret))
-MSE_rettime_retparams = np.sum(np.square(F_ret_curvefit - F_ret))
-MSE_rettime_totparams = np.sum(np.square(F_rt_tp - F_ret))
 
-MSE_tottime_totparams = np.sum(np.square(F_total_curvefit - force))
-MSE_tottime_appparams = np.sum(np.square(force_app_parameter - force))
-MSE_tottime_retparams = np.sum(np.square(force_ret_parameter - force))
-MSE_tottime_totparams = np.sum(np.square(F_total_curvefit - force))
+MSE_apptime_appparams = mean_squared_error(F_app_curvefit, F_app)
+MSE_apptime_retparams = mean_squared_error(F_at_rp, F_app)
+MSE_apptime_totparams = mean_squared_error(F_at_tp, F_app)
+
+MSE_rettime_appparams = mean_squared_error(F_rt_ap, F_ret)
+MSE_rettime_retparams = mean_squared_error(F_ret_curvefit, F_ret)
+MSE_rettime_totparams = mean_squared_error(F_rt_tp, F_ret)
+
+MSE_tottime_totparams = mean_squared_error(F_total_curvefit, force)
+MSE_tottime_appparams = mean_squared_error(force_app_parameter, force)
+MSE_tottime_retparams = mean_squared_error(force_ret_parameter, force)
+MSE_tottime_totparams = mean_squared_error(F_total_curvefit, force)
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(7, 5))
 tot_time = ["app time - app params", "app time - ret params", "app time - tot params"]
