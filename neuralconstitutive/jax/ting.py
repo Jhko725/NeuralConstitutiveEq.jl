@@ -18,7 +18,7 @@ def force_approach(
     a: float,
     b: float,
 ):
-    phi_app: Array = model(t - t_app)
+    phi_app: Array = vmap(model)(t - t_app)
     integrand = phi_app * v_app * d_app ** (b - 1)
     return integrate_to(t, t_app, integrand) * a
 
@@ -87,7 +87,9 @@ def t1_constraint(
     v_app: Array,
     v_ret: Array,
 ) -> Array:
-    phi_app, phi_ret = model(t - t_app), model(t - t_ret)
+    model_ = vmap(model)
+    phi_app = model_(t - t_app)
+    phi_ret = model_(t - t_ret)
     return integrate_from(t1, t_app, phi_app * v_app) + integrate_to(
         t, t_ret, phi_ret * v_ret
     )

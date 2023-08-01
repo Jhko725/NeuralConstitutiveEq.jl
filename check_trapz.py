@@ -1,5 +1,5 @@
 # %%
-from typing import Callable, Sequence, Literal
+from typing import Callable, Sequence, Literal, Final
 from functools import partial
 
 import jax
@@ -11,9 +11,16 @@ import equinox as eqx
 import optax
 from more_itertools import pairwise
 import matplotlib.pyplot as plt
+import scipy
 
 from neuralconstitutive.jax.constitutive import SimpleLinearSolid
-from neuralconstitutive.jax.ting import force_approach, force_retract, find_t1
+from neuralconstitutive.jax.ting import (
+    force_approach,
+    force_retract,
+    find_t1,
+    t1_constraint,
+    _find_t1,
+)
 
 jax.config.update("jax_enable_x64", True)
 
@@ -64,11 +71,7 @@ fig
 # %%
 grads = jax.grad(lambda t, model: model(t), argnums=1)(0.1, sls)
 grads.E0
-# %%
-k = jax.random.PRNGKey(0)
-k
-# %%
-jax.random.split(k, num=2)
+
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
 F_app = force_approach(t_app, sls, t_app, d_app, v_app, 1.0, 2.0)
@@ -83,48 +86,77 @@ fig
 # %%
 class FullyConnectedNetwork(eqx.Module):
     layers: list
-    activation: Callable
-    final_activation: Callable
+    # activation: Callable
+    # final_activation: Callable
 
     def __init__(
         self,
         nodes: Sequence[int | Literal["scalar"]],
-        activation: Callable,
-        final_activation: Callable | None,
+        # activation: Callable,
+        # final_activation: Callable | None,
         seed: int = 0,
     ):
+        super().__init__()
         keys = jax.random.split(jax.random.PRNGKey(seed), len(nodes) - 1)
         self.layers = [
             eqx.nn.Linear(*feats, key=k) for (feats, k) in zip(pairwise(nodes), keys)
         ]
-        self.activation = activation
-        self.final_activation = (
-            eqx.nn.Identity() if final_activation is None else final_activation
-        )
+        # self.activation = activation
+        # self.final_activation = (
+        #    eqx.nn.Identity() if final_activation is None else final_activation
+        # )
 
     def __call__(self, t: Array) -> Array:
         for layer in self.layers:
-            t = self.activation(layer(t))
-        return self.final_activation(t)
+            # t = self.activation(layer(t))
+            t = jax.nn.elu(layer(t))
+        # return self.final_activation(t)
+        return jax.nn.softplus(t)
 
 
-phi_nn = jax.vmap(
-    FullyConnectedNetwork(["scalar", 100, "scalar"], jax.nn.elu, jax.nn.softplus)
-)
+class BernsteinNN(eqx.Module):
+    net: Callable
+    scale: float
+    bias: float
+    nodes: Final[Array]
+    weights: Final[Array]
+
+    def __init__(self, net: Callable, num_quadrature: int = 100):
+        super().__init__()
+        self.net = net
+        self.scale = 1.0
+        self.bias = 0.0
+        nodes, weights = scipy.special.roots_laguerre(num_quadrature)
+        self.nodes = jnp.array(nodes)
+        self.weights = jnp.array(weights)
+
+    def __call__(self, t: Array) -> Array:
+        return jnp.dot(self.weights, self.nodes / (t + 1e-3))
+
+
+# phi_nn = FullyConnectedNetwork(["scalar", 100, "scalar"], jax.nn.elu, jax.nn.softplus)
+phi_nn = FullyConnectedNetwork(["scalar", 100, "scalar"])
+phi_bern = BernsteinNN(phi_nn)
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-ax.plot(t_app, phi_nn(t_app))
+# ax.plot(t_app, jax.vmap(phi_nn)(t_app))
+ax.plot(t_app, jax.vmap(phi_bern)(t_app))
+# %%
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-F_app = force_approach(t_app, phi_nn, t_app, d_app, v_app, 1.0, 2.0)
-# t1 = find_t1(t_ret, phi_nn, t_app, t_ret, v_app, v_ret)
-# F_ret = force_retract(t_ret, t1, sls, t_app, d_app, v_app, 1.0, 2.0)
+F_app = force_approach(t_app, phi_bern, t_app, d_app, v_app, 1.0, 2.0)
+t1 = find_t1(t_ret, phi_bern, t_app, t_ret, v_app, v_ret)
+F_ret = force_retract(t_ret, t1, phi_bern, t_app, d_app, v_app, 1.0, 2.0)
 ax.plot(t_app, F_app, label="approach")
-# ax.plot(t_ret, F_ret, label="retract")
+ax.plot(t_ret, F_ret, label="retract")
 ax.legend()
 fig
 # %%
-print(type(None))
+jax.jacobian(force_retract, argnums=2)(
+    t_ret, t1, phi_bern, t_app, d_app, v_app, 1.0, 2.0
+).bias
+# %%
+phi_nn
 
 
 # %%
@@ -133,3 +165,10 @@ def compute_loss(model, x, y):
     pred_y = jax.vmap(model)(x)
     # Trains with respect to binary cross-entropy
     return -jnp.mean(y * jnp.log(pred_y) + (1 - y) * jnp.log(1 - pred_y))
+
+
+# %%
+phi_nn(0.3)
+# %%
+sls
+# %%
