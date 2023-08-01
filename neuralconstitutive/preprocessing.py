@@ -1,6 +1,5 @@
 from configparser import ConfigParser
 from pathlib import Path
-
 import bottleneck
 import numpy as np
 import scipy
