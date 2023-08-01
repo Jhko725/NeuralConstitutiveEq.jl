@@ -1,5 +1,5 @@
 # %%
-from typing import Callable, Sequence, Literal
+from typing import Callable, Sequence, Literal, Final
 from functools import partial
 
 import jax
@@ -11,6 +11,7 @@ import equinox as eqx
 import optax
 from more_itertools import pairwise
 import matplotlib.pyplot as plt
+import scipy
 
 from neuralconstitutive.jax.constitutive import SimpleLinearSolid
 from neuralconstitutive.jax.ting import (
@@ -113,24 +114,47 @@ class FullyConnectedNetwork(eqx.Module):
         return jax.nn.softplus(t)
 
 
+class BernsteinNN(eqx.Module):
+    net: Callable
+    scale: float
+    bias: float
+    nodes: Final[Array]
+    weights: Final[Array]
+
+    def __init__(self, net: Callable, num_quadrature: int = 100):
+        super().__init__()
+        self.net = net
+        self.scale = 1.0
+        self.bias = 0.0
+        nodes, weights = scipy.special.roots_laguerre(num_quadrature)
+        self.nodes = jnp.array(nodes)
+        self.weights = jnp.array(weights)
+
+    def __call__(self, t: Array) -> Array:
+        return jnp.dot(self.weights, self.nodes / (t + 1e-3))
+
+
 # phi_nn = FullyConnectedNetwork(["scalar", 100, "scalar"], jax.nn.elu, jax.nn.softplus)
 phi_nn = FullyConnectedNetwork(["scalar", 100, "scalar"])
-
+phi_bern = BernsteinNN(phi_nn)
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-ax.plot(t_app, jax.vmap(phi_nn)(t_app))
+# ax.plot(t_app, jax.vmap(phi_nn)(t_app))
+ax.plot(t_app, jax.vmap(phi_bern)(t_app))
+# %%
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-F_app = force_approach(t_app, phi_nn, t_app, d_app, v_app, 1.0, 2.0)
-t1 = find_t1(t_ret, phi_nn, t_app, t_ret, v_app, v_ret)
-F_ret = force_retract(t_ret, t1, sls, t_app, d_app, v_app, 1.0, 2.0)
+F_app = force_approach(t_app, phi_bern, t_app, d_app, v_app, 1.0, 2.0)
+t1 = find_t1(t_ret, phi_bern, t_app, t_ret, v_app, v_ret)
+F_ret = force_retract(t_ret, t1, phi_bern, t_app, d_app, v_app, 1.0, 2.0)
 ax.plot(t_app, F_app, label="approach")
 ax.plot(t_ret, F_ret, label="retract")
 ax.legend()
 fig
 # %%
-t1
-
+jax.jacobian(force_retract, argnums=2)(
+    t_ret, t1, phi_bern, t_app, d_app, v_app, 1.0, 2.0
+).bias
 # %%
 phi_nn
 
