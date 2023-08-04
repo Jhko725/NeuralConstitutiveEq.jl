@@ -1,80 +1,178 @@
 # %%
-from typing import Callable, Sequence, Literal
+from typing import Literal, Sequence, Callable
 
+from more_itertools import pairwise
+import numpy as np
+import scipy
+import matplotlib.pyplot as plt
 import jax
 from jax import Array
 import jax.numpy as jnp
-
 import equinox as eqx
 import optax
-from more_itertools import pairwise
-import matplotlib.pyplot as plt
-import scipy
 
-from neuralconstitutive.jax.constitutive import SimpleLinearSolid
-from neuralconstitutive.jax.ting import (
-    force_approach,
-    force_retract,
-    find_t1,
+from jhelabtoolkit.io.nanosurf import nanosurf
+from jhelabtoolkit.utils.plotting import configure_matplotlib_defaults
+from neuralconstitutive.preprocessing import process_approach_data, estimate_derivative
+from neuralconstitutive.tipgeometry import Spherical
+from neuralconstitutive.preprocessing import (
+    calc_tip_distance,
+    estimate_derivative,
+    get_sampling_rate,
+    get_z_and_defl,
+    ratio_of_variances,
+    fit_baseline_polynomial,
 )
+from neuralconstitutive.jax.ting import force_approach, force_retract, find_t1
 
-jax.config.update("jax_enable_x64", True)
 
+configure_matplotlib_defaults()
 
-sls = SimpleLinearSolid(E0=8.0, E_inf=2.0, tau=0.01)
-t_app = jnp.linspace(0, 0.2, 100)
-t_ret = jnp.linspace(0.2, 0.4, 100)
-sls(t_app)
-d_app = 10.0 * t_app
-d_ret = -10.0 * t_ret
-v_app = 10.0 * jnp.ones_like(t_app)
-v_ret = -10.0 * jnp.ones_like(t_ret)
-# %%
-sls = SimpleLinearSolid(E0=8, E_inf=2, tau=1.0)
-t_app = jnp.linspace(0, 0.5, 100)
-t_ret = jnp.linspace(0.5, 1.0, 100)
-sls(t_app)
-d_app = 1.0 * t_app
-d_ret = -1.0 * t_ret
-v_app = 1.0 * jnp.ones_like(t_app)
-v_ret = -1.0 * jnp.ones_like(t_ret)
+filepath = "Hydrogel AFM data/SD-Sphere-CONT-M/Highly Entangled Hydrogel(10nN, 10s, liquid).nid"
+config, data = nanosurf.read_nid(filepath)
+
+forward, backward = data["spec forward"], data["spec backward"]
 
 
 # %%
-def simulate_data(
-    model: Callable,
-    t_app: Array,
-    t_ret: Array,
-    d_app: Array,
-    d_ret: Array,
-    v_app: Array,
-    v_ret: Array,
-    noise_strength: float,
-    random_seed: int,
-) -> tuple[Array, Array]:
-    key = jax.random.PRNGKey(random_seed)
-    f_app = force_approach(t_app, model, t_app, d_app, v_app, 1.0, 1.5)
-    t1 = find_t1(t_ret, model, t_app, t_ret, v_app, v_ret)
-    f_ret = force_retract(t_ret, t1, model, t_app, d_app, v_app, 1.0, 1.5)
-    noise_scale = jnp.max(f_app)
-    noise_app = jax.random.normal(key, f_app.shape) * noise_strength * noise_scale
-    noise_ret = (
-        jax.random.normal(jax.random.split(key, num=1), f_ret.shape)
-        * noise_strength
-        * noise_scale
-    )
-    return f_app + noise_app, f_ret + noise_ret
-
-
+z_fwd, defl_fwd = get_z_and_defl(forward)
+z_bwd, defl_bwd = get_z_and_defl(backward)
+dist_fwd = calc_tip_distance(z_fwd, defl_fwd)
+dist_bwd = calc_tip_distance(z_bwd, defl_bwd)
+# cp = find_contact_point(dist_fwd, defl_fwd)
 # %%
-f_app, f_ret = simulate_data(sls, t_app, t_ret, d_app, d_ret, v_app, v_ret, 5e-3, 0)
+# ROV method
+N = 10
+rov_fwd, idx_fwd = ratio_of_variances(defl_fwd, N)
+rov_bwd, idx_bwd = ratio_of_variances(defl_bwd, N)
+# %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-ax.plot(t_app, f_app, ".", label="approach")
-ax.plot(t_ret, f_ret, ".", label="retract")
+ax.plot(dist_fwd, rov_fwd)
+ax.set_xlabel("Distance(forward)")
+ax.set_ylabel("ROV")
+plt.axvline(
+    dist_fwd[N],
+    color="black",
+    linestyle="--",
+    linewidth=1.5,
+    label="maximum point",
+)
 ax.legend()
-fig
 # %%
-plt.plot(t_app, jax.vmap(sls)(t_app))
+fig, ax = plt.subplots(1, 1, figsize=(7, 5))
+ax.plot(dist_fwd * 1e6, defl_fwd * 1e9, label="forward")
+ax.plot(dist_bwd * 1e6, defl_bwd * 1e9, label="backward")
+ax.set_xlabel("Distance(μm)")
+ax.set_ylabel("Force(nN)")
+ax.legend()
+# %%
+# Find contact point
+cp_fwd = dist_fwd[idx_fwd]
+cp_bwd = dist_bwd[idx_bwd]
+print(cp_fwd, cp_bwd)
+# %%
+cp_fwd = cp_fwd
+# %%
+# Translation
+dist_fwd = dist_fwd - cp_fwd
+dist_bwd = dist_bwd - cp_fwd
+
+# %%
+# Polynomial fitting
+baseline_poly_fwd = fit_baseline_polynomial(dist_fwd, defl_fwd)
+defl_processed_fwd = defl_fwd - baseline_poly_fwd(dist_fwd)
+baseline_poly_bwd = fit_baseline_polynomial(dist_bwd, defl_bwd)
+defl_processed_bwd = defl_bwd - baseline_poly_bwd(dist_bwd)
+baseline_poly_bwd
+# baseline_poly_bwd
+# %%
+fig, ax = plt.subplots(1, 1, figsize=(7, 5))
+ax.plot(dist_fwd * 1e6, defl_fwd * 1e9, label="forward")
+ax.plot(dist_bwd * 1e6, defl_bwd * 1e9, label="backward")
+ax.set_xlabel("Distance(μm)")
+ax.set_ylabel("Force(nN)")
+plt.axvline(cp_fwd, color="grey", linestyle="--", linewidth=1)
+ax.legend()
+# %%
+fig, ax = plt.subplots(1, 1, figsize=(7, 5))
+ax.plot(dist_fwd * 1e6, defl_processed_fwd * 1e9, label="forward")
+ax.plot(dist_bwd * 1e6, defl_processed_bwd * 1e9, label="backward")
+ax.set_xlabel("Distance(μm)")
+ax.set_ylabel("Force(nN)")
+plt.axvline(cp_fwd, color="grey", linestyle="--", linewidth=1)
+ax.legend()
+# %%
+fig, ax = plt.subplots(1, 1, figsize=(7, 5))
+ax.plot(dist_fwd, z_fwd, label="forward")
+ax.plot(dist_bwd, z_bwd, label="backward")
+ax.legend()
+# %%
+dist_total = np.concatenate((dist_fwd, dist_bwd[::-1]), axis=-1)
+defl_total = np.concatenate((defl_fwd, defl_bwd[::-1]), axis=-1)
+is_contact = dist_total >= 0
+indentation = dist_total[is_contact]
+# k = 0.2  # N/m
+force = defl_total[is_contact]
+force -= force[0]
+sampling_rate = get_sampling_rate(config)
+time = np.arange(len(indentation)) / sampling_rate
+print(len(time))
+fig, axes = plt.subplots(2, 1, figsize=(7, 5), sharex=True)
+axes[0].plot(time, indentation * 1e6)
+axes[0].set_xlabel("Time(s)")
+axes[1].set_xlabel("Time(s)")
+axes[0].set_ylabel("Indentation(μm)")
+axes[1].set_ylabel("Force(nN)")
+axes[1].plot(time, force * 1e9)
+# %%
+max_ind = np.argmax(indentation)
+t_max = time[max_ind]
+indent_max = indentation[max_ind]
+# %%
+F_app = force[: max_ind + 1]
+F_ret = force[max_ind:]
+# %%
+# t_max 부분을 겹치게 해야 문제가 안생김
+d_app = indentation[: max_ind + 1]
+d_ret = indentation[max_ind:]
+
+t_app = time[: max_ind + 1]
+t_ret = time[max_ind:]
+
+# %%
+# Truncation negrative force region
+negative_idx = np.where(F_ret < 0)[0]
+negative_idx = negative_idx[0]
+# %%
+F_ret[negative_idx:] = 0
+# F_ret = F_ret[:negative_idx]
+# d_ret = d_ret[:negative_idx]
+# t_ret = t_ret[:negative_idx]
+# %%
+t_app, t_ret = t_app * 10, t_ret * 10
+d_app, d_ret = d_app * 1e6, d_ret * 1e6  # m -> um
+F_app, F_ret = F_app * 1e8, F_ret * 1e8  # N -> nN
+# %%
+v_app = estimate_derivative(t_app, d_app)
+v_ret = estimate_derivative(t_ret, d_ret)
+
+fig, axes = plt.subplots(3, 1, figsize=(5, 5), sharex=True)
+axes[0].plot(t_app, F_app, label="Approach")
+axes[0].plot(t_ret, F_ret, label="Retract")
+axes[1].plot(t_app, d_app, label="Approach")
+axes[1].plot(t_ret, d_ret, label="Retract")
+axes[2].plot(t_app, v_app, label="Approach")
+axes[2].plot(t_ret, v_ret, label="Retract")
+axes[-1].legend()
+axes[-1].set_xlabel("Time (s)")
+for ax, y_label in zip(
+    axes, ("Force (nN)", "Indentation ($\mu$m)", "Velocity ($\mu$m/s)")
+):
+    ax.set_ylabel(y_label)
+# %%
+fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+ax.plot(d_app, F_app)
+ax.plot(d_ret, F_ret)
 
 
 # %%
@@ -119,7 +217,7 @@ class BernsteinNN(eqx.Module):
         super().__init__()
         self.net = net
         self.scale = jnp.asarray(1.0)
-        self.bias = jnp.asarray(5.0)
+        self.bias = jnp.asarray(1.0)
         self.nodes, self.weights = scipy.special.roots_legendre(num_quadrature)
 
     def __call__(self, t: Array) -> Array:
@@ -142,8 +240,8 @@ class BernsteinNN2(eqx.Module):
     def __init__(self, net: Callable, num_quadrature: int = 100):
         super().__init__()
         self.net = net
-        self.scale = jnp.asarray(1.0)
-        self.bias = jnp.asarray(0.5)
+        self.scale = jnp.asarray(0.1)
+        self.bias = jnp.asarray(15.0)
         nodes, weights = scipy.special.roots_laguerre(num_quadrature)
         self.nodes = jnp.asarray(nodes)
         self.weights = jnp.asarray(weights)
@@ -186,8 +284,7 @@ class BernsteinNN3(eqx.Module):
         )
 
 
-# phi_nn = FullyConnectedNetwork(["scalar", 100, "scalar"], jax.nn.elu, jax.nn.softplus)
-phi_nn = FullyConnectedNetwork(["scalar", 20, 20, 20, 20, "scalar"])
+phi_nn = FullyConnectedNetwork(["scalar", 200, "scalar"])
 phi_bern = BernsteinNN(phi_nn, 100)
 # %%
 plt.plot(t_app, jax.vmap(phi_bern)(t_app))
@@ -195,13 +292,17 @@ plt.plot(t_app, jax.vmap(phi_bern)(t_app))
 # plt.plot(t_app, jax.vmap(phi_nn)(-jnp.log1p(t_app) + jnp.log(2)))
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-F_app_pred = force_approach(t_app, phi_bern, t_app, d_app, v_app, 1.0, 1.5)
+tip = Spherical(0.4)  # R=0.4um
+
+F_app_pred = force_approach(t_app, phi_bern, t_app, d_app, v_app, tip.alpha, tip.beta)
 t1 = find_t1(t_ret, phi_bern, t_app, t_ret, v_app, v_ret)
-F_ret_pred = force_retract(t_ret, t1, phi_bern, t_app, d_app, v_app, 1.0, 1.5)
-ax.plot(t_app, f_app, label="approach")
-ax.plot(t_ret, f_ret, label="retract")
-ax.plot(t_app, F_app_pred, label="approach (nn)")
-ax.plot(t_ret, F_ret_pred, label="retract (nn)")
+F_ret_pred = force_retract(
+    t_ret, t1, phi_bern, t_app, d_app, v_app, tip.alpha, tip.beta
+)
+ax.plot(t_app, F_app, label="Approach (data)")
+ax.plot(t_ret, F_ret, label="Retract (data)")
+ax.plot(t_app, F_app_pred, label="Approach (NN)")
+ax.plot(t_ret, F_ret_pred, label="Retract (NN)")
 ax.legend()
 fig
 
@@ -213,7 +314,9 @@ def compute_loss(model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret):
     t1_pred = find_t1(t_ret, model, t_app, t_ret, v_app, v_ret)
     F_ret_pred = force_retract(t_ret, t1_pred, model, t_app, d_app, v_app, 1.0, 1.5)
     # Mean squared error loss
-    return jnp.mean((F_app - F_app_pred) ** 2) + jnp.mean((F_ret - F_ret_pred) ** 2)
+    return jnp.mean(jnp.abs((F_app - F_app_pred))) + jnp.mean(
+        jnp.abs((F_ret - F_ret_pred))
+    )
 
 
 @eqx.filter_value_and_grad
@@ -269,30 +372,30 @@ def make_step_ret(model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret, opt_st
 # %%
 import numpy as np
 
-max_epochs = 500
+max_epochs = 1000
 loss_history = np.empty(max_epochs)
 for step in range(max_epochs):
-    loss, phi_bern, opt_state = make_step_app(
-        phi_bern, t_app, t_ret, d_app, v_app, v_ret, f_app, f_ret, opt_state
+    loss, phi_bern, opt_state = make_step(
+        phi_bern, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret, opt_state
     )
     loss = loss.item()
     loss_history[step] = loss
     print(f"step={step}, loss={loss}")
 # %%
-compute_loss(phi_bern, t_app, t_ret, d_app, v_app, v_ret, f_app, f_ret)
+compute_loss(phi_bern, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret)
 # %%
 phi_bern.nodes
 # %%
 scipy.special.roots_legendre(100)[0]
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-F_app = force_approach(t_app, phi_bern, t_app, d_app, v_app, 1.0, 1.5)
+F_app_pred = force_approach(t_app, phi_bern, t_app, d_app, v_app, 1.0, 1.5)
 t1 = find_t1(t_ret, phi_bern, t_app, t_ret, v_app, v_ret)
-F_ret = force_retract(t_ret, t1, phi_bern, t_app, d_app, v_app, 1.0, 1.5)
-ax.plot(t_app, F_app, label="Approach (pred)")
-ax.plot(t_ret, F_ret, label="Retract (pred)")
-ax.plot(t_app, f_app, ".", label="Approach (true)")
-ax.plot(t_ret, f_ret, ".", label="Retract (true)")
+F_ret_pred = force_retract(t_ret, t1, phi_bern, t_app, d_app, v_app, 1.0, 1.5)
+ax.plot(t_app, F_app_pred, label="Approach (pred)")
+ax.plot(t_ret, F_ret_pred, label="Retract (pred)")
+ax.plot(t_app, F_app, ".", label="Approach (true)")
+ax.plot(t_ret, F_ret, ".", label="Retract (true)")
 ax.legend()
 fig
 # %%
@@ -302,6 +405,6 @@ ax.set_yscale("log", base=10)
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
 ax.plot(t_app, jax.vmap(phi_bern)(t_app), label="learned")
-ax.plot(t_app, jax.vmap(sls)(t_app), label="ground truth")
+# ax.plot(t_app, jax.vmap(sls)(t_app), label="ground truth")
 ax.legend()
 # %%

@@ -34,7 +34,7 @@ def force_retract(
     a: float,
     b: float,
 ):
-    phi_app: Array = model(t - t_app)
+    phi_app: Array = vmap(model)(t - t_app)
     integrand = phi_app * v_app * d_app ** (b - 1)
     return integrate_to(t1, t_app, integrand) * a
 
