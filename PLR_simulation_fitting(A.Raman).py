@@ -448,7 +448,7 @@ MSE_app = [MSE_apptime_appparams, MSE_apptime_retparams, MSE_apptime_totparams]
 ax.bar(tot_time, MSE_app)
 ax.set_ylabel("MSE")
 #%%
-fig,ax = plt.subplots(1, 1, figsize=(7, 5))
+fig,ax = plt.subplots(1, 1, Gitigsize=(7, 5))
 tot_time = ["ret time - app params", "ret time - ret params", "ret time - tot params"]
 MSE_ret = [MSE_rettime_appparams, MSE_rettime_retparams, MSE_rettime_totparams]
 ax.bar(tot_time, MSE_ret)

@@ -162,6 +162,7 @@ class PowerLawRheology:
         return self.E0 * (1 + t / self.t0) ** (-self.gamma)
 
 
+# %%
 # PLR model fitting
 def make_force_integand(
     constit: Callable[[np.ndarray], np.ndarray],

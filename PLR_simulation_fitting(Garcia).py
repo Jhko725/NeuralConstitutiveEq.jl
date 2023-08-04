@@ -1,4 +1,4 @@
-#%%
+# %%
 from functools import partial
 from numpy import random
 import numpy as np
@@ -11,25 +11,39 @@ from neuralconstitutive.preprocessing import process_approach_data, estimate_der
 from neuralconstitutive.tipgeometry import Conical
 E_0 = 572 # Pa
 gamma = 0.42
-t_0 = 1.0 # s
-v = 10*1e-6 # m/s
-theta = (18.0/180.0)*np.pi
-alpha = 8.0/(3.0*np.pi) *np.tan(theta)
+t_0 = 1.0  # s
+v = 10 * 1e-6  # m/s
+theta = (18.0 / 180.0) * np.pi
+alpha = 8.0 / (3.0 * np.pi) * np.tan(theta)
 beta = 2.0
-#%%
+
+
+# %%
 def PLR_Force(E_0, gamma, t, t_0, v, alpha, beta):
-    force = E_0*alpha*beta*(v**beta)*(t**beta)*(((t/t_0))**(-gamma))*sc.beta(beta, 1-gamma)
+    force = (
+        E_0
+        * alpha
+        * beta
+        * (v**beta)
+        * (t**beta)
+        * (((t / t_0)) ** (-gamma))
+        * sc.beta(beta, 1 - gamma)
+    )
     return np.array(force)
-#%%
+
+
+# %%
 def t1(t, t_max, gamma):
-    t1 = t - 2**(1.0/(1.0-gamma))*(t-t_max)
+    t1 = t - 2 ** (1.0 / (1.0 - gamma)) * (t - t_max)
     t1 = np.clip(t1, 0, np.inf)
     return t1
-#%%
-space = 201 # odd number
-idx = int((space-1)/2)
+
+
+# %%
+space = 201  # odd number
+idx = int((space - 1) / 2)
 t_array = np.linspace(0, 0.4, space)
-t_app = t_array[:idx+1]
+t_app = t_array[: idx + 1]
 t_ret = t_array[idx:]
 t_max = t_array[idx]
 t_1 = t1(t_ret, t_max, gamma)
@@ -40,47 +54,47 @@ F_app[np.isnan(F_app)] = 0
 F_ret[np.isnan(F_ret)] = 0
 # %%
 F_total = np.append(F_app, F_ret[1:])
-#%%
+# %%
 fig, ax = plt.subplots(1, 1, figsize=(10, 7))
-ax.plot(t_array, F_total * 1e9, '.')
-#%%
+ax.plot(t_array, F_total * 1e9, ".")
+# %%
 # Generate Gaussian Noise
-mu, sigma = 0, F_ret[0]*0.001 # average = 0, sigma = 0.1%
+mu, sigma = 0, F_ret[0] * 0.001  # average = 0, sigma = 0.1%
 noise = np.random.normal(mu, sigma, np.shape(F_total))
 F_total_noise = F_total + noise
 fig, ax = plt.subplots(1, 1, figsize=(10, 7))
-ax.plot(t_array, F_total_noise * 1e9, '.')
-#%%
+ax.plot(t_array, F_total_noise * 1e9, ".")
+# %%
 v = 10 * 1e-6
 indentation_app = v * t_app
-indentation_ret = indentation_app[idx] - v * (t_ret-t_app[idx])
-#%%
+indentation_ret = indentation_app[idx] - v * (t_ret - t_app[idx])
+# %%
 indentation = np.append(indentation_app, indentation_ret[1:])
 fig, ax = plt.subplots(1, 1, figsize=(10, 7))
-ax.plot(t_array,  indentation * 1e6, '.')
-#%%
-mu, sigma = 0, indentation_ret[0]*0.001 # average = 0, sigma = 0.1%
+ax.plot(t_array, indentation * 1e6, ".")
+# %%
+mu, sigma = 0, indentation_ret[0] * 0.001  # average = 0, sigma = 0.1%
 noise = np.random.normal(mu, sigma, np.shape(indentation))
 indentation_noise = indentation + noise
 fig, ax = plt.subplots(1, 1, figsize=(10, 7))
-ax.plot(t_array, indentation_noise * 1e9, '.')
-#%%
+ax.plot(t_array, indentation_noise * 1e9, ".")
+# %%
 force = F_total
 indentation = indentation_noise
 time = t_array
-#%%
+# %%
 max_ind = np.argmax(indentation)
 t_max = time[max_ind]
 indent_max = indentation[max_ind]
 # %%
-F_app = force[:max_ind + 1]
+F_app = force[: max_ind + 1]
 F_ret = force[max_ind:]
 # %%
 # t_max 부분을 겹치게 해야 문제가 안생김
-indentation_app = indentation[:max_ind + 1]
+indentation_app = indentation[: max_ind + 1]
 indentation_ret = indentation[max_ind:]
 
-time_app = time[:max_ind + 1]
+time_app = time[: max_ind + 1]
 time_ret = time[max_ind:]
 
 velocity_app = estimate_derivative(time_app, indentation_app)
@@ -90,6 +104,8 @@ indentation_app_func = interp1d(time_app, indentation_app)
 indentation_ret_func = interp1d(time_ret, indentation_ret)
 velocity_app_func = interp1d(time_app, velocity_app)
 velocity_ret_func = interp1d(time_ret, velocity_ret)
+
+
 # %%
 # Truncation negrative force region
 # negative_idx = np.where(F_ret < 0)[0]
@@ -97,7 +113,7 @@ velocity_ret_func = interp1d(time_ret, velocity_ret)
 # # %%
 # F_ret = F_ret[:negative_idx]
 # time_ret = time_ret[:negative_idx]
-#%%
+# %%
 # PLR model fitting
 def PLR_constit_integand(t_, t, E0, alpha, t_prime, velocity, indentation, tip):
     a = tip.alpha
@@ -161,7 +177,7 @@ Force = F_app_integral(
     velocity_=velocity_app_func,
     tip_=tip,
 )
-#%%
+# %%
 # Curve Fitting(PLR model) Approach Region
 F_app_func = partial(
     F_app_integral,
@@ -170,7 +186,9 @@ F_app_func = partial(
     velocity_=velocity_app_func,
     tip_=tip,
 )
-popt_app, pcov_app = curve_fit(F_app_func, time_app, F_app)
+popt_app, pcov_app = curve_fit(
+    F_app_func, time_app, F_app, p0=(100, 0.5), bounds=([0.0, 0.0], [np.inf, 1.0])
+)
 F_app_curvefit = np.array(F_app_func(time_app, *popt_app))
 print(popt_app)
 # %%
@@ -179,10 +197,14 @@ ax.plot(time_app, F_app * 1e9, color="red")
 ax.plot(time_app, F_app_curvefit * 1e9, color="blue")
 ax.set_xlabel("Time(s)")
 ax.set_ylabel("Force(nN)")
+
+
 # %%
 # Find t1
 def Integrand(t_, E0, t, t_prime, alpha, velocity):
     return (E0 * (1 + (t - t_) / t_prime) ** (-alpha)) * velocity(t_)
+
+
 # %%
 def Quadrature(t1, t_, t_max_, E0_, t_prime_, alpha_, velocity_app, velocity_ret):
     integrand_app = partial(
@@ -249,6 +271,8 @@ fig, ax = plt.subplots(1, 1, figsize=(7, 5))
 ax.plot(time_ret, Force * 1e9, color="red")
 ax.set_xlabel("Time(s)")
 ax.set_ylabel("Force(nN)")
+
+
 # %%
 # Curve Fitting(PLR model) Retraction Region
 def F_ret_integral_test(
@@ -392,39 +416,89 @@ fig, axes = plt.subplots(1, 2, figsize=(15, 7))
 axes[0].plot(x, modulus)
 axes[1].plot(x, alpha)
 # %%
-F_at_rp = F_app_integral(t__= time_app, E0_= popt_ret[0], alpha_=popt_ret[1], t_prime_=1e-5, indentation_=indentation_app_func, velocity_=velocity_app_func, tip_=tip)
-F_at_tp = F_app_integral(t__= time_app, E0_= popt_total[0], alpha_=popt_total[1], t_prime_=1e-5, indentation_=indentation_app_func, velocity_=velocity_app_func, tip_=tip)
+F_at_rp = F_app_integral(
+    t__=time_app,
+    E0_=popt_ret[0],
+    alpha_=popt_ret[1],
+    t_prime_=1e-5,
+    indentation_=indentation_app_func,
+    velocity_=velocity_app_func,
+    tip_=tip,
+)
+F_at_tp = F_app_integral(
+    t__=time_app,
+    E0_=popt_total[0],
+    alpha_=popt_total[1],
+    t_prime_=1e-5,
+    indentation_=indentation_app_func,
+    velocity_=velocity_app_func,
+    tip_=tip,
+)
 
-t1_rt_ap = Calculation_t1(time_ret, t_max, popt_app[0], 1e-5, popt_app[1], velocity_app_func, velocity_ret_func)
-t1_rt_tp = Calculation_t1(time_ret, t_max, popt_total[0], 1e-5,  popt_total[1], velocity_app_func, velocity_ret_func)
-F_rt_ap = F_ret_integral(t__ = t1_rt_ap, t___= time_ret, E0_= popt_app[0], alpha_=popt_app[1], t_prime_=1e-5, indentation_=indentation_app_func, velocity_=velocity_app_func, tip_=tip)
-F_rt_tp = F_ret_integral(t__ = t1_rt_tp, t___= time_ret, E0_= popt_total[0], alpha_=popt_total[1], t_prime_=1e-5, indentation_=indentation_app_func, velocity_=velocity_app_func, tip_=tip)
+t1_rt_ap = Calculation_t1(
+    time_ret,
+    t_max,
+    popt_app[0],
+    1e-5,
+    popt_app[1],
+    velocity_app_func,
+    velocity_ret_func,
+)
+t1_rt_tp = Calculation_t1(
+    time_ret,
+    t_max,
+    popt_total[0],
+    1e-5,
+    popt_total[1],
+    velocity_app_func,
+    velocity_ret_func,
+)
+F_rt_ap = F_ret_integral(
+    t__=t1_rt_ap,
+    t___=time_ret,
+    E0_=popt_app[0],
+    alpha_=popt_app[1],
+    t_prime_=1e-5,
+    indentation_=indentation_app_func,
+    velocity_=velocity_app_func,
+    tip_=tip,
+)
+F_rt_tp = F_ret_integral(
+    t__=t1_rt_tp,
+    t___=time_ret,
+    E0_=popt_total[0],
+    alpha_=popt_total[1],
+    t_prime_=1e-5,
+    indentation_=indentation_app_func,
+    velocity_=velocity_app_func,
+    tip_=tip,
+)
 # %%
-MSE_apptime_appparams =np.sum(np.square(F_app_curvefit-F_app))
-MSE_apptime_retparams = np.sum(np.square(F_at_rp-F_app))
-MSE_apptime_totparams = np.sum(np.square(F_at_tp-F_app))
+MSE_apptime_appparams = np.sum(np.square(F_app_curvefit - F_app))
+MSE_apptime_retparams = np.sum(np.square(F_at_rp - F_app))
+MSE_apptime_totparams = np.sum(np.square(F_at_tp - F_app))
 
-MSE_rettime_appparams = np.sum(np.square(F_rt_ap-F_ret))
-MSE_rettime_retparams = np.sum(np.square(F_ret_curvefit-F_ret))
-MSE_rettime_totparams = np.sum(np.square(F_rt_tp-F_ret))
+MSE_rettime_appparams = np.sum(np.square(F_rt_ap - F_ret))
+MSE_rettime_retparams = np.sum(np.square(F_ret_curvefit - F_ret))
+MSE_rettime_totparams = np.sum(np.square(F_rt_tp - F_ret))
 
-MSE_tottime_totparams = np.sum(np.square(F_total_curvefit-force))
-MSE_tottime_appparams = np.sum(np.square(force_app_parameter-force))
-MSE_tottime_retparams = np.sum(np.square(force_ret_parameter-force))
-MSE_tottime_totparams = np.sum(np.square(F_total_curvefit-force))
+MSE_tottime_totparams = np.sum(np.square(F_total_curvefit - force))
+MSE_tottime_appparams = np.sum(np.square(force_app_parameter - force))
+MSE_tottime_retparams = np.sum(np.square(force_ret_parameter - force))
+MSE_tottime_totparams = np.sum(np.square(F_total_curvefit - force))
 # %%
-fig,ax = plt.subplots(1, 1, figsize=(7, 5))
+fig, ax = plt.subplots(1, 1, figsize=(7, 5))
 tot_time = ["app time - app params", "app time - ret params", "app time - tot params"]
 MSE_app = [MSE_apptime_appparams, MSE_apptime_retparams, MSE_apptime_totparams]
 ax.bar(tot_time, MSE_app)
-#%%
-fig,ax = plt.subplots(1, 1, figsize=(7, 5))
+# %%
+fig, ax = plt.subplots(1, 1, figsize=(7, 5))
 tot_time = ["ret time - app params", "ret time - ret params", "ret time - tot params"]
 MSE_ret = [MSE_rettime_appparams, MSE_rettime_retparams, MSE_rettime_totparams]
 ax.bar(tot_time, MSE_ret)
 # %%
-fig,ax = plt.subplots(1, 1, figsize=(7, 5))
+fig, ax = plt.subplots(1, 1, figsize=(7, 5))
 tot_time = ["tot time - app params", "tot time - ret params", "tot time - tot params"]
 MSE_tot = [MSE_tottime_appparams, MSE_tottime_retparams, MSE_tottime_totparams]
 ax.bar(tot_time, MSE_tot)
-#%%
+# %%
