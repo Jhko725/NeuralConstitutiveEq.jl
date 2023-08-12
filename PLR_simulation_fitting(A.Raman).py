@@ -103,7 +103,7 @@ t_prime = 1e-5 # s
 theta = (18.0/180.0)*np.pi
 tip = Conical(theta)
 #%%
-space = 1001 # odd number
+space = 101 # odd number
 idx = int((space-1)/2)
 t_array = np.linspace(0, 0.4, space)
 t_app = t_array[:idx+1]
@@ -448,7 +448,7 @@ MSE_app = [MSE_apptime_appparams, MSE_apptime_retparams, MSE_apptime_totparams]
 ax.bar(tot_time, MSE_app)
 ax.set_ylabel("MSE")
 #%%
-fig,ax = plt.subplots(1, 1, Gitigsize=(7, 5))
+fig,ax = plt.subplots(1, 1, figsize=(7, 5))
 tot_time = ["ret time - app params", "ret time - ret params", "ret time - tot params"]
 MSE_ret = [MSE_rettime_appparams, MSE_rettime_retparams, MSE_rettime_totparams]
 ax.bar(tot_time, MSE_ret)
@@ -459,4 +459,28 @@ tot_time = ["tot time - app params", "tot time - ret params", "tot time - tot pa
 MSE_tot = [MSE_tottime_appparams, MSE_tottime_retparams, MSE_tottime_totparams]
 ax.bar(tot_time, MSE_tot)
 ax.set_ylabel("MSE")
+#%%
+each_parameter = (
+    "approach parameters",
+    "retraction parameters",
+    "total parameters",
+)
+
+each_MSE = {
+    "approach time": np.array([MSE_apptime_appparams, MSE_apptime_retparams, MSE_apptime_totparams]),
+    "retraction time" : np.array([MSE_rettime_appparams, MSE_rettime_retparams, MSE_rettime_totparams]),
+}
+width = 0.5
+
+fig, ax = plt.subplots()
+bottom = np.zeros(3)
+
+for boolean, weight_count in each_MSE.items():
+    p = ax.bar(each_parameter, weight_count, width, label=boolean, bottom=bottom)
+    bottom += weight_count
+
+ax.set_title("MSE of each parameters")
+ax.legend(loc="upper right")
+ax.set_ylabel("MSE")
+plt.show()
 #%%
