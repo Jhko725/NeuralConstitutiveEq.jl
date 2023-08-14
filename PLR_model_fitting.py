@@ -1,8 +1,9 @@
-# %%
+# %%ndarray
 from functools import partial
 
 import matplotlib.pyplot as plt
 import numpy as np
+from numpy import ndarray
 from jhelabtoolkit.io.nanosurf import nanosurf
 from jhelabtoolkit.utils.plotting import configure_matplotlib_defaults
 from scipy.integrate import quad
@@ -158,34 +159,34 @@ class PowerLawRheology:
     gamma: float
     t0: float
 
-    def __call__(self, t: np.ndarray) -> np.ndarray:
+    def __call__(self, t: ndarray) -> ndarray:
         return self.E0 * (1 + t / self.t0) ** (-self.gamma)
 
 
 # %%
 # PLR model fitting
 def make_force_integand(
-    constit: Callable[[np.ndarray], np.ndarray],
-    velocity: Callable[[np.ndarray], np.ndarray],
-    indentation: Callable[[np.ndarray], np.ndarray],
+    constit: Callable[[ndarray], ndarray],
+    velocity: Callable[[ndarray], ndarray],
+    indentation: Callable[[ndarray], ndarray],
     tip: TipGeometry,
-) -> Callable[[np.ndarray, float], np.ndarray]:
+) -> Callable[[ndarray, float], ndarray]:
     a = tip.alpha
     b = tip.beta
 
-    def _force_integrand(t_: np.ndarray, t: float) -> np.ndarray:
+    def _force_integrand(t_: ndarray, t: float) -> ndarray:
         return a * b * constit(t - t_) * velocity(t_) * indentation(t_) ** (b - 1)
 
     return _force_integrand
 
 
 def F_app_integral(
-    t__: np.ndarray,
-    constit: Callable[[np.ndarray], np.ndarray],
-    velocity: Callable[[np.ndarray], np.ndarray],
-    indentation: Callable[[np.ndarray], np.ndarray],
+    t__: ndarray,
+    constit: Callable[[ndarray], ndarray],
+    velocity: Callable[[ndarray], ndarray],
+    indentation: Callable[[ndarray], ndarray],
     tip: TipGeometry,
-) -> np.ndarray:
+) -> ndarray:
     integrand_ = make_force_integand(constit, velocity, indentation, tip)
     F = np.stack([quad(integrand_, 0, t_i, args=(t_i,))[0] for t_i in t__], axis=0)
     return F
@@ -194,16 +195,48 @@ def F_app_integral(
 def F_ret_integral(
     t__,
     t___,
-    constit: Callable[[np.ndarray], np.ndarray],
-    velocity: Callable[[np.ndarray], np.ndarray],
-    indentation: Callable[[np.ndarray], np.ndarray],
+    constit: Callable[[ndarray], ndarray],
+    velocity: Callable[[ndarray], ndarray],
+    indentation: Callable[[ndarray], ndarray],
     tip: TipGeometry,
-) -> np.ndarray:
+) -> ndarray:
     integrand_ = make_force_integand(constit, velocity, indentation, tip)
     F = np.stack(
         [quad(integrand_, 0, t1_i, args=(t_i,))[0] for (t1_i, t_i) in zip(t__, t___)],
         axis=0,
     )
+    return F
+
+
+def force_approach(
+    t: ndarray,
+    constit: Callable[[ndarray], ndarray],
+    indent_app: Callable[[ndarray], ndarray],
+    velocity_app: Callable[[ndarray], ndarray],
+    tip: TipGeometry,
+) -> ndarray:
+    dF = make_force_integand(constit, velocity_app, indent_app, tip)
+    F = np.stack([quad(dF, 0, t_i, args=(t_i,))[0] for t_i in t], axis=0)
+    return F
+
+
+def force_retract(
+    t: ndarray,
+    constit: Callable[[ndarray], ndarray],
+    indent_app: Callable[[ndarray], ndarray],
+    velocity_app: Callable[[ndarray], ndarray],
+    velocity_ret: Callable[[ndarray], ndarray],
+    tip: TipGeometry,
+) -> ndarray:
+    calc_t1 = partial(
+        calculate_t1,
+        t_max=t[0],
+        constit=constit,
+        vel_app=velocity_app,
+        vel_ret=velocity_ret,
+    )
+    dF = make_force_integand(constit, velocity_app, indent_app, tip)
+    F = np.stack([quad(dF, 0, calc_t1(t_i), args=(t_i,))[0] for t_i in t], axis=0)
     return F
 
 
@@ -255,27 +288,12 @@ def Integrand(t_, E0, t, t_prime, alpha, velocity):
     return (E0 * (1 + (t - t_) / t_prime) ** (-alpha)) * velocity(t_)
 
 
-# %%
-def t1_objective(
-    t1: float,
-    t: float,
-    t_max: float,
-    constit: Callable[[np.ndarray], np.ndarray],
-    vel_app: Callable[[np.ndarray], np.ndarray],
-    vel_ret: Callable[[np.ndarray], np.ndarray],
-    **quad_kwargs
-) -> float:
-    integrand_app = quad(lambda t_: constit(t_) * vel_app(t_), t1, t_max, **quad_kwargs)
-    integrand_ret = quad(lambda t_: constit(t_) * vel_ret(t_), t_max, t, **quad_kwargs)
-    return integrand_app[0] + integrand_ret[0]
-
-
 def calculate_t1(
     t: float,
     t_max: float,
-    constit: Callable[[np.ndarray], np.ndarray],
-    vel_app: Callable[[np.ndarray], np.ndarray],
-    vel_ret: Callable[[np.ndarray], np.ndarray],
+    constit: Callable[[ndarray], ndarray],
+    vel_app: Callable[[ndarray], ndarray],
+    vel_ret: Callable[[ndarray], ndarray],
     **quad_kwargs
 ) -> float:
     def _t1_objective(t1: float) -> float:
@@ -363,8 +381,14 @@ Force = F_ret_integral(
 )
 Force = np.array(Force)
 # %%
+f_app = force_approach(time_app, plr, indentation_app_func, velocity_app_func, tip)
+f_ret = force_retract(
+    time_ret, plr, indentation_app_func, velocity_app_func, velocity_ret_func, tip
+)
+# %%
 fig, ax = plt.subplots(1, 1, figsize=(7, 5))
-ax.plot(time_ret, Force * 1e9, color="red")
+ax.plot(time_app, f_app * 1e9, color="red")
+ax.plot(time_ret, f_ret * 1e9, color="red")
 ax.set_xlabel("Time(s)")
 ax.set_ylabel("Force(nN)")
 
@@ -572,7 +596,7 @@ F_rt_tp = F_ret_integral(
 
 
 # %%
-def mean_squared_error(data: np.ndarray, target: np.ndarray) -> float:
+def mean_squared_error(data: ndarray, target: ndarray) -> float:
     return np.mean((data - target) ** 2)
 
 
