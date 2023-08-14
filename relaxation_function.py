@@ -50,7 +50,7 @@ fung_t = Fung(t, *popt_fung)
 
 fig, ax = plt.subplots(1,1, figsize=(7,5))
 # ax.plot(t, sls_t)
-ax.plot(t, plr_t, '.', label="PLR_consit")
+ax.plot(t, plr_t, '.', label="PLR_constit")
 ax.plot(t, kww_t, label='KWW_constit')
 ax.plot(t, sls_t, label='SLS_constit')
 ax.plot(t, fung_t, label="Fung_constit")
