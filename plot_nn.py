@@ -61,7 +61,7 @@ class BernsteinNN(eqx.Module):
         weights = jax.lax.stop_gradient(self.weights)
         h = jax.nn.softplus(jax.vmap(self.net)(nodes))
         expmx = 0.5 * (nodes + 1)
-        return jax.nn.relu(self.scale) * 0.5 * jnp.dot(
+        return jax.nn.elu(self.scale) * 0.5 * jnp.dot(
             h * expmx ** (t - 1), weights
         ) + jax.nn.relu(self.bias)
 
@@ -87,7 +87,7 @@ class BernsteinNN2(eqx.Module):
         weights = jax.lax.stop_gradient(self.weights)
         t_ = t + 1e-2
         h = jax.vmap(self.net)(nodes / t_)
-        return jax.nn.relu(self.scale) * jnp.dot(weights, h) / t_ + jax.nn.relu(
+        return jax.nn.elu(self.scale) * jnp.dot(weights, h) / t_ + jax.nn.relu(
             self.bias
         )
 
