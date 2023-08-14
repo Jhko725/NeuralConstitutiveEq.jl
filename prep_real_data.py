@@ -10,15 +10,19 @@ import matplotlib.pyplot as plt
 
 from neuralconstitutive.tipgeometry import Conical, Spherical
 from neuralconstitutive.models import BernsteinNN, FullyConnectedNetwork
-from neuralconstitutive.ting import TingApproach
+from neuralconstitutive.torch.ting import TingApproach
 from neuralconstitutive.dataset import IndentationDataset
 from neuralconstitutive.preprocessing import process_approach_data, estimate_derivative
 
 pl.seed_everything(10)
-datapath = "Hydrogel AFM data/SD-Sphere-CONT-M/Highly Entangled Hydrogel(10nN, 1s, liquid).nid"
+datapath = (
+    "Hydrogel AFM data/SD-Sphere-CONT-M/Highly Entangled Hydrogel(10nN, 1s, liquid).nid"
+)
 
 # %%
-time, indent, force = process_approach_data(datapath, contact_point=-1.7937788208936754e-06, k=0.2)
+time, indent, force = process_approach_data(
+    datapath, contact_point=-1.7937788208936754e-06, k=0.2
+)
 velocity = estimate_derivative(time, indent)
 fig, axes = plt.subplots(3, 1, figsize=(5, 5), sharex=True)
 yvals = (indent, velocity, force)
@@ -30,7 +34,7 @@ axes[-1].set_xlabel("Time (s)")
 
 
 # %%
-tip = Spherical(1.0) # diameter 0.8, 2.0, 4 -> R=0.4, 1.0, 2.0
+tip = Spherical(1.0)  # diameter 0.8, 2.0, 4 -> R=0.4, 1.0, 2.0
 # model = nn.Sequential(
 #     nn.Linear(1, 20),
 #     nn.ELU(),
@@ -53,7 +57,7 @@ ting = TingApproach(BernsteinNN(model, 100), tip, lr=1e-2)
 dataset = IndentationDataset(
     time[1:] * 100,
     indent[1:] * 1e6,
-    velocity[1:]*1e4,
+    velocity[1:] * 1e4,
     force[1:] * 2e9,
     dtype=torch.float32,
 )
@@ -102,12 +106,14 @@ trainer = pl.Trainer(
     accelerator="gpu",
     devices=1,
     logger=logger,
-    callbacks=[ModelCheckpoint(
-                    monitor="train_loss",
-                    mode="min",
-                    save_top_k=1,
-                    filename="best_{epoch}-{step}",
-                ),]
+    callbacks=[
+        ModelCheckpoint(
+            monitor="train_loss",
+            mode="min",
+            save_top_k=1,
+            filename="best_{epoch}-{step}",
+        ),
+    ],
 )
 trainer.fit(ting, dataloader)
 
@@ -132,6 +138,8 @@ with torch.no_grad():
 
 # %%
 torch.cuda.is_available()
+
+
 # %%
 def laplace_1d(t, func: Callable[[float], float]):
     def integrand(x):

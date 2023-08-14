@@ -1,7 +1,7 @@
 import abc
 import torch
 from torch import nn, Tensor
-from .utils import to_parameter
+from ..utils import to_parameter
 
 
 class ConstitutiveEqn(nn.Module):

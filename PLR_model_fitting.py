@@ -256,6 +256,50 @@ def Integrand(t_, E0, t, t_prime, alpha, velocity):
 
 
 # %%
+def t1_objective(
+    t1: float,
+    t: float,
+    t_max: float,
+    constit: Callable[[np.ndarray], np.ndarray],
+    vel_app: Callable[[np.ndarray], np.ndarray],
+    vel_ret: Callable[[np.ndarray], np.ndarray],
+    **quad_kwargs
+) -> float:
+    integrand_app = quad(lambda t_: constit(t_) * vel_app(t_), t1, t_max, **quad_kwargs)
+    integrand_ret = quad(lambda t_: constit(t_) * vel_ret(t_), t_max, t, **quad_kwargs)
+    return integrand_app[0] + integrand_ret[0]
+
+
+def calculate_t1(
+    t: float,
+    t_max: float,
+    constit: Callable[[np.ndarray], np.ndarray],
+    vel_app: Callable[[np.ndarray], np.ndarray],
+    vel_ret: Callable[[np.ndarray], np.ndarray],
+    **quad_kwargs
+) -> float:
+    def _t1_objective(t1: float) -> float:
+        integrand_app = quad(
+            lambda t_: constit(t - t_) * vel_app(t_), t1, t_max, **quad_kwargs
+        )
+        integrand_ret = quad(
+            lambda t_: constit(t - t_) * vel_ret(t_), t_max, t, **quad_kwargs
+        )
+        return integrand_app[0] + integrand_ret[0]
+
+    if _t1_objective(0) <= 0:
+        return 0.0
+    else:
+        sol = root_scalar(_t1_objective, method="bisect", bracket=(0, t_max))
+        return sol.root
+
+
+# %%
+# %%
+calculate_t1(0.07, t_max, plr, velocity_app_func, velocity_ret_func)
+
+
+# %%
 def Quadrature(t1, t_, t_max_, E0_, t_prime_, alpha_, velocity_app, velocity_ret):
     integrand_app = partial(
         Integrand, E0=E0_, t=t_, t_prime=t_prime_, alpha=alpha_, velocity=velocity_app
@@ -294,9 +338,11 @@ def Calculation_t1(
 
 # %%
 t1 = Calculation_t1(
-    time_ret, t_max, E0, 1e-5, 0.2, velocity_app_func, velocity_ret_func
+    time_ret, t_max, 0.562, 1e-5, 0.2, velocity_app_func, velocity_ret_func
 )
 print(t1)
+# %%
+time_ret
 # %%
 # Test Retraction Region
 tip = Spherical(0.8 * 1e-6)

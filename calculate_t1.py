@@ -8,7 +8,7 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 import pytorch_lightning as pl
 
-from neuralconstitutive.constitutive import (
+from neuralconstitutive.torch.constitutive import (
     ConstitutiveEqn,
     PowerLawRheology,
     StandardLinearSolid,

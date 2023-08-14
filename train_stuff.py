@@ -12,7 +12,7 @@ from pytorch_lightning.loggers import WandbLogger
 
 from neuralconstitutive.utils import beta
 from neuralconstitutive.tipgeometry import TipGeometry, Conical, Spherical
-from neuralconstitutive.constitutive import (
+from neuralconstitutive.torch.constitutive import (
     ConstitutiveEqn,
     PowerLawRheology,
     StandardLinearSolid,
@@ -20,7 +20,7 @@ from neuralconstitutive.constitutive import (
 from neuralconstitutive.indentation import Indentation, Triangular
 from neuralconstitutive.dataset import IndentationDataset, split_app_ret
 from neuralconstitutive.models import FullyConnectedNetwork, BernsteinNN
-from neuralconstitutive.ting import TingApproach
+from neuralconstitutive.torch.ting import TingApproach
 
 plr = PowerLawRheology(4.0, 0.42)
 sls = StandardLinearSolid(8, 0.01, 2)
