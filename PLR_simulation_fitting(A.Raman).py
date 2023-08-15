@@ -103,7 +103,7 @@ t_prime = 1e-5 # s
 theta = (18.0/180.0)*np.pi
 tip = Conical(theta)
 #%%
-space = 101 # odd number
+space = 201 # odd number
 idx = int((space-1)/2)
 t_array = np.linspace(0, 0.4, space)
 t_app = t_array[:idx+1]
@@ -143,7 +143,7 @@ F_total = np.append(F_app, F_ret[1:])
 # ax.set_title("Original Force")
 #%%
 # Generate Gaussian Noise
-noise_amp = 0.001
+noise_amp = 0.01
 mu, sigma = 0, F_ret[0]*noise_amp # average = 0, sigma = 0.1%
 noise = np.random.normal(mu, sigma, np.shape(F_total))
 F_total_noise = F_total + noise
@@ -234,7 +234,7 @@ F_app_func = partial(
     velocity_=velocity_app_func,
     tip_=tip,
 )
-popt_app, pcov_app = curve_fit(F_app_func, time_app, F_app)
+popt_app, pcov_app = curve_fit(F_app_func, time_app, F_app, p0=[550, 0.1])
 F_app_curvefit = np.array(F_app_func(time_app, *popt_app))
 print(popt_app)
 # %%
@@ -303,7 +303,7 @@ F_ret_func = partial(
     velocity_ret=velocity_ret_func,
     tip_=tip,
 )
-popt_ret, pcov_ret = curve_fit(F_ret_func, time_ret, F_ret)
+popt_ret, pcov_ret = curve_fit(F_ret_func, time_ret, F_ret, p0=[550, 0.1])
 F_ret_curvefit = np.array(F_ret_func(time_ret, *popt_ret))
 print(popt_ret)
 # %%
@@ -395,7 +395,7 @@ F_total_func = partial(
     tip_=tip,
 )
 # %%
-popt_total, pcov_total = curve_fit(F_total_func, time, force)
+popt_total, pcov_total = curve_fit(F_total_func, time, force, p0=[550, 0.1])
 F_total_curvefit = np.array(F_total_func(time, *popt_total))
 print(popt_total)
 # %%
