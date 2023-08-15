@@ -1,4 +1,5 @@
-# %%ndarray
+# %%
+from typing import Callable, Literal
 from functools import partial
 
 import matplotlib.pyplot as plt
@@ -8,7 +9,7 @@ from jhelabtoolkit.io.nanosurf import nanosurf
 from jhelabtoolkit.utils.plotting import configure_matplotlib_defaults
 from scipy.integrate import quad
 from scipy.interpolate import interp1d
-from scipy.optimize import curve_fit, root_scalar
+from scipy.optimize import curve_fit
 
 from neuralconstitutive.preprocessing import (
     calc_tip_distance,
@@ -19,6 +20,8 @@ from neuralconstitutive.preprocessing import (
     fit_baseline_polynomial,
 )
 from neuralconstitutive.tipgeometry import Spherical, TipGeometry
+from neuralconstitutive.constitutive import PowerLawRheology
+from neuralconstitutive.ting import force_approach, force_retract
 
 configure_matplotlib_defaults()
 
@@ -124,10 +127,13 @@ max_ind = np.argmax(indentation)
 t_max = time[max_ind]
 indent_max = indentation[max_ind]
 # %%
+indentation *= 1e6
+force *= 1e6
 F_app = force[: max_ind + 1]
 F_ret = force[max_ind:]
 # %%
 # t_max 부분을 겹치게 해야 문제가 안생김
+
 indentation_app = indentation[: max_ind + 1]
 indentation_ret = indentation[max_ind:]
 
@@ -149,218 +155,76 @@ negative_idx = negative_idx[0]
 F_ret = F_ret[:negative_idx]
 time_ret = time_ret[:negative_idx]
 # %%
-from typing import Callable
-from dataclasses import dataclass
-
-
-@dataclass(frozen=True, slots=True)
-class PowerLawRheology:
-    E0: float
-    gamma: float
-    t0: float
-
-    def __call__(self, t: ndarray) -> ndarray:
-        return self.E0 * (1 + t / self.t0) ** (-self.gamma)
 
 
 # %%
 # PLR model fitting
-def make_force_integand(
-    constit: Callable[[ndarray], ndarray],
-    velocity: Callable[[ndarray], ndarray],
-    indentation: Callable[[ndarray], ndarray],
-    tip: TipGeometry,
-) -> Callable[[ndarray, float], ndarray]:
-    a = tip.alpha
-    b = tip.beta
-
-    def _force_integrand(t_: ndarray, t: float) -> ndarray:
-        return a * b * constit(t - t_) * velocity(t_) * indentation(t_) ** (b - 1)
-
-    return _force_integrand
-
-
-def F_app_integral(
-    t__: ndarray,
-    constit: Callable[[ndarray], ndarray],
-    velocity: Callable[[ndarray], ndarray],
-    indentation: Callable[[ndarray], ndarray],
-    tip: TipGeometry,
-) -> ndarray:
-    integrand_ = make_force_integand(constit, velocity, indentation, tip)
-    F = np.stack([quad(integrand_, 0, t_i, args=(t_i,))[0] for t_i in t__], axis=0)
-    return F
-
-
-def F_ret_integral(
-    t__,
-    t___,
-    constit: Callable[[ndarray], ndarray],
-    velocity: Callable[[ndarray], ndarray],
-    indentation: Callable[[ndarray], ndarray],
-    tip: TipGeometry,
-) -> ndarray:
-    integrand_ = make_force_integand(constit, velocity, indentation, tip)
-    F = np.stack(
-        [quad(integrand_, 0, t1_i, args=(t_i,))[0] for (t1_i, t_i) in zip(t__, t___)],
-        axis=0,
-    )
-    return F
-
-
-def force_approach(
-    t: ndarray,
-    constit: Callable[[ndarray], ndarray],
-    indent_app: Callable[[ndarray], ndarray],
-    velocity_app: Callable[[ndarray], ndarray],
-    tip: TipGeometry,
-) -> ndarray:
-    dF = make_force_integand(constit, velocity_app, indent_app, tip)
-    F = np.stack([quad(dF, 0, t_i, args=(t_i,))[0] for t_i in t], axis=0)
-    return F
-
-
-def force_retract(
-    t: ndarray,
-    constit: Callable[[ndarray], ndarray],
-    indent_app: Callable[[ndarray], ndarray],
-    velocity_app: Callable[[ndarray], ndarray],
-    velocity_ret: Callable[[ndarray], ndarray],
-    tip: TipGeometry,
-) -> ndarray:
-    calc_t1 = partial(
-        calculate_t1,
-        t_max=t[0],
-        constit=constit,
-        vel_app=velocity_app,
-        vel_ret=velocity_ret,
-    )
-    dF = make_force_integand(constit, velocity_app, indent_app, tip)
-    F = np.stack([quad(dF, 0, calc_t1(t_i), args=(t_i,))[0] for t_i in t], axis=0)
-    return F
 
 
 # %%
 # Determination of Variable
-tip = Spherical(0.8 * 1e-6)
+tip = Spherical(0.8)
 plr = PowerLawRheology(0.562, 0.2, 1e-5)
 
 # %%
-Force = F_app_integral(
-    t__=time_app,
-    constit=plr,
-    velocity=velocity_app_func,
-    indentation=indentation_app_func,
-    tip=tip,
+Force = force_approach(
+    time_app,
+    plr,
+    velocity_app_func,
+    indentation_app_func,
+    tip,
 )
+# %%
+type(plr)(0.5, 0.5, 1e-3)
 
 
 # %%
-def make_curvefit_function(constit, velocity, indentation, tip, **fixed_constit_args):
-    constit_ = partial(constit, **fixed_constit_args)
+def fit_approach(constit, time, indent, force, tip, **fixed_constit_params):
+    t_app, _, indent_app, _, force_app, _ = split_approach_retract(time, indent, force)
+    indent_app_ = interp1d(t_app, indent_app)
+    vel_app_ = interp1d(t_app, estimate_derivative(t_app, indent_app))
+    constit_factory = partial(type(constit), **fixed_constit_params)
 
-    def _objective(t_array, *constit_args):
-        return F_app_integral(
-            t_array, constit_(*constit_args), velocity, indentation, tip
-        )
+    def objective(t_data, *constit_params):
+        constit = constit_factory(*constit_params)
+        f_app = force_approach(t_data, constit, indent_app_, vel_app_, tip)
+        return f_app
 
-    return _objective
+    popt, pcov = curve_fit(objective, t_app, force_app, p0=(1000, 0.5))
+
+    return constit_factory(*popt), pcov
 
 
-# Curve Fitting(PLR model) Approach Region
-F_app_func = make_curvefit_function(
-    PowerLawRheology, velocity_app_func, indentation_app_func, tip, t0=1e-5
+def split_approach_retract(
+    time: ndarray, indentation: ndarray, force: ndarray
+) -> tuple[ndarray, ndarray, ndarray, ndarray, ndarray, ndarray]:
+    split_idx = np.argmax(indentation)
+    t_app, t_ret = time[: split_idx + 1], time[split_idx:]
+    indent_app, indent_ret = indentation[: split_idx + 1], indentation[split_idx:]
+    force_app, force_ret = force[: split_idx + 1], force[split_idx:]
+    return t_app, t_ret, indent_app, indent_ret, force_app, force_ret
+
+
+# %%
+t_app, _, indent_app, _, force_app, _ = split_approach_retract(time, indentation, force)
+plt.plot(indent_app, force_app)
+# %%
+plr_fit, _ = fit_approach(plr, time, indentation, force, tip, t0=1e-5)
+F_app_curvefit = force_approach(
+    time_app,
+    plr_fit,
+    velocity_app_func,
+    indentation_app_func,
+    tip,
 )
-popt_app, pcov_app = curve_fit(F_app_func, time_app, F_app, p0=(0.5, 0.5))
-F_app_curvefit = np.array(F_app_func(time_app, *popt_app))
-print(popt_app)
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(7, 5))
-ax.plot(time_app, F_app * 1e9, color="red")
-ax.plot(time_app, F_app_curvefit * 1e9, color="blue")
+ax.plot(time_app, F_app, color="red")
+ax.plot(time_app, F_app_curvefit, color="blue")
 ax.set_xlabel("Time(s)")
 ax.set_ylabel("Force(nN)")
 
 
-# %%
-# Find t1
-def Integrand(t_, E0, t, t_prime, alpha, velocity):
-    return (E0 * (1 + (t - t_) / t_prime) ** (-alpha)) * velocity(t_)
-
-
-def calculate_t1(
-    t: float,
-    t_max: float,
-    constit: Callable[[ndarray], ndarray],
-    vel_app: Callable[[ndarray], ndarray],
-    vel_ret: Callable[[ndarray], ndarray],
-    **quad_kwargs
-) -> float:
-    def _t1_objective(t1: float) -> float:
-        integrand_app = quad(
-            lambda t_: constit(t - t_) * vel_app(t_), t1, t_max, **quad_kwargs
-        )
-        integrand_ret = quad(
-            lambda t_: constit(t - t_) * vel_ret(t_), t_max, t, **quad_kwargs
-        )
-        return integrand_app[0] + integrand_ret[0]
-
-    if _t1_objective(0) <= 0:
-        return 0.0
-    else:
-        sol = root_scalar(_t1_objective, method="bisect", bracket=(0, t_max))
-        return sol.root
-
-
-# %%
-# %%
-calculate_t1(0.07, t_max, plr, velocity_app_func, velocity_ret_func)
-
-
-# %%
-def Quadrature(t1, t_, t_max_, E0_, t_prime_, alpha_, velocity_app, velocity_ret):
-    integrand_app = partial(
-        Integrand, E0=E0_, t=t_, t_prime=t_prime_, alpha=alpha_, velocity=velocity_app
-    )
-    integrand_ret = partial(
-        Integrand, E0=E0_, t=t_, t_prime=t_prime_, alpha=alpha_, velocity=velocity_ret
-    )
-    quad_app = quad(integrand_app, t1, t_max_)
-    quad_ret = quad(integrand_ret, t_max_, t_)
-    return quad_app[0] + quad_ret[0]
-
-
-# %%
-def Calculation_t1(
-    time_ret, t_max__, E0__, t_prime__, alpha__, velocity_app__, velocity_ret__
-):
-    t1 = []
-    for i in time_ret:
-        quadrature = partial(
-            Quadrature,
-            t_=i,
-            t_max_=t_max__,
-            E0_=E0__,
-            t_prime_=t_prime__,
-            alpha_=alpha__,
-            velocity_app=velocity_app__,
-            velocity_ret=velocity_ret__,
-        )
-        if quadrature(t1=0) * quadrature(t1=t_max__) > 0:
-            t1.append(0)
-        else:
-            t_1 = root_scalar(quadrature, method="bisect", bracket=(0, t_max))
-            t1.append(t_1.root)
-    return t1
-
-
-# %%
-t1 = Calculation_t1(
-    time_ret, t_max, 0.562, 1e-5, 0.2, velocity_app_func, velocity_ret_func
-)
-print(t1)
-# %%
-time_ret
 # %%
 # Test Retraction Region
 tip = Spherical(0.8 * 1e-6)
@@ -369,15 +233,13 @@ alpha = popt_app[1]
 # time = time_ret
 
 # velocity_ret, indentation_ret은 t1에 해당하는 값을 못먹음(interpolation 범위를 넘어섬)
-Force = F_ret_integral(
-    t__=t1,
-    t___=time_ret,
-    E0_=E0,
-    alpha_=alpha,
-    t_prime_=1e-5,
-    indentation_=indentation_app_func,
-    velocity_=velocity_app_func,
-    tip_=tip,
+Force = force_retract(
+    time_ret,
+    plr,
+    indentation_app_func,
+    velocity_app_func,
+    velocity_ret_func,
+    tip,
 )
 Force = np.array(Force)
 # %%
