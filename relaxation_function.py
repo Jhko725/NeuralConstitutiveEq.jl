@@ -7,10 +7,6 @@ from scipy.optimize import curve_fit
 from scipy.optimize import root_scalar
 import scipy.special as sc
 
-<<<<<<< HEAD
-def SLS(t, E0, E_inf, tau):
-    return E_inf+(E0-E_inf)*np.exp(-(t/tau))
-=======
 from neuralconstitutive.tipgeometry import Conical
 
 
@@ -22,7 +18,6 @@ def PLR(t, E0, t_prime, alpha):
 def SLS(t, E0, E_inf, tau):
     return E_inf + (E0 - E_inf) * np.exp(-(t / tau))
 
->>>>>>> a72f226da7d265c63036a29de3161358803e4f28
 
 def KWW(t, E0, E_inf, tau, beta):
     return E_inf + (E0 - E_inf) * np.exp(-((t / tau) ** beta))
@@ -49,12 +44,11 @@ ax.plot(t, plr_t)
 popt_sls, pcov_sls = curve_fit(SLS, t, plr_t)
 E0_sls, E_inf_sls, tau_sls = popt_sls[0], popt_sls[1], popt_sls[2]
 sls_t = SLS(t, *popt_sls)
-<<<<<<< HEAD
-#%%
+# %%
 # E0_sls1, E0_sls2, E0_sls3 = 60, 70, 80
 # E_inf_sls1, E_inf_sls2, E_inf_sls3 = 5, 25, 40
 tau_sls1, tau_sls2, tau_sls3 = 15.0, 20.0, 30.0
-#%%
+# %%
 # popt_sls1, pcov_sls1 = curve_fit(lambda t, tau : SLS(t, E0_sls1, popt_sls[1], tau), t, sls_t)
 # popt_sls2, pcov_sls2 = curve_fit(lambda t, tau : SLS(t, E0_sls2, popt_sls[1], tau), t, sls_t)
 # popt_sls3, pcov_sls3 = curve_fit(lambda t, tau : SLS(t, E0_sls3, popt_sls[1], tau), t, sls_t)
@@ -71,18 +65,21 @@ tau_sls1, tau_sls2, tau_sls3 = 15.0, 20.0, 30.0
 # sls_t_2 = SLS(t, E0_sls2, E_inf_sls2, tau_sls)
 # sls_t_3 = SLS(t, E0_sls3, E_inf_sls3, tau_sls)
 
-E_inf_sls1, pcov_sls1 = curve_fit(lambda t, E_inf : SLS(t, E0_sls, E_inf, tau_sls1), t, sls_t)
-E_inf_sls2, pcov_sls2 = curve_fit(lambda t, E_inf : SLS(t, E0_sls, E_inf, tau_sls2), t, sls_t)
-E_inf_sls3, pcov_sls3 = curve_fit(lambda t, E_inf : SLS(t, E0_sls, E_inf, tau_sls3), t, sls_t)
+E_inf_sls1, pcov_sls1 = curve_fit(
+    lambda t, E_inf: SLS(t, E0_sls, E_inf, tau_sls1), t, sls_t
+)
+E_inf_sls2, pcov_sls2 = curve_fit(
+    lambda t, E_inf: SLS(t, E0_sls, E_inf, tau_sls2), t, sls_t
+)
+E_inf_sls3, pcov_sls3 = curve_fit(
+    lambda t, E_inf: SLS(t, E0_sls, E_inf, tau_sls3), t, sls_t
+)
 
 sls_t_1 = SLS(t, E0_sls, E_inf_sls1, tau_sls1)
 sls_t_2 = SLS(t, E0_sls, E_inf_sls2, tau_sls2)
 sls_t_3 = SLS(t, E0_sls, E_inf_sls3, tau_sls3)
-#%%
-fig, ax = plt.subplots(1,1, figsize=(7,5))
-=======
+# %%
 fig, ax = plt.subplots(1, 1, figsize=(7, 5))
->>>>>>> a72f226da7d265c63036a29de3161358803e4f28
 ax.plot(t, sls_t)
 ax.plot(t, sls_t_1)
 ax.plot(t, sls_t_2)
@@ -106,18 +103,11 @@ popt_fung
 # %%
 fung_t = Fung(t, *popt_fung)
 
-<<<<<<< HEAD
-fig, ax = plt.subplots(1,1, figsize=(7,5))
-ax.plot(t, plr_t, '.', label="PLR_constit")
-ax.plot(t, kww_t, label='KWW_constit')
-ax.plot(t, sls_t, label='SLS_constit')
-=======
 fig, ax = plt.subplots(1, 1, figsize=(7, 5))
 # ax.plot(t, sls_t)
 ax.plot(t, plr_t, ".", label="PLR_constit")
 ax.plot(t, kww_t, label="KWW_constit")
 ax.plot(t, sls_t, label="SLS_constit")
->>>>>>> a72f226da7d265c63036a29de3161358803e4f28
 ax.plot(t, fung_t, label="Fung_constit")
 ax.legend()
 
@@ -527,19 +517,11 @@ tip = Conical(theta)
 E_inf, tau, beta = popt_kww
 E0_sls, E_inf_sls, tau_sls = popt_sls
 E0_fung, C_fung, tau1_fung, tau2_fung = popt_fung
-<<<<<<< HEAD
-#%%
-space = 1001 # odd number
-idx = int((space-1)/2)
-t_array = np.linspace(1e-2, 1e+2, space)
-t_app = t_array[:idx+1]
-=======
 # %%
 space = 101  # odd number
 idx = int((space - 1) / 2)
 t_array = np.linspace(1e-2, 1e2, space)
 t_app = t_array[: idx + 1]
->>>>>>> a72f226da7d265c63036a29de3161358803e4f28
 t_ret = t_array[idx:]
 t_max = t_array[idx]
 
@@ -561,39 +543,6 @@ def i_app(t_):
 
 def i_ret(t_):
     return (v_app(t_) * 0.2) - v_ret(t_) * (t_ - 0.2)
-<<<<<<< HEAD
-    
-#%%
-t_1 = Calculation_t1(time_ret=t_ret, t_max__=t_max, E0__=E_0, t_prime__=t_prime, alpha__=gamma, velocity_app__=v_app, velocity_ret__=v_ret)
-t_1_kww = Calculation_t1_KWW(time_ret=t_ret, t_max__=t_max, E0__=E0, E_inf__=E_inf, tau__=tau, beta__=beta, velocity_app__=v_app, velocity_ret__=v_ret)
-
-t_1_sls = Calculation_t1_SLS(time_ret=t_ret, t_max__=t_max, E0__=E0_sls, E_inf__=E_inf_sls, tau__=tau_sls, velocity_app__=v_app, velocity_ret__=v_ret)
-t_1_sls1 = Calculation_t1_SLS(time_ret=t_ret, t_max__=t_max, E0__=E0_sls, E_inf__=E_inf_sls1, tau__=tau_sls1, velocity_app__=v_app, velocity_ret__=v_ret)
-t_1_sls2 = Calculation_t1_SLS(time_ret=t_ret, t_max__=t_max, E0__=E0_sls, E_inf__=E_inf_sls2, tau__=tau_sls2, velocity_app__=v_app, velocity_ret__=v_ret)
-t_1_sls3 = Calculation_t1_SLS(time_ret=t_ret, t_max__=t_max, E0__=E0_sls, E_inf__=E_inf_sls3, tau__=tau_sls3, velocity_app__=v_app, velocity_ret__=v_ret)
-
-t_1_fung = Calculation_t1_Fung(time_ret=t_ret, t_max__=t_max, E0__=E0_fung, C__=C_fung, tau1__=tau1_fung, tau2__=tau2_fung, velocity_app__=v_app, velocity_ret__=v_ret)
-#%%
-F_app = F_app_integral(t__=t_app, E0_=E_0, alpha_=gamma, t_prime_=t_prime, velocity_=v_app, indentation_= i_app, tip_=tip)
-F_app_sls = F_app_integral_SLS(t__=t_app, E0_=E0_sls, E_inf_=E_inf_sls, tau_=tau_sls, velocity_=v_app, indentation_=i_app, tip_=tip)
-F_app_sls1 = F_app_integral_SLS(t__=t_app, E0_=E0_sls, E_inf_=E_inf_sls1, tau_=tau_sls1, velocity_=v_app, indentation_=i_app, tip_=tip)
-F_app_sls2 = F_app_integral_SLS(t__=t_app, E0_=E0_sls, E_inf_=E_inf_sls2, tau_=tau_sls2, velocity_=v_app, indentation_=i_app, tip_=tip)
-F_app_sls3 = F_app_integral_SLS(t__=t_app, E0_=E0_sls, E_inf_=E_inf_sls3, tau_=tau_sls3, velocity_=v_app, indentation_=i_app, tip_=tip)
-
-
-F_app_kww = F_app_integral_KWW(t__=t_app, E0_=E0, E_inf_=E_inf, tau_=tau, beta_=beta, velocity_=v_app, indentation_=i_app, tip_=tip)
-F_app_fung = F_app_integral_Fung(t__=t_app, E0_=E0_fung, C_=C_fung, tau1_=tau1_fung, tau2_=tau2_fung, velocity_=v_app, indentation_=i_app, tip_=tip)
-
-F_ret = F_ret_integral(t__=t_1, t___=t_ret, E0_=E_0, alpha_=gamma, t_prime_=t_prime, velocity_=v_app, indentation_=i_app, tip_=tip)
-F_ret_sls = F_ret_integral_SLS(t__=t_1_sls, t___=t_ret, E0_=E0_sls, E_inf_=E_inf_sls, tau_=tau_sls, velocity_=v_app, indentation_=i_app, tip_=tip)
-F_ret_sls1 = F_ret_integral_SLS(t__=t_1_sls1, t___=t_ret, E0_=E0_sls, E_inf_=E_inf_sls1, tau_=tau_sls1, velocity_=v_app, indentation_=i_app, tip_=tip)
-F_ret_sls2 = F_ret_integral_SLS(t__=t_1_sls2, t___=t_ret, E0_=E0_sls, E_inf_=E_inf_sls2, tau_=tau_sls2, velocity_=v_app, indentation_=i_app, tip_=tip)
-F_ret_sls3 = F_ret_integral_SLS(t__=t_1_sls3, t___=t_ret, E0_=E0_sls, E_inf_=E_inf_sls3, tau_=tau_sls3, velocity_=v_app, indentation_=i_app, tip_=tip)
-
-F_ret_kww = F_ret_integral_KWW(t__=t_1_kww, t___=t_ret, E0_=E0, E_inf_=E_inf, tau_=tau, beta_=beta, velocity_=v_app, indentation_=i_app, tip_=tip)
-F_ret_fung = F_ret_integral_Fung(t__=t_1_kww, t___=t_ret, E0_=E0_fung, C_=C_fung, tau1_=tau1_fung, tau2_=tau2_fung, velocity_=v_app, indentation_=i_app, tip_=tip)
-#%%
-=======
 
 
 # %%
@@ -616,6 +565,7 @@ t_1_kww = Calculation_t1_KWW(
     velocity_app__=v_app,
     velocity_ret__=v_ret,
 )
+
 t_1_sls = Calculation_t1_SLS(
     time_ret=t_ret,
     t_max__=t_max,
@@ -625,6 +575,34 @@ t_1_sls = Calculation_t1_SLS(
     velocity_app__=v_app,
     velocity_ret__=v_ret,
 )
+t_1_sls1 = Calculation_t1_SLS(
+    time_ret=t_ret,
+    t_max__=t_max,
+    E0__=E0_sls,
+    E_inf__=E_inf_sls1,
+    tau__=tau_sls1,
+    velocity_app__=v_app,
+    velocity_ret__=v_ret,
+)
+t_1_sls2 = Calculation_t1_SLS(
+    time_ret=t_ret,
+    t_max__=t_max,
+    E0__=E0_sls,
+    E_inf__=E_inf_sls2,
+    tau__=tau_sls2,
+    velocity_app__=v_app,
+    velocity_ret__=v_ret,
+)
+t_1_sls3 = Calculation_t1_SLS(
+    time_ret=t_ret,
+    t_max__=t_max,
+    E0__=E0_sls,
+    E_inf__=E_inf_sls3,
+    tau__=tau_sls3,
+    velocity_app__=v_app,
+    velocity_ret__=v_ret,
+)
+
 t_1_fung = Calculation_t1_Fung(
     time_ret=t_ret,
     t_max__=t_max,
@@ -654,6 +632,35 @@ F_app_sls = F_app_integral_SLS(
     indentation_=i_app,
     tip_=tip,
 )
+F_app_sls1 = F_app_integral_SLS(
+    t__=t_app,
+    E0_=E0_sls,
+    E_inf_=E_inf_sls1,
+    tau_=tau_sls1,
+    velocity_=v_app,
+    indentation_=i_app,
+    tip_=tip,
+)
+F_app_sls2 = F_app_integral_SLS(
+    t__=t_app,
+    E0_=E0_sls,
+    E_inf_=E_inf_sls2,
+    tau_=tau_sls2,
+    velocity_=v_app,
+    indentation_=i_app,
+    tip_=tip,
+)
+F_app_sls3 = F_app_integral_SLS(
+    t__=t_app,
+    E0_=E0_sls,
+    E_inf_=E_inf_sls3,
+    tau_=tau_sls3,
+    velocity_=v_app,
+    indentation_=i_app,
+    tip_=tip,
+)
+
+
 F_app_kww = F_app_integral_KWW(
     t__=t_app,
     E0_=E0,
@@ -695,6 +702,37 @@ F_ret_sls = F_ret_integral_SLS(
     indentation_=i_app,
     tip_=tip,
 )
+F_ret_sls1 = F_ret_integral_SLS(
+    t__=t_1_sls1,
+    t___=t_ret,
+    E0_=E0_sls,
+    E_inf_=E_inf_sls1,
+    tau_=tau_sls1,
+    velocity_=v_app,
+    indentation_=i_app,
+    tip_=tip,
+)
+F_ret_sls2 = F_ret_integral_SLS(
+    t__=t_1_sls2,
+    t___=t_ret,
+    E0_=E0_sls,
+    E_inf_=E_inf_sls2,
+    tau_=tau_sls2,
+    velocity_=v_app,
+    indentation_=i_app,
+    tip_=tip,
+)
+F_ret_sls3 = F_ret_integral_SLS(
+    t__=t_1_sls3,
+    t___=t_ret,
+    E0_=E0_sls,
+    E_inf_=E_inf_sls3,
+    tau_=tau_sls3,
+    velocity_=v_app,
+    indentation_=i_app,
+    tip_=tip,
+)
+
 F_ret_kww = F_ret_integral_KWW(
     t__=t_1_kww,
     t___=t_ret,
@@ -718,7 +756,6 @@ F_ret_fung = F_ret_integral_Fung(
     tip_=tip,
 )
 # %%
->>>>>>> a72f226da7d265c63036a29de3161358803e4f28
 F_app = np.array(F_app)
 F_ret = np.array(F_ret)
 F_app[np.isnan(F_app)] = 0
@@ -762,31 +799,23 @@ F_app_fung[np.isnan(F_app_fung)] = 0
 F_ret_fung[np.isnan(F_ret_fung)] = 0
 F_total_fung = np.append(F_app_fung, F_ret_fung[1:])
 
-<<<<<<< HEAD
-#%%
+# %%
 markersize = 10.0
 fig, ax = plt.subplots(1, 1, figsize=(20, 15))
-ax.plot(t_array, F_total * 1e9, '.', label="PLR", markersize=markersize)
+ax.plot(t_array, F_total * 1e9, ".", label="PLR", markersize=markersize)
 # ax.plot(t_array, F_total_kww * 1e9, '.', label="KWW", markersize=markersize)
-ax.plot(t_array, F_total_sls * 1e9, '.', label="SLS", markersize=markersize)
-ax.plot(t_array, F_total_sls1 * 1e9, '.', label="SLS1", markersize=markersize)
-ax.plot(t_array, F_total_sls2 * 1e9, '.', label="SLS2", markersize=markersize)
-ax.plot(t_array, F_total_sls3 * 1e9, '.', label="SLS3", markersize=markersize)
+ax.plot(t_array, F_total_sls * 1e9, ".", label="SLS", markersize=markersize)
+ax.plot(t_array, F_total_sls1 * 1e9, ".", label="SLS1", markersize=markersize)
+ax.plot(t_array, F_total_sls2 * 1e9, ".", label="SLS2", markersize=markersize)
+ax.plot(t_array, F_total_sls3 * 1e9, ".", label="SLS3", markersize=markersize)
 # ax.plot(t_array, F_total_fung * 1e9, '.', label="Fung", markersize=markersize)
 ax.set_xlabel("Time(s)")
 ax.set_ylabel("Force(nN)")
 ax.legend(fontsize=20)
-#%%
+# %%
 
 
-
-
-
-
-
-
-
-#%%
+# %%
 # SLS model variation
 # def SLS_constit_integand(t_, t, velocity, indentation, tip):
 #     a = tip.alpha
@@ -810,60 +839,54 @@ ax.legend(fontsize=20)
 #             tip=tip_,
 #         )
 #         F.append(quad(integrand_, 0, i)[0])
-#     return F    
+#     return F
 # sls_t[:150] = -5/2 * t_app[:150] + 70
-#%%
+# %%
 popt, pcov = curve_fit(
-    lambda t, tau : F_app_integral_SLS(
+    lambda t, tau: F_app_integral_SLS(
         t__=t,
-        E0_=70, 
-        E_inf_=E_inf_sls, 
-        tau_=tau, 
-        velocity_=v_app, 
-        indentation_=i_app, 
-        tip_=tip),
-        t_app,
-        F_app_sls
-        )      
-        
+        E0_=70,
+        E_inf_=E_inf_sls,
+        tau_=tau,
+        velocity_=v_app,
+        indentation_=i_app,
+        tip_=tip,
+    ),
+    t_app,
+    F_app_sls,
+)
+
 popt
-#%%
+# %%
 F_app_sls[:200] = F_app_integral_SLS(
-        t__=t_app,
-        E0_=70, 
-        E_inf_=E_inf_sls, 
-        tau_=popt, 
-        velocity_=v_app, 
-        indentation_=i_app, 
-        tip_=tip)[:200]
+    t__=t_app,
+    E0_=70,
+    E_inf_=E_inf_sls,
+    tau_=popt,
+    velocity_=v_app,
+    indentation_=i_app,
+    tip_=tip,
+)[:200]
 
 F_app_sls[np.isnan(F_app_sls)] = 0
 F_ret_sls[np.isnan(F_ret_sls)] = 0
 F_total_sls = np.append(F_app_sls, F_ret_sls[1:])
-#%%
+# %%
 
 sls_t[:200] = SLS(t, E0=70, E_inf=E_inf_sls, tau=popt)[:200]
 
-fig, ax = plt.subplots(1,1, figsize=(7,5))
-ax.plot(t, plr_t, '.', label="PLR_constit")
-ax.plot(t, kww_t, label='KWW_constit')
-ax.plot(t, sls_t, label='SLS_constit')
+fig, ax = plt.subplots(1, 1, figsize=(7, 5))
+ax.plot(t, plr_t, ".", label="PLR_constit")
+ax.plot(t, kww_t, label="KWW_constit")
+ax.plot(t, sls_t, label="SLS_constit")
 ax.plot(t, fung_t, label="Fung_constit")
 ax.legend()
-#%%
+# %%
 fig, ax = plt.subplots(1, 1, figsize=(10, 7))
 # ax.plot(t_array, F_total * 1e9, '.', label="PLR")
 # ax.plot(t_array, F_total_kww * 1e9, '.', label="KWW")
-ax.plot(t_array, F_total_sls * 1e9, '.', label="SLS")
-# ax.plot(t_array, F_total_fung * 1e9, '.', label="Fung")
-=======
-# %%
-fig, ax = plt.subplots(1, 1, figsize=(10, 7))
-ax.plot(t_array, F_total * 1e9, ".", label="PLR")
-ax.plot(t_array, F_total_kww * 1e9, ".", label="KWW")
 ax.plot(t_array, F_total_sls * 1e9, ".", label="SLS")
-ax.plot(t_array, F_total_fung * 1e9, ".", label="Fung")
->>>>>>> a72f226da7d265c63036a29de3161358803e4f28
+# ax.plot(t_array, F_total_fung * 1e9, '.', label="Fung")
 ax.set_xlabel("Time(s)")
 ax.set_ylabel("Force(nN)")
 ax.legend()

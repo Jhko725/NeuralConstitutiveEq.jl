@@ -18,7 +18,7 @@ from neuralconstitutive.preprocessing import (
     fit_baseline_polynomial,
 )
 from neuralconstitutive.tipgeometry import Spherical, TipGeometry
-from neuralconstitutive.constitutive import PowerLawRheology
+from neuralconstitutive.constitutive import PowerLawRheology, StandardLinearSolid
 from neuralconstitutive.ting import force_approach, force_retract
 from neuralconstitutive.fitting import (
     fit_approach,
@@ -26,6 +26,8 @@ from neuralconstitutive.fitting import (
     fit_total,
     split_approach_retract,
 )
+from neuralconstitutive.utils import squared_error
+
 
 configure_matplotlib_defaults()
 
@@ -159,7 +161,8 @@ velocity_ret_func = interp1d(time_ret, velocity_ret)
 # time_ret = time_ret[:negative_idx]
 # %%
 # %%
-# PLR model fitting
+## PLR model fitting ##
+
 # Determination of Variable
 tip = Spherical(0.8)
 
@@ -213,8 +216,6 @@ axes[1].plot(labels, gammas)
 
 
 # %%
-def squared_error(data: ndarray, target: ndarray) -> float:
-    return np.sum((data - target) ** 2)
 
 
 selections = (slice(0, len(time_app)), slice(len(time_app), None), slice(None, None))
@@ -224,3 +225,46 @@ for ax, sel, lab in zip(axes, selections, labels):
     ax.bar(labels, mses / np.sum(force**2))
     ax.set_ylabel(f"Error: {lab}")
 axes[0].set_title("Normalized squared error for the PLR curve fits")
+# %%
+## SLS model fitting ##
+
+sls = StandardLinearSolid(10, 1, 2.0)
+sls_fit = [
+    fit_func(sls, time, indentation, force, tip)
+    for fit_func in (fit_approach, fit_retract, fit_total)
+]
+f_fit = [
+    np.concatenate(
+        [
+            force_approach(
+                time_app,
+                sls_,
+                indentation_app_func,
+                velocity_app_func,
+                tip,
+            )[:-1],
+            force_retract(
+                time_ret,
+                sls_,
+                indentation_app_func,
+                velocity_app_func,
+                velocity_ret_func,
+                tip,
+            ),
+        ],
+        axis=0,
+    )
+    for sls_, _ in sls_fit
+]
+
+# %%
+labels = ("Approach", "Retract", "Both")
+fig, ax = plt.subplots(1, 1, figsize=(7, 5))
+ax.plot(time, force, ".", color="black", label="Data")
+for f, lab in zip(f_fit, labels):
+    ax.plot(time, f, label=lab)
+ax.set_xlabel("Time(s)")
+ax.set_ylabel("Force(nN)")
+ax.legend()
+
+# %%
