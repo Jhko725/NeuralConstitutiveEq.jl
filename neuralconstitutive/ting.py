@@ -73,8 +73,8 @@ def calculate_t1(
         )
         return integrand_app[0] + integrand_ret[0]
 
-    if _t1_objective(0) <= 0:
-        return 0.0
-    else:
+    try:
         sol = root_scalar(_t1_objective, method="bisect", bracket=(0, t_max))
         return sol.root
+    except ValueError:
+        return 0.0

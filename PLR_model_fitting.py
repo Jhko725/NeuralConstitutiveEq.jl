@@ -7,9 +7,7 @@ import numpy as np
 from numpy import ndarray
 from jhelabtoolkit.io.nanosurf import nanosurf
 from jhelabtoolkit.utils.plotting import configure_matplotlib_defaults
-from scipy.integrate import quad
 from scipy.interpolate import interp1d
-from scipy.optimize import curve_fit
 
 from neuralconstitutive.preprocessing import (
     calc_tip_distance,
@@ -22,6 +20,12 @@ from neuralconstitutive.preprocessing import (
 from neuralconstitutive.tipgeometry import Spherical, TipGeometry
 from neuralconstitutive.constitutive import PowerLawRheology
 from neuralconstitutive.ting import force_approach, force_retract
+from neuralconstitutive.fitting import (
+    fit_approach,
+    fit_retract,
+    fit_total,
+    split_approach_retract,
+)
 
 configure_matplotlib_defaults()
 
@@ -149,343 +153,74 @@ velocity_app_func = interp1d(time_app, velocity_app)
 velocity_ret_func = interp1d(time_ret, velocity_ret)
 # %%
 # Truncate negetive force region
-negative_idx = np.where(F_ret < 0)[0]
-negative_idx = negative_idx[0]
+# negative_idx = np.where(F_ret < 0)[0]
+# negative_idx = negative_idx[0]
+# F_ret = F_ret[:negative_idx]
+# time_ret = time_ret[:negative_idx]
 # %%
-F_ret = F_ret[:negative_idx]
-time_ret = time_ret[:negative_idx]
-# %%
-
-
 # %%
 # PLR model fitting
-
-
-# %%
 # Determination of Variable
 tip = Spherical(0.8)
+
+# Fit to approach, retract, total
 plr = PowerLawRheology(0.562, 0.2, 1e-5)
-
+plr_fit = [
+    fit_func(plr, time, indentation, force, tip, t0=1e-5)
+    for fit_func in (fit_approach, fit_retract, fit_total)
+]
 # %%
-Force = force_approach(
-    time_app,
-    plr,
-    velocity_app_func,
-    indentation_app_func,
-    tip,
-)
-# %%
-type(plr)(0.5, 0.5, 1e-3)
-
-
-# %%
-def fit_approach(constit, time, indent, force, tip, **fixed_constit_params):
-    t_app, _, indent_app, _, force_app, _ = split_approach_retract(time, indent, force)
-    indent_app_ = interp1d(t_app, indent_app)
-    vel_app_ = interp1d(t_app, estimate_derivative(t_app, indent_app))
-    constit_factory = partial(type(constit), **fixed_constit_params)
-
-    def objective(t_data, *constit_params):
-        constit = constit_factory(*constit_params)
-        f_app = force_approach(t_data, constit, indent_app_, vel_app_, tip)
-        return f_app
-
-    popt, pcov = curve_fit(objective, t_app, force_app, p0=(1000, 0.5))
-
-    return constit_factory(*popt), pcov
-
-
-def split_approach_retract(
-    time: ndarray, indentation: ndarray, force: ndarray
-) -> tuple[ndarray, ndarray, ndarray, ndarray, ndarray, ndarray]:
-    split_idx = np.argmax(indentation)
-    t_app, t_ret = time[: split_idx + 1], time[split_idx:]
-    indent_app, indent_ret = indentation[: split_idx + 1], indentation[split_idx:]
-    force_app, force_ret = force[: split_idx + 1], force[split_idx:]
-    return t_app, t_ret, indent_app, indent_ret, force_app, force_ret
-
-
-# %%
-t_app, _, indent_app, _, force_app, _ = split_approach_retract(time, indentation, force)
-plt.plot(indent_app, force_app)
-# %%
-plr_fit, _ = fit_approach(plr, time, indentation, force, tip, t0=1e-5)
-F_app_curvefit = force_approach(
-    time_app,
-    plr_fit,
-    velocity_app_func,
-    indentation_app_func,
-    tip,
-)
-# %%
-fig, ax = plt.subplots(1, 1, figsize=(7, 5))
-ax.plot(time_app, F_app, color="red")
-ax.plot(time_app, F_app_curvefit, color="blue")
-ax.set_xlabel("Time(s)")
-ax.set_ylabel("Force(nN)")
-
-
-# %%
-# Test Retraction Region
-tip = Spherical(0.8 * 1e-6)
-E0 = popt_app[0]
-alpha = popt_app[1]
-# time = time_ret
-
-# velocity_ret, indentation_ret은 t1에 해당하는 값을 못먹음(interpolation 범위를 넘어섬)
-Force = force_retract(
-    time_ret,
-    plr,
-    indentation_app_func,
-    velocity_app_func,
-    velocity_ret_func,
-    tip,
-)
-Force = np.array(Force)
-# %%
-f_app = force_approach(time_app, plr, indentation_app_func, velocity_app_func, tip)
-f_ret = force_retract(
-    time_ret, plr, indentation_app_func, velocity_app_func, velocity_ret_func, tip
-)
-# %%
-fig, ax = plt.subplots(1, 1, figsize=(7, 5))
-ax.plot(time_app, f_app * 1e9, color="red")
-ax.plot(time_ret, f_ret * 1e9, color="red")
-ax.set_xlabel("Time(s)")
-ax.set_ylabel("Force(nN)")
-
-
-# %%
-# Curve Fitting(PLR model) Retraction Region
-def F_ret_integral_test(
-    t__, E0_, alpha_, t_prime_, indentation_, tip_, velocity_app, velocity_ret
-):
-    t1 = Calculation_t1(t__, t__[0], E0_, t_prime_, alpha_, velocity_app, velocity_ret)
-    F = []
-    for i, j in zip(t__, t1):
-        integrand_ = partial(
-            PLR_constit_integand,
-            t=i,
-            E0=E0_,
-            alpha=alpha_,
-            t_prime=t_prime_,
-            velocity=velocity_app,
-            indentation=indentation_,
-            tip=tip_,
-        )
-        F.append(quad(integrand_, 0, j)[0])
-    return F
-
-
-# %%
-F_ret_func = partial(
-    F_ret_integral_test,
-    t_prime_=1e-5,
-    indentation_=indentation_app_func,
-    velocity_app=velocity_app_func,
-    velocity_ret=velocity_ret_func,
-    tip_=tip,
-)
-popt_ret, pcov_ret = curve_fit(F_ret_func, time_ret, F_ret)
-F_ret_curvefit = np.array(F_ret_func(time_ret, *popt_ret))
-print(popt_ret)
-# %%
-fig, ax = plt.subplots(1, 1, figsize=(7, 5))
-ax.plot(time_ret, F_ret * 1e9, color="red")
-ax.plot(time_ret, F_ret_curvefit * 1e9, color="blue")
-ax.set_xlabel("Time(s)")
-ax.set_ylabel("Force(nN)")
-
-
-# %%
-def F_total_integral(
-    time, E0_, alpha_, max_ind, t_prime_, indentation_, tip_, velocity_app, velocity_ret
-):
-    time_app = time[: max_ind + 1]
-    time_ret = time[max_ind:]
-    t1 = Calculation_t1(
-        time_ret, time_ret[0], E0_, t_prime_, alpha_, velocity_app, velocity_ret
+f_fit = [
+    np.concatenate(
+        [
+            force_approach(
+                time_app,
+                plr_,
+                indentation_app_func,
+                velocity_app_func,
+                tip,
+            )[:-1],
+            force_retract(
+                time_ret,
+                plr_,
+                indentation_app_func,
+                velocity_app_func,
+                velocity_ret_func,
+                tip,
+            ),
+        ],
+        axis=0,
     )
-    F_app = []
-    for i in time_app:
-        integrand_ = partial(
-            PLR_constit_integand,
-            t=i,
-            E0=E0_,
-            alpha=alpha_,
-            t_prime=t_prime_,
-            velocity=velocity_app,
-            indentation=indentation_,
-            tip=tip_,
-        )
-        F_app.append(quad(integrand_, 0, i)[0])
-
-    F_ret = []
-    for i, j in zip(time_ret, t1):
-        integrand_ = partial(
-            PLR_constit_integand,
-            t=i,
-            E0=E0_,
-            alpha=alpha_,
-            t_prime=t_prime_,
-            velocity=velocity_app,
-            indentation=indentation_,
-            tip=tip_,
-        )
-        F_ret.append(quad(integrand_, 0, j)[0])
-
-    F = F_app[:-1] + F_ret
-    return F
-
+    for plr_, _ in plr_fit
+]
 
 # %%
-tip = Spherical(0.8 * 1e-6)
-length = len(time_app) + len(time_ret) - 1
-time = time[:length]
-force = force[:length]
-force_app_parameter = F_total_integral(
-    time=time,
-    max_ind=max_ind,
-    E0_=popt_app[0],
-    alpha_=popt_app[1],
-    t_prime_=1e-5,
-    indentation_=indentation_app_func,
-    velocity_app=velocity_app_func,
-    velocity_ret=velocity_ret_func,
-    tip_=tip,
-)
-force_ret_parameter = F_total_integral(
-    time=time,
-    max_ind=max_ind,
-    E0_=popt_ret[0],
-    alpha_=popt_ret[1],
-    t_prime_=1e-5,
-    indentation_=indentation_app_func,
-    velocity_app=velocity_app_func,
-    velocity_ret=velocity_ret_func,
-    tip_=tip,
-)
-force_app_parameter = np.array(force_app_parameter)
-force_ret_parameter = np.array(force_ret_parameter)
-# %%
-F_total_func = partial(
-    F_total_integral,
-    max_ind=max_ind,
-    t_prime_=1e-5,
-    indentation_=indentation_app_func,
-    velocity_app=velocity_app_func,
-    velocity_ret=velocity_ret_func,
-    tip_=tip,
-)
-# %%
-popt_total, pcov_total = curve_fit(F_total_func, time, force)
-F_total_curvefit = np.array(F_total_func(time, *popt_total))
-print(popt_total)
-# %%
-fig, ax = plt.subplots(1, 1, figsize=(10, 7))
-ax.plot(time, F_total_curvefit * 1e9, label="total curvefit")
-ax.plot(time, force * 1e9, ".", label="experiment data")
-ax.plot(time, force_app_parameter * 1e9, label="approach curvefit")
-ax.plot(time, force_ret_parameter * 1e9, label="retraction curvefit")
+labels = ("Approach", "Retract", "Both")
+fig, ax = plt.subplots(1, 1, figsize=(7, 5))
+ax.plot(time, force, ".", color="black", label="Data")
+for f, lab in zip(f_fit, labels):
+    ax.plot(time, f, label=lab)
 ax.set_xlabel("Time(s)")
 ax.set_ylabel("Force(nN)")
 ax.legend()
+
 # %%
-x = ["Approach", "Retraction", "Total"]
-modulus = [popt_app[0], popt_ret[0], popt_total[0]]
-alpha = [popt_app[1], popt_ret[1], popt_total[1]]
+E0s = [plr_.E0 for plr_, _ in plr_fit]
+gammas = [plr_.gamma for plr_, _ in plr_fit]
 fig, axes = plt.subplots(1, 2, figsize=(15, 7))
-axes[0].plot(x, modulus)
-axes[1].plot(x, alpha)
-# %%
-F_at_rp = F_app_integral(
-    t__=time_app,
-    E0_=popt_ret[0],
-    alpha_=popt_ret[1],
-    t_prime_=1e-5,
-    indentation_=indentation_app_func,
-    velocity_=velocity_app_func,
-    tip_=tip,
-)
-F_at_tp = F_app_integral(
-    t__=time_app,
-    E0_=popt_total[0],
-    alpha_=popt_total[1],
-    t_prime_=1e-5,
-    indentation_=indentation_app_func,
-    velocity_=velocity_app_func,
-    tip_=tip,
-)
-
-t1_rt_ap = Calculation_t1(
-    time_ret,
-    t_max,
-    popt_app[0],
-    1e-5,
-    popt_app[1],
-    velocity_app_func,
-    velocity_ret_func,
-)
-t1_rt_tp = Calculation_t1(
-    time_ret,
-    t_max,
-    popt_total[0],
-    1e-5,
-    popt_total[1],
-    velocity_app_func,
-    velocity_ret_func,
-)
-F_rt_ap = F_ret_integral(
-    t__=t1_rt_ap,
-    t___=time_ret,
-    E0_=popt_app[0],
-    alpha_=popt_app[1],
-    t_prime_=1e-5,
-    indentation_=indentation_app_func,
-    velocity_=velocity_app_func,
-    tip_=tip,
-)
-F_rt_tp = F_ret_integral(
-    t__=t1_rt_tp,
-    t___=time_ret,
-    E0_=popt_total[0],
-    alpha_=popt_total[1],
-    t_prime_=1e-5,
-    indentation_=indentation_app_func,
-    velocity_=velocity_app_func,
-    tip_=tip,
-)
+axes[0].plot(labels, E0s)
+axes[1].plot(labels, gammas)
 
 
 # %%
-def mean_squared_error(data: ndarray, target: ndarray) -> float:
-    return np.mean((data - target) ** 2)
+def squared_error(data: ndarray, target: ndarray) -> float:
+    return np.sum((data - target) ** 2)
 
 
-MSE_apptime_appparams = mean_squared_error(F_app_curvefit, F_app)
-MSE_apptime_retparams = mean_squared_error(F_at_rp, F_app)
-MSE_apptime_totparams = mean_squared_error(F_at_tp, F_app)
-
-MSE_rettime_appparams = mean_squared_error(F_rt_ap, F_ret)
-MSE_rettime_retparams = mean_squared_error(F_ret_curvefit, F_ret)
-MSE_rettime_totparams = mean_squared_error(F_rt_tp, F_ret)
-
-MSE_tottime_totparams = mean_squared_error(F_total_curvefit, force)
-MSE_tottime_appparams = mean_squared_error(force_app_parameter, force)
-MSE_tottime_retparams = mean_squared_error(force_ret_parameter, force)
-MSE_tottime_totparams = mean_squared_error(F_total_curvefit, force)
-# %%
-fig, ax = plt.subplots(1, 1, figsize=(7, 5))
-tot_time = ["app time - app params", "app time - ret params", "app time - tot params"]
-MSE_app = [MSE_apptime_appparams, MSE_apptime_retparams, MSE_apptime_totparams]
-ax.bar(tot_time, MSE_app)
-# %%
-fig, ax = plt.subplots(1, 1, figsize=(7, 5))
-tot_time = ["ret time - app params", "ret time - ret params", "ret time - tot params"]
-MSE_ret = [MSE_rettime_appparams, MSE_rettime_retparams, MSE_rettime_totparams]
-ax.bar(tot_time, MSE_ret)
-# %%
-fig, ax = plt.subplots(1, 1, figsize=(7, 5))
-tot_time = ["tot time - app params", "tot time - ret params", "tot time - tot params"]
-MSE_tot = [MSE_tottime_appparams, MSE_tottime_retparams, MSE_tottime_totparams]
-ax.bar(tot_time, MSE_tot)
+selections = (slice(0, len(time_app)), slice(len(time_app), None), slice(None, None))
+fig, axes = plt.subplots(3, 1, figsize=(5, 5), sharex=True, sharey=True)
+for ax, sel, lab in zip(axes, selections, labels):
+    mses = [squared_error(force[sel], f[sel]) for f in f_fit]
+    ax.bar(labels, mses / np.sum(force**2))
+    ax.set_ylabel(f"Error: {lab}")
+axes[0].set_title("Normalized squared error for the PLR curve fits")
