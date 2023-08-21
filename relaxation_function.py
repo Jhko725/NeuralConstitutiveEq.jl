@@ -63,9 +63,15 @@ tau_sls1, tau_sls2, tau_sls3 = 15.0, 20.0, 30.0
 # sls_t_2 = SLS(t, E0_sls2, E_inf_sls2, tau_sls)
 # sls_t_3 = SLS(t, E0_sls3, E_inf_sls3, tau_sls)
 
-E_inf_sls1, pcov_sls1 = curve_fit(lambda t, E_inf : SLS(t, E0_sls, E_inf, tau_sls1), t, sls_t)
-E_inf_sls2, pcov_sls2 = curve_fit(lambda t, E_inf : SLS(t, E0_sls, E_inf, tau_sls2), t, sls_t)
-E_inf_sls3, pcov_sls3 = curve_fit(lambda t, E_inf : SLS(t, E0_sls, E_inf, tau_sls3), t, sls_t)
+E_inf_sls1, pcov_sls1 = curve_fit(
+    lambda t, E_inf: SLS(t, E0_sls, E_inf, tau_sls1), t, sls_t
+)
+E_inf_sls2, pcov_sls2 = curve_fit(
+    lambda t, E_inf: SLS(t, E0_sls, E_inf, tau_sls2), t, sls_t
+)
+E_inf_sls3, pcov_sls3 = curve_fit(
+    lambda t, E_inf: SLS(t, E0_sls, E_inf, tau_sls3), t, sls_t
+)
 
 sls_t_1 = SLS(t, E0_sls, E_inf_sls1, tau_sls1)
 sls_t_2 = SLS(t, E0_sls, E_inf_sls2, tau_sls2)
@@ -119,7 +125,6 @@ def PLR_constit_integand(t_, t, E0, alpha, t_prime, velocity, indentation, tip):
         * velocity(t_)
         * indentation(t_) ** (b - 1)
     )
-
 
 def SLS_constit_integand(t_, t, E0, E_inf, tau, velocity, indentation, tip):
     a = tip.alpha

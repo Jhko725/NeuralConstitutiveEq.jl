@@ -15,9 +15,10 @@ def force_approach(
     indent_app: Callable[[ndarray], ndarray],
     velocity_app: Callable[[ndarray], ndarray],
     tip: TipGeometry,
+    **quad_kwargs,
 ) -> ndarray:
     dF = make_force_integand(constit, velocity_app, indent_app, tip)
-    F = np.stack([quad(dF, 0, t_i, args=(t_i,))[0] for t_i in t], axis=0)
+    F = np.stack([quad(dF, 0, t_i, args=(t_i,), **quad_kwargs)[0] for t_i in t], axis=0)
     return F
 
 
@@ -28,6 +29,7 @@ def force_retract(
     velocity_app: Callable[[ndarray], ndarray],
     velocity_ret: Callable[[ndarray], ndarray],
     tip: TipGeometry,
+    **quad_kwargs,
 ) -> ndarray:
     calc_t1 = functools.partial(
         calculate_t1,
@@ -35,9 +37,12 @@ def force_retract(
         constit=constit,
         vel_app=velocity_app,
         vel_ret=velocity_ret,
+        **quad_kwargs,
     )
     dF = make_force_integand(constit, velocity_app, indent_app, tip)
-    F = np.stack([quad(dF, 0, calc_t1(t_i), args=(t_i,))[0] for t_i in t], axis=0)
+    F = np.stack(
+        [quad(dF, 0, calc_t1(t_i), args=(t_i,), **quad_kwargs)[0] for t_i in t], axis=0
+    )
     return F
 
 
@@ -62,7 +67,7 @@ def calculate_t1(
     constit: Callable[[ndarray], ndarray],
     vel_app: Callable[[ndarray], ndarray],
     vel_ret: Callable[[ndarray], ndarray],
-    **quad_kwargs
+    **quad_kwargs,
 ) -> float:
     def _t1_objective(t1: float) -> float:
         integrand_app = quad(
@@ -73,8 +78,8 @@ def calculate_t1(
         )
         return integrand_app[0] + integrand_ret[0]
 
-    if _t1_objective(0) <= 0:
-        return 0.0
-    else:
+    try:
         sol = root_scalar(_t1_objective, method="bisect", bracket=(0, t_max))
         return sol.root
+    except ValueError:
+        return 0.0

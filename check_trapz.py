@@ -158,46 +158,46 @@ class BernsteinNN2(eqx.Module):
         )
 
 
-class BernsteinNN3(eqx.Module):
-    net: eqx.Module
-    scale: Array
-    bias: Array
-    nodes: Array
+class PronyNN(eqx.Module):
     weights: Array
-    N: float
+    scales: Array
+    bias: Array
+    # N: int
+    # random_seed: int
 
-    def __init__(self, net: eqx.Module, num_quadrature: int = 500):
+    def __init__(self, tau_min: float, tau_max: float, N: int = 50, seed: int = 10):
         super().__init__()
-        self.net = net
-        self.scale = jnp.asarray(0.1)
-        self.bias = jnp.asarray(0.5)
-        self.nodes, self.weights = scipy.special.roots_legendre(num_quadrature)
-        self.N = 1e4
+        # self.N = N
+        # self.random_seed = seed
+        key = jax.random.PRNGKey(seed)
+        self.weights = 11 * jnp.ones(N) / N
+        self.scales = 10 ** -jax.random.uniform(
+            key, shape=(N,), minval=jnp.log10(tau_min), maxval=jnp.log10(tau_max)
+        )
+        self.bias = jnp.asarray(0.0)
 
     def __call__(self, t: Array) -> Array:
-        nodes = jax.lax.stop_gradient(self.nodes)
-        weights = jax.lax.stop_gradient(self.weights)
-        y1 = nodes / 2
-        y2 = y1 + 0.5
-        h1 = jax.vmap(self.net)(-jnp.log(y1)) * (y1 ** (t - 1))
-        h2 = jax.vmap(self.net)(-jnp.log(y2)) * (y2 ** (t - 1))
-        return jax.nn.relu(self.scale) * 0.5 * jnp.dot(h1 + h2, weights) + jax.nn.relu(
-            self.bias
-        )
+        return jnp.dot(
+            jax.nn.relu(self.weights), jnp.exp(-jax.nn.relu(self.scales) * t)
+        ) + jax.nn.relu(self.bias)
 
 
 # phi_nn = FullyConnectedNetwork(["scalar", 100, "scalar"], jax.nn.elu, jax.nn.softplus)
 phi_nn = FullyConnectedNetwork(["scalar", 20, 20, 20, 20, "scalar"])
 phi_bern = BernsteinNN(phi_nn, 100)
+phi_prony = PronyNN(1e-3, 1e2, 20)
+phi_prony.scales
 # %%
-plt.plot(t_app, jax.vmap(phi_bern)(t_app))
+fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+# ax.plot(t_app, jax.vmap(phi_bern)(t_app))
+ax.plot(t_app, jax.vmap(phi_prony)(t_app))
 # %%
 # plt.plot(t_app, jax.vmap(phi_nn)(-jnp.log1p(t_app) + jnp.log(2)))
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-F_app_pred = force_approach(t_app, phi_bern, t_app, d_app, v_app, 1.0, 1.5)
+F_app_pred = force_approach(t_app, phi_prony, t_app, d_app, v_app, 1.0, 1.5)
 t1 = find_t1(t_ret, phi_bern, t_app, t_ret, v_app, v_ret)
-F_ret_pred = force_retract(t_ret, t1, phi_bern, t_app, d_app, v_app, 1.0, 1.5)
+F_ret_pred = force_retract(t_ret, t1, phi_prony, t_app, d_app, v_app, 1.0, 1.5)
 ax.plot(t_app, f_app, label="approach")
 ax.plot(t_ret, f_ret, label="retract")
 ax.plot(t_app, F_app_pred, label="approach (nn)")
@@ -213,6 +213,7 @@ def compute_loss(model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret):
     t1_pred = find_t1(t_ret, model, t_app, t_ret, v_app, v_ret)
     F_ret_pred = force_retract(t_ret, t1_pred, model, t_app, d_app, v_app, 1.0, 1.5)
     # Mean squared error loss
+    # l1 = jnp.sum(jnp.abs(model.weights)) + jnp.abs(model.bias)
     return jnp.mean((F_app - F_app_pred) ** 2) + jnp.mean((F_ret - F_ret_pred) ** 2)
 
 
@@ -222,7 +223,8 @@ def compute_loss_approach(model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret
     # t1_pred = find_t1(t_ret, model, t_app, t_ret, v_app, v_ret)
     # F_ret_pred = force_retract(t_ret, t1_pred, model, t_app, d_app, v_app, 1.0, 1.5)
     # Mean squared error loss
-    return jnp.mean((F_app - F_app_pred) ** 2)
+    l1 = jnp.sum(jnp.abs(model.weights)) + jnp.abs(model.bias)
+    return jnp.mean((F_app - F_app_pred) ** 2) + 1e-2 * l1
 
 
 @eqx.filter_value_and_grad
@@ -234,14 +236,14 @@ def compute_loss_retract(model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret)
     return jnp.mean((F_ret - F_ret_pred) ** 2)
 
 
-optim = optax.adam(5e-3)
-opt_state = optim.init(phi_bern)
+optim = optax.chain(optax.yogi(1e-3), optax.keep_params_nonnegative())
+opt_state = optim.init(phi_prony)
 
 
 @eqx.filter_jit
 def make_step(model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret, opt_state):
     loss, grads = compute_loss(model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret)
-    updates, opt_state = optim.update(grads, opt_state)
+    updates, opt_state = optim.update(grads, opt_state, params=model)
     model = eqx.apply_updates(model, updates)
     return loss, model, opt_state
 
@@ -251,7 +253,7 @@ def make_step_app(model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret, opt_st
     loss, grads = compute_loss_approach(
         model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret
     )
-    updates, opt_state = optim.update(grads, opt_state)
+    updates, opt_state = optim.update(grads, opt_state, params=model)
     model = eqx.apply_updates(model, updates)
     return loss, model, opt_state
 
@@ -269,26 +271,30 @@ def make_step_ret(model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret, opt_st
 # %%
 import numpy as np
 
-max_epochs = 500
+model = phi_prony
+# %%
+max_epochs = 2000
 loss_history = np.empty(max_epochs)
 for step in range(max_epochs):
-    loss, phi_bern, opt_state = make_step_app(
-        phi_bern, t_app, t_ret, d_app, v_app, v_ret, f_app, f_ret, opt_state
+    loss, model, opt_state = make_step(
+        model, t_app, t_ret, d_app, v_app, v_ret, f_app, f_ret, opt_state
     )
+    # print(model.taus)
+    # print(model.weights)
     loss = loss.item()
     loss_history[step] = loss
     print(f"step={step}, loss={loss}")
 # %%
 compute_loss(phi_bern, t_app, t_ret, d_app, v_app, v_ret, f_app, f_ret)
 # %%
-phi_bern.nodes
+model.weights
 # %%
 scipy.special.roots_legendre(100)[0]
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-F_app = force_approach(t_app, phi_bern, t_app, d_app, v_app, 1.0, 1.5)
-t1 = find_t1(t_ret, phi_bern, t_app, t_ret, v_app, v_ret)
-F_ret = force_retract(t_ret, t1, phi_bern, t_app, d_app, v_app, 1.0, 1.5)
+F_app = force_approach(t_app, model, t_app, d_app, v_app, 1.0, 1.5)
+t1 = find_t1(t_ret, model, t_app, t_ret, v_app, v_ret)
+F_ret = force_retract(t_ret, t1, model, t_app, d_app, v_app, 1.0, 1.5)
 ax.plot(t_app, F_app, label="Approach (pred)")
 ax.plot(t_ret, F_ret, label="Retract (pred)")
 ax.plot(t_app, f_app, ".", label="Approach (true)")
@@ -296,12 +302,14 @@ ax.plot(t_ret, f_ret, ".", label="Retract (true)")
 ax.legend()
 fig
 # %%
+model.weights
+# %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
 ax.plot(loss_history)
 ax.set_yscale("log", base=10)
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-ax.plot(t_app, jax.vmap(phi_bern)(t_app), label="learned")
+ax.plot(t_app, jax.vmap(model)(t_app), label="learned")
 ax.plot(t_app, jax.vmap(sls)(t_app), label="ground truth")
 ax.legend()
 # %%
