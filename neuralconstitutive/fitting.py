@@ -18,7 +18,9 @@ def fit_approach(constit, time, indent, force, tip, **fixed_constit_params):
 
     def objective(t_data, *constit_params):
         constit = constit_factory(*constit_params)
-        f_app = force_approach(t_data, constit, indent_app_, vel_app_, tip)
+        f_app = force_approach(
+            t_data, constit, indent_app_, vel_app_, tip, epsabs=1e-4, epsrel=1e-4
+        )
         return f_app
 
     p0 = make_initial_guess(constit, **fixed_constit_params)
@@ -38,7 +40,16 @@ def fit_retract(constit, time, indent, force, tip, **fixed_constit_params):
 
     def objective(t_data, *constit_params):
         constit = constit_factory(*constit_params)
-        f_ret = force_retract(t_data, constit, indent_app_, vel_app_, vel_ret_, tip)
+        f_ret = force_retract(
+            t_data,
+            constit,
+            indent_app_,
+            vel_app_,
+            vel_ret_,
+            tip,
+            epsabs=1e-4,
+            epsrel=1e-4,
+        )
         return f_ret
 
     p0 = make_initial_guess(constit, **fixed_constit_params)
@@ -59,8 +70,19 @@ def fit_total(constit, time, indent, force, tip, **fixed_constit_params):
     def objective(t_data, *constit_params):
         constit = constit_factory(*constit_params)
         t_app, t_ret, _, _, _, _ = split_approach_retract(t_data, indent, force)
-        f_app = force_approach(t_app, constit, indent_app_, vel_app_, tip)
-        f_ret = force_retract(t_ret, constit, indent_app_, vel_app_, vel_ret_, tip)
+        f_app = force_approach(
+            t_app, constit, indent_app_, vel_app_, tip, epsabs=1e-4, epsrel=1e-4
+        )
+        f_ret = force_retract(
+            t_ret,
+            constit,
+            indent_app_,
+            vel_app_,
+            vel_ret_,
+            tip,
+            epsabs=1e-4,
+            epsrel=1e-4,
+        )
         return np.concatenate((f_app[:-1], f_ret), axis=0)
 
     p0 = make_initial_guess(constit, **fixed_constit_params)

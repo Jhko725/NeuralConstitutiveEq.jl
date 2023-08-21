@@ -168,10 +168,14 @@ tip = Spherical(0.8)
 
 # Fit to approach, retract, total
 plr = PowerLawRheology(0.562, 0.2, 1e-5)
+#%%
+%%time
 plr_fit = [
     fit_func(plr, time, indentation, force, tip, t0=1e-5)
     for fit_func in (fit_approach, fit_retract, fit_total)
 ]
+#%%
+plr_fit
 # %%
 f_fit = [
     np.concatenate(
