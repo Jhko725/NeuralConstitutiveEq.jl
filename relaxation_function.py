@@ -6,7 +6,7 @@ from scipy.integrate import quad
 from scipy.optimize import curve_fit
 from scipy.optimize import root_scalar
 import scipy.special as sc
-
+import matplotlib.ticker as ticker
 from neuralconstitutive.tipgeometry import Conical
 
 
@@ -29,7 +29,7 @@ def Fung(t, E0, C, tau1, tau2):
         / (1 + C * np.log(tau2 / tau1))
     )
 # %%
-E0 = 570
+E0 = 572
 t_prime = 1e-5
 alpha = 0.2
 t = np.linspace(1e-2, 1e2, 1000)
@@ -103,15 +103,17 @@ fung_t = Fung(t, *popt_fung)
 
 fig, ax = plt.subplots(1, 1, figsize=(7, 5))
 # ax.plot(t, sls_t)
-ax.plot(t, plr_t, ".", label="PLR_constit")
-ax.plot(t, kww_t, label="KWW_constit")
-ax.plot(t, sls_t, label="SLS_constit")
-ax.plot(t, fung_t, label="Fung_constit")
-ax.legend()
-
-
-# ax.set_xscale("log")
+ax.plot(t, plr_t/1000, label="PLR")
+ax.plot(t, kww_t/1000, label="KWW")
+ax.plot(t, sls_t/1000, label="SLS")
+ax.plot(t, fung_t/1000, label="Fung")
+ax.set_xlabel("Time[s]")
+ax.set_ylabel("Stress Relaxation Function[kPa]")
+ax.set_xscale("log")
 # ax.set_yscale("log")
+ax.grid(color="lightgray", linestyle='--')
+# ax.yaxis.set_minor_locator(ticker.MultipleLocator(5))
+ax.legend()
 # %%
 # Force reconstruction
 def PLR_constit_integand(t_, t, E0, alpha, t_prime, velocity, indentation, tip):
@@ -125,6 +127,7 @@ def PLR_constit_integand(t_, t, E0, alpha, t_prime, velocity, indentation, tip):
         * velocity(t_)
         * indentation(t_) ** (b - 1)
     )
+    
 
 def SLS_constit_integand(t_, t, E0, E_inf, tau, velocity, indentation, tip):
     a = tip.alpha
@@ -614,15 +617,16 @@ F_total_fung = np.append(F_app_fung, F_ret_fung[1:])
 
 #%%
 markersize = 10.0
-fig, ax = plt.subplots(1, 1, figsize=(20, 15))
-ax.plot(t_array, F_total * 1e9, '.', label="PLR", markersize=markersize)
-ax.plot(t_array, F_total_kww * 1e9, '.', label="KWW", markersize=markersize)
-ax.plot(t_array, F_total_sls * 1e9, '.', label="SLS", markersize=markersize)
+fig, ax = plt.subplots(1, 1, figsize=(7, 5))
+ax.plot(t_array, F_total * 1e9, label="PLR", markersize=markersize)
+ax.plot(t_array, F_total_kww * 1e9, label="KWW", markersize=markersize)
+ax.plot(t_array, F_total_sls * 1e9, label="SLS", markersize=markersize)
 # ax.plot(t_array, F_total_sls1 * 1e9, '.', label="SLS1", markersize=markersize)
 # ax.plot(t_array, F_total_sls2 * 1e9, '.', label="SLS2", markersize=markersize)
 # ax.plot(t_array, F_total_sls3 * 1e9, '.', label="SLS3", markersize=markersize)
-ax.plot(t_array, F_total_fung * 1e9, '.', label="Fung", markersize=markersize)
-ax.set_xlabel("Time(s)")
-ax.set_ylabel("Force(nN)")
-ax.legend(fontsize=20)
+ax.plot(t_array, F_total_fung * 1e9, label="Fung", markersize=markersize)
+ax.set_xlabel("Time[s]")
+ax.set_ylabel("Force[nN]")
+ax.grid(color="lightgray", linestyle='--')
+ax.legend()
 #%%

@@ -148,11 +148,12 @@ mu, sigma = 0, F_ret[0]*noise_amp # average = 0, sigma = 0.1%
 noise = np.random.normal(mu, sigma, np.shape(F_total))
 F_total_noise = F_total + noise
 fig, ax = plt.subplots(1, 1, figsize=(7, 5))
-ax.plot(t_array, F_total_noise * 1e9, '.', label= "original + noise data")
-ax.plot(t_array, F_total * 1e9, label="original data")
-ax.set_xlabel("Time(s)")
-ax.set_ylabel("Force(nN)")
-ax.set_title(f"Force + {noise_amp *100}% noise (# of data = {space})")
+ax.plot(t_array, F_total * 1e9, label="PLR")
+ax.plot(t_array, F_total_noise * 1e9, '.', label= "with noise")
+ax.set_xlabel("Time[s]")
+ax.set_ylabel("Force[nN]")
+# ax.set_title(f"Force + {noise_amp *100}% noise (# of data = {space})")
+ax.grid(color="lightgray", linestyle='--')
 ax.legend()
 #%%
 v = 10 * 1e-6
@@ -170,11 +171,12 @@ mu, sigma = 0, indentation_ret[0]*noise_amp # average = 0, sigma = 0.1%
 noise = np.random.normal(mu, sigma, np.shape(indentation))
 indentation_noise = indentation + noise
 fig, ax = plt.subplots(1, 1, figsize=(7, 5))
-ax.plot(t_array, indentation_noise * 1e6, '.', label= "original + noise data")
-ax.plot(t_array, indentation * 1e6, label="original data")
-ax.set_xlabel("Time(s)")
-ax.set_ylabel("Indentation(μm)")
-ax.set_title(f"Indentation + {noise_amp *100}% noise (# of data = {space})")
+ax.plot(t_array, indentation * 1e6, label="Indentation")
+ax.plot(t_array, indentation_noise * 1e6, '.', label= "with noise")
+ax.set_xlabel("Time[s]")
+ax.set_ylabel("Indentation[μm]")
+# ax.set_title(f"Indentation + {noise_amp *100}% noise (# of data = {space})")
+ax.grid(color="lightgray", linestyle='--')
 ax.legend()
 #%%
 # PLR_Curvefitting
@@ -404,8 +406,9 @@ ax.plot(time, F_total_curvefit * 1e9, label="total curvefit")
 ax.plot(time, force * 1e9, ".", label="experiment data")
 ax.plot(time, force_app_parameter * 1e9, label="approach curvefit")
 ax.plot(time, force_ret_parameter * 1e9, label="retraction curvefit")
-ax.set_xlabel("Time(s)")
-ax.set_ylabel("Force(nN)")
+ax.set_xlabel("Time[s]")
+ax.set_ylabel("Force[nN]")
+ax.grid(color="lightgrey", linestyle="--")
 ax.legend()
 # %%
 x = ["Approach", "Retraction", "Total"]
@@ -420,6 +423,8 @@ axes[0].set_title("E0")
 axes[1].set_title("α")
 axes[0].legend()
 axes[1].legend()
+axes[0].grid(color="lightgrey", linestyle="--")
+axes[1].grid(color="lightgrey", linestyle="--")
 # %%
 F_at_rp = F_app_integral(t__= time_app, E0_= popt_ret[0], alpha_=popt_ret[1], t_prime_=1e-5, indentation_=indentation_app_func, velocity_=velocity_app_func, tip_=tip)
 F_at_tp = F_app_integral(t__= time_app, E0_= popt_total[0], alpha_=popt_total[1], t_prime_=1e-5, indentation_=indentation_app_func, velocity_=velocity_app_func, tip_=tip)

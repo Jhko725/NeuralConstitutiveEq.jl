@@ -5,6 +5,7 @@ import jax
 from jax import Array
 import jax.numpy as jnp
 
+
 import equinox as eqx
 import optax
 from more_itertools import pairwise
@@ -75,8 +76,6 @@ ax.legend()
 fig
 # %%
 plt.plot(t_app, jax.vmap(sls)(t_app))
-
-
 # %%
 class FullyConnectedNetwork(eqx.Module):
     layers: list
@@ -234,12 +233,13 @@ def compute_loss_retract(model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret)
     F_ret_pred = force_retract(t_ret, t1_pred, model, t_app, d_app, v_app, 1.0, 1.5)
     # Mean squared error loss
     return jnp.mean((F_ret - F_ret_pred) ** 2)
+#%%
+import numpy as np
 
-
-optim = optax.chain(optax.yogi(1e-3), optax.keep_params_nonnegative())
-opt_state = optim.init(phi_prony)
-
-
+model = phi_prony
+optim = optax.chain(optax.yogi(1e-7), optax.keep_params_nonnegative())
+opt_state = optim.init(model)
+#%%
 @eqx.filter_jit
 def make_step(model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret, opt_state):
     loss, grads = compute_loss(model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret)
@@ -266,12 +266,6 @@ def make_step_ret(model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret, opt_st
     updates, opt_state = optim.update(grads, opt_state)
     model = eqx.apply_updates(model, updates)
     return loss, model, opt_state
-
-
-# %%
-import numpy as np
-
-model = phi_prony
 # %%
 max_epochs = 2000
 loss_history = np.empty(max_epochs)
