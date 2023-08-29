@@ -16,6 +16,7 @@ from neuralconstitutive.jax.ting import (
     force_approach,
     force_retract,
     find_t1,
+    t1_constraint,
 )
 
 jax.config.update("jax_enable_x64", True)
@@ -29,15 +30,6 @@ d_app = 10.0 * t_app
 d_ret = -10.0 * t_ret
 v_app = 10.0 * jnp.ones_like(t_app)
 v_ret = -10.0 * jnp.ones_like(t_ret)
-# %%
-sls = SimpleLinearSolid(E0=8, E_inf=2, tau=1.0)
-t_app = jnp.linspace(0, 0.5, 100)
-t_ret = jnp.linspace(0.5, 1.0, 100)
-sls(t_app)
-d_app = 1.0 * t_app
-d_ret = -1.0 * t_ret
-v_app = 1.0 * jnp.ones_like(t_app)
-v_ret = -1.0 * jnp.ones_like(t_ret)
 
 
 # %%
@@ -78,90 +70,11 @@ plt.plot(t_app, jax.vmap(sls)(t_app))
 
 
 # %%
-class FullyConnectedNetwork(eqx.Module):
-    layers: list
-    # activation: Callable
-    # final_activation: Callable
-
-    def __init__(
-        self,
-        nodes: Sequence[int | Literal["scalar"]],
-        # activation: Callable,
-        # final_activation: Callable | None,
-        seed: int = 0,
-    ):
-        super().__init__()
-        keys = jax.random.split(jax.random.PRNGKey(seed), len(nodes) - 1)
-        self.layers = [
-            eqx.nn.Linear(*feats, key=k) for (feats, k) in zip(pairwise(nodes), keys)
-        ]
-        # self.activation = activation
-        # self.final_activation = (
-        #    eqx.nn.Identity() if final_activation is None else final_activation
-        # )
-
-    def __call__(self, t: Array) -> Array:
-        for layer in self.layers:
-            # t = self.activation(layer(t))
-            t = jax.nn.tanh(layer(t))
-        # return self.final_activation(t)
-        return jax.nn.softplus(t)
-
-
-class BernsteinNN(eqx.Module):
-    net: eqx.Module
-    scale: Array
-    bias: Array
-    nodes: Array
-    weights: Array
-
-    def __init__(self, net: eqx.Module, num_quadrature: int = 500):
-        super().__init__()
-        self.net = net
-        self.scale = jnp.asarray(1.0)
-        self.bias = jnp.asarray(5.0)
-        self.nodes, self.weights = scipy.special.roots_legendre(num_quadrature)
-
-    def __call__(self, t: Array) -> Array:
-        nodes = jax.lax.stop_gradient(self.nodes)
-        weights = jax.lax.stop_gradient(self.weights)
-        h = jax.vmap(self.net)(nodes)
-        expmx = 0.5 * (nodes + 1)
-        return jax.nn.relu(self.scale) * 0.5 * jnp.dot(
-            h * expmx ** (t - 1), weights
-        ) + jax.nn.relu(self.bias)
-
-
-class BernsteinNN2(eqx.Module):
-    net: eqx.Module
-    scale: Array
-    bias: Array
-    nodes: Array
-    weights: Array
-
-    def __init__(self, net: Callable, num_quadrature: int = 100):
-        super().__init__()
-        self.net = net
-        self.scale = jnp.asarray(1.0)
-        self.bias = jnp.asarray(0.5)
-        nodes, weights = scipy.special.roots_laguerre(num_quadrature)
-        self.nodes = jnp.asarray(nodes)
-        self.weights = jnp.asarray(weights)
-
-    def __call__(self, t: Array) -> Array:
-        nodes = jax.lax.stop_gradient(self.nodes)
-        weights = jax.lax.stop_gradient(self.weights)
-        t_ = t + 1e-2
-        h = jax.vmap(self.net)(nodes / t_)
-        return jax.nn.relu(self.scale) * jnp.dot(weights, h) / t_ + jax.nn.relu(
-            self.bias
-        )
-
-
 class PronyNN(eqx.Module):
     weights: Array
     scales: Array
     bias: Array
+    t1s: Array
     # N: int
     # random_seed: int
 
@@ -175,18 +88,20 @@ class PronyNN(eqx.Module):
             key, shape=(N,), minval=jnp.log10(tau_min), maxval=jnp.log10(tau_max)
         )
         self.bias = jnp.asarray(0.0)
+        self.t1s = jnp.linspace(
+            0.2,
+            0.0,
+            100,
+        )
 
     def __call__(self, t: Array) -> Array:
-        scales = jax.lax.stop_gradient(self.scales)
         return jnp.dot(
-            jax.nn.relu(self.weights), jnp.exp(-jax.nn.relu(scales) * t)
+            jax.nn.relu(self.weights), jnp.exp(-jax.nn.relu(self.scales) * t)
         ) + jax.nn.relu(self.bias)
 
 
-# phi_nn = FullyConnectedNetwork(["scalar", 100, "scalar"], jax.nn.elu, jax.nn.softplus)
-phi_nn = FullyConnectedNetwork(["scalar", 20, 20, 20, 20, "scalar"])
-phi_bern = BernsteinNN(phi_nn, 100)
-phi_prony = PronyNN(1e-4, 1e3, 50)
+# %%
+phi_prony = PronyNN(1e-3, 1e2, 20)
 phi_prony.scales
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
@@ -197,14 +112,19 @@ ax.plot(t_app, jax.vmap(phi_prony)(t_app))
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
 F_app_pred = force_approach(t_app, phi_prony, t_app, d_app, v_app, 1.0, 1.5)
-t1 = find_t1(t_ret, phi_bern, t_app, t_ret, v_app, v_ret)
-F_ret_pred = force_retract(t_ret, t1, phi_prony, t_app, d_app, v_app, 1.0, 1.5)
+F_ret_pred = force_retract(
+    t_ret, phi_prony.t1s, phi_prony, t_app, d_app, v_app, 1.0, 1.5
+)
 ax.plot(t_app, f_app, label="approach")
 ax.plot(t_ret, f_ret, label="retract")
 ax.plot(t_app, F_app_pred, label="approach (nn)")
 ax.plot(t_ret, F_ret_pred, label="retract (nn)")
 ax.legend()
 fig
+# %%
+jax.vmap(t1_constraint, in_axes=(0, 0, None, None, None, None, None))(
+    t_ret, phi_prony.t1s, phi_prony, t_app, d_app, v_app, v_ret
+)
 
 
 # %%
@@ -214,12 +134,8 @@ def compute_loss(model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret):
     t1_pred = find_t1(t_ret, model, t_app, t_ret, v_app, v_ret)
     F_ret_pred = force_retract(t_ret, t1_pred, model, t_app, d_app, v_app, 1.0, 1.5)
     # Mean squared error loss
-    l1 = jnp.sum(jnp.abs(model.weights)) + jnp.abs(model.bias)
-    return (
-        jnp.mean((F_app - F_app_pred) ** 2)
-        + jnp.mean((F_ret - F_ret_pred) ** 2)
-        + 1e-3 * l1
-    )
+    # l1 = jnp.sum(jnp.abs(model.weights)) + jnp.abs(model.bias)
+    return jnp.mean((F_app - F_app_pred) ** 2) + jnp.mean((F_ret - F_ret_pred) ** 2)
 
 
 @eqx.filter_value_and_grad
@@ -228,8 +144,30 @@ def compute_loss_approach(model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret
     # t1_pred = find_t1(t_ret, model, t_app, t_ret, v_app, v_ret)
     # F_ret_pred = force_retract(t_ret, t1_pred, model, t_app, d_app, v_app, 1.0, 1.5)
     # Mean squared error loss
-    l1 = jnp.sum(jnp.abs(model.weights)) + jnp.abs(model.bias)
-    return jnp.mean((F_app - F_app_pred) ** 2) + 1e-3 * l1
+    # l1 = jnp.sum(jnp.abs(model.weights)) + jnp.abs(model.bias)
+    return jnp.mean((F_app - F_app_pred) ** 2)  # + 1e-3 * l1
+
+
+@eqx.filter_value_and_grad
+def compute_loss_t1(model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret):
+    # F_app_pred = force_approach(t_app, model, t_app, d_app, v_app, 1.0, 1.5)
+    t1_vals = jax.vmap(t1_constraint, in_axes=(0, 0, None, None, None, None, None))(
+        t_ret, model.t1s, model, t_app, d_app, v_app, v_ret
+    )
+    # F_ret_pred = force_retract(
+    #    t_ret, jnp.clip(model.t1s, 0.0, 0.2), model, t_app, d_app, v_app, 1.0, 1.5
+    # )
+    return (
+        #    np.mean((F_app - F_app_pred) ** 2)
+        #    + jnp.mean((F_ret - F_ret_pred) ** 2)
+        # +
+        jnp.mean(jnp.abs(t1_vals))
+    )
+    # t1_pred = find_t1(t_ret, model, t_app, t_ret, v_app, v_ret)
+    # F_ret_pred = force_retract(t_ret, t1_pred, model, t_app, d_app, v_app, 1.0, 1.5)
+    # Mean squared error loss
+    # l1 = jnp.sum(jnp.abs(model.weights)) + jnp.abs(model.bias)
+    # return jnp.mean((F_app - F_app_pred) ** 2)  # + 1e-3 * l1
 
 
 @eqx.filter_value_and_grad
@@ -241,13 +179,17 @@ def compute_loss_retract(model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret)
     return jnp.mean((F_ret - F_ret_pred) ** 2)
 
 
-optim = optax.chain(optax.rmsprop(1e-3), optax.keep_params_nonnegative())
+optim = optax.adam(
+    1e-3
+)  # optax.chain(optax.adam(1e-3), optax.keep_params_nonnegative())
 opt_state = optim.init(phi_prony)
 
 
 @eqx.filter_jit
 def make_step(model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret, opt_state):
-    loss, grads = compute_loss(model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret)
+    loss, grads = compute_loss_t1(
+        model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret
+    )
     updates, opt_state = optim.update(grads, opt_state, params=model)
     model = eqx.apply_updates(model, updates)
     return loss, model, opt_state
@@ -278,6 +220,8 @@ import numpy as np
 
 model = phi_prony
 # %%
+
+# %%
 max_epochs = 2000
 loss_history = np.empty(max_epochs)
 for step in range(max_epochs):
@@ -289,7 +233,8 @@ for step in range(max_epochs):
     loss = loss.item()
     loss_history[step] = loss
     print(f"step={step}, loss={loss}")
-
+# %%
+model.t1s
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
 F_app = force_approach(t_app, model, t_app, d_app, v_app, 1.0, 1.5)
@@ -302,9 +247,11 @@ ax.plot(t_ret, f_ret, ".", label="Retract (true)")
 ax.legend()
 fig
 # %%
-model.weights
+compute_loss_t1(model, t_app, t_ret, d_app, v_app, v_ret, f_app, f_ret)[1].scales
 # %%
-model.scales
+jax.vmap(t1_constraint, in_axes=(0, 0, None, None, None, None, None))(
+    t_ret, model.t1s, model, t_app, d_app, v_app, v_ret
+)
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
 ax.plot(loss_history)
