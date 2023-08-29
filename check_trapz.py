@@ -5,6 +5,7 @@ import jax
 from jax import Array
 import jax.numpy as jnp
 
+
 import equinox as eqx
 import optax
 from more_itertools import pairwise
@@ -241,6 +242,10 @@ def compute_loss_retract(model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret)
     return jnp.mean((F_ret - F_ret_pred) ** 2)
 
 
+# %%
+import numpy as np
+
+
 optim = optax.chain(optax.rmsprop(1e-3), optax.keep_params_nonnegative())
 opt_state = optim.init(phi_prony)
 
@@ -273,10 +278,6 @@ def make_step_ret(model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret, opt_st
     return loss, model, opt_state
 
 
-# %%
-import numpy as np
-
-model = phi_prony
 # %%
 max_epochs = 2000
 loss_history = np.empty(max_epochs)

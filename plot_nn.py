@@ -63,8 +63,7 @@ class BernsteinNN(eqx.Module):
         expmx = 0.5 * (nodes + 1)
         return jax.nn.elu(self.scale) * 0.5 * jnp.dot(
             h * expmx ** (t - 1), weights
-        ) + jax.nn.relu(self.bias)
-
+        ) + jax.nn.elu(self.bias)
 
 class BernsteinNN2(eqx.Module):
     net: eqx.Module
@@ -105,5 +104,4 @@ axes[0].plot(t, y_nn, label="Normal NN")
 axes[1].plot(t, y_bern, label="Bernstein NN")
 for ax in axes:
     ax.legend()
-
-# %%
+#%%

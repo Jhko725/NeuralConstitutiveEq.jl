@@ -148,11 +148,12 @@ mu, sigma = 0, F_ret[0]*noise_amp # average = 0, sigma = 0.1%
 noise = np.random.normal(mu, sigma, np.shape(F_total))
 F_total_noise = F_total + noise
 fig, ax = plt.subplots(1, 1, figsize=(7, 5))
-ax.plot(t_array, F_total_noise * 1e9, '.', label= "original + noise data")
-ax.plot(t_array, F_total * 1e9, label="original data")
-ax.set_xlabel("Time(s)")
-ax.set_ylabel("Force(nN)")
-ax.set_title(f"Force + {noise_amp *100}% noise (# of data = {space})")
+ax.plot(t_array, F_total * 1e9, label="PLR")
+ax.plot(t_array, F_total_noise * 1e9, '.', label= "with noise")
+ax.set_xlabel("Time[s]")
+ax.set_ylabel("Force[nN]")
+# ax.set_title(f"Force + {noise_amp *100}% noise (# of data = {space})")
+ax.grid(color="lightgray", linestyle='--')
 ax.legend()
 #%%
 v = 10 * 1e-6
@@ -170,11 +171,12 @@ mu, sigma = 0, indentation_ret[0]*noise_amp # average = 0, sigma = 0.1%
 noise = np.random.normal(mu, sigma, np.shape(indentation))
 indentation_noise = indentation + noise
 fig, ax = plt.subplots(1, 1, figsize=(7, 5))
-ax.plot(t_array, indentation_noise * 1e6, '.', label= "original + noise data")
-ax.plot(t_array, indentation * 1e6, label="original data")
-ax.set_xlabel("Time(s)")
-ax.set_ylabel("Indentation(μm)")
-ax.set_title(f"Indentation + {noise_amp *100}% noise (# of data = {space})")
+ax.plot(t_array, indentation * 1e6, label="Indentation")
+ax.plot(t_array, indentation_noise * 1e6, '.', label= "with noise")
+ax.set_xlabel("Time[s]")
+ax.set_ylabel("Indentation[μm]")
+# ax.set_title(f"Indentation + {noise_amp *100}% noise (# of data = {space})")
+ax.grid(color="lightgray", linestyle='--')
 ax.legend()
 #%%
 # PLR_Curvefitting
@@ -404,8 +406,9 @@ ax.plot(time, F_total_curvefit * 1e9, label="total curvefit")
 ax.plot(time, force * 1e9, ".", label="experiment data")
 ax.plot(time, force_app_parameter * 1e9, label="approach curvefit")
 ax.plot(time, force_ret_parameter * 1e9, label="retraction curvefit")
-ax.set_xlabel("Time(s)")
-ax.set_ylabel("Force(nN)")
+ax.set_xlabel("Time[s]")
+ax.set_ylabel("Force[nN]")
+ax.grid(color="lightgrey", linestyle="--")
 ax.legend()
 # %%
 x = ["Approach", "Retraction", "Total"]
@@ -420,6 +423,8 @@ axes[0].set_title("E0")
 axes[1].set_title("α")
 axes[0].legend()
 axes[1].legend()
+axes[0].grid(color="lightgrey", linestyle="--")
+axes[1].grid(color="lightgrey", linestyle="--")
 # %%
 F_at_rp = F_app_integral(t__= time_app, E0_= popt_ret[0], alpha_=popt_ret[1], t_prime_=1e-5, indentation_=indentation_app_func, velocity_=velocity_app_func, tip_=tip)
 F_at_tp = F_app_integral(t__= time_app, E0_= popt_total[0], alpha_=popt_total[1], t_prime_=1e-5, indentation_=indentation_app_func, velocity_=velocity_app_func, tip_=tip)
@@ -429,36 +434,38 @@ t1_rt_tp = Calculation_t1(time_ret, t_max, popt_total[0], 1e-5,  popt_total[1], 
 F_rt_ap = F_ret_integral(t__ = t1_rt_ap, t___= time_ret, E0_= popt_app[0], alpha_=popt_app[1], t_prime_=1e-5, indentation_=indentation_app_func, velocity_=velocity_app_func, tip_=tip)
 F_rt_tp = F_ret_integral(t__ = t1_rt_tp, t___= time_ret, E0_= popt_total[0], alpha_=popt_total[1], t_prime_=1e-5, indentation_=indentation_app_func, velocity_=velocity_app_func, tip_=tip)
 # %%
-MSE_apptime_appparams =np.sum(np.square(F_app_curvefit-F_app))
-MSE_apptime_retparams = np.sum(np.square(F_at_rp-F_app))
-MSE_apptime_totparams = np.sum(np.square(F_at_tp-F_app))
+MSE_apptime_appparams =np.mean(np.square(F_app_curvefit-F_app))/np.mean(np.square(F_app_curvefit))
+MSE_apptime_retparams = np.mean(np.square(F_at_rp-F_app))/np.mean(np.square(F_at_rp))
+MSE_apptime_totparams = np.mean(np.square(F_at_tp-F_app))/np.mean(np.square(F_at_tp))
 
-MSE_rettime_appparams = np.sum(np.square(F_rt_ap-F_ret))
-MSE_rettime_retparams = np.sum(np.square(F_ret_curvefit-F_ret))
-MSE_rettime_totparams = np.sum(np.square(F_rt_tp-F_ret))
+MSE_rettime_appparams = np.mean(np.square(F_rt_ap-F_ret))/np.mean(np.square(F_rt_ap))
+MSE_rettime_retparams = np.mean(np.square(F_ret_curvefit-F_ret))/np.mean(np.square(F_ret_curvefit))
+MSE_rettime_totparams = np.mean(np.square(F_rt_tp-F_ret))/np.mean(np.square(F_rt_tp))
 
-MSE_tottime_totparams = np.sum(np.square(F_total_curvefit-force))
-MSE_tottime_appparams = np.sum(np.square(force_app_parameter-force))
-MSE_tottime_retparams = np.sum(np.square(force_ret_parameter-force))
-MSE_tottime_totparams = np.sum(np.square(F_total_curvefit-force))
+MSE_tottime_totparams = np.mean(np.square(F_total_curvefit-force))/np.mean(np.square(F_total_curvefit))
+MSE_tottime_appparams = np.mean(np.square(force_app_parameter-force))/np.mean(np.square(force_app_parameter))
+MSE_tottime_retparams = np.mean(np.square(force_ret_parameter-force))/np.mean(np.square(force_ret_parameter))
 # %%
 fig,ax = plt.subplots(1, 1, figsize=(7, 5))
 tot_time = ["app time - app params", "app time - ret params", "app time - tot params"]
 MSE_app = [MSE_apptime_appparams, MSE_apptime_retparams, MSE_apptime_totparams]
 ax.bar(tot_time, MSE_app)
-ax.set_ylabel("MSE")
+ax.set_ylabel("NMSE")
+ax.grid(color="lightgray", linestyle='--')
 #%%
 fig,ax = plt.subplots(1, 1, figsize=(7, 5))
 tot_time = ["ret time - app params", "ret time - ret params", "ret time - tot params"]
 MSE_ret = [MSE_rettime_appparams, MSE_rettime_retparams, MSE_rettime_totparams]
 ax.bar(tot_time, MSE_ret)
-ax.set_ylabel("MSE")
+ax.set_ylabel("NMSE")
+ax.grid(color="lightgray", linestyle='--')
 # %%
 fig,ax = plt.subplots(1, 1, figsize=(7, 5))
 tot_time = ["tot time - app params", "tot time - ret params", "tot time - tot params"]
 MSE_tot = [MSE_tottime_appparams, MSE_tottime_retparams, MSE_tottime_totparams]
 ax.bar(tot_time, MSE_tot)
-ax.set_ylabel("MSE")
+ax.set_ylabel("NMSE")
+ax.grid(color="lightgray", linestyle='--')
 #%%
 each_parameter = (
     "approach parameters",
@@ -479,8 +486,9 @@ for boolean, weight_count in each_MSE.items():
     p = ax.bar(each_parameter, weight_count, width, label=boolean, bottom=bottom)
     bottom += weight_count
 
-ax.set_title("MSE of each parameters")
+ax.set_title("NMSE of each parameters")
 ax.legend(loc="upper right")
-ax.set_ylabel("MSE")
+ax.set_ylabel("NMSE")
+ax.grid(color="lightgray", linestyle='--')
 plt.show()
 #%%
