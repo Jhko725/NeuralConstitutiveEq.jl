@@ -65,6 +65,7 @@ class BernsteinNN(eqx.Module):
             h * expmx ** (t - 1), weights
         ) + jax.nn.elu(self.bias)
 
+
 class BernsteinNN2(eqx.Module):
     net: eqx.Module
     scale: Array
@@ -99,9 +100,16 @@ nn_bern = BernsteinNN(nn, num_quadrature=100)
 y_nn = jax.vmap(nn)(t)
 y_bern = jax.vmap(nn_bern)(t)
 # %%
-fig, axes = plt.subplots(2, 1, figsize=(5, 5), sharex=True)
-axes[0].plot(t, y_nn, label="Normal NN")
-axes[1].plot(t, y_bern, label="Bernstein NN")
+fig, axes = plt.subplots(1, 2, figsize=(12, 3), sharex=True)
+axes[0].plot(t, y_nn, ".-", color="darkred", label="Normal NN")
+# axes[0].set_title(r"Naive neural network: $NN(s; \bf{\theta}$)")
+axes[1].plot(t, y_bern, ".-", color="navy", label="Bernstein NN")
+# axes[1].set_title(r"Bernstein-based: $G(t;\bf{\theta}$)")
 for ax in axes:
-    ax.legend()
-#%%
+    # ax.set_xlabel("Time $s$")
+    ax.grid(color="lightgray", linestyle="--")
+    ax.spines.right.set_visible(False)
+    ax.spines.top.set_visible(False)
+    ax.set_xscale("log")
+    # ax.legend()
+# %%

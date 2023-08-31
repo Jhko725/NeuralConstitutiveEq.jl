@@ -44,6 +44,8 @@ z_fwd, defl_fwd = get_z_and_defl(forward)
 z_bwd, defl_bwd = get_z_and_defl(backward)
 dist_fwd = calc_tip_distance(z_fwd, defl_fwd)
 dist_bwd = calc_tip_distance(z_bwd, defl_bwd)
+#%%
+
 # %%
 # ROV method
 N = 10
@@ -97,14 +99,27 @@ ax.set_ylabel("Force(nN)")
 plt.axvline(cp_fwd, color="grey", linestyle="--", linewidth=1)
 ax.legend()
 # %%
-fig, ax = plt.subplots(1, 1, figsize=(7, 5))
-ax.plot(dist_fwd * 1e6, defl_processed_fwd * 1e9, label="forward")
-ax.plot(dist_bwd * 1e6, defl_processed_bwd * 1e9, label="backward")
+fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+plot_kwargs = {"markersize": 2.0, "alpha": 0.7}
+ax.plot(dist_fwd * 1e6, defl_processed_fwd * 1e9, ".-", label="Approach", **plot_kwargs)
+ax.plot(dist_bwd * 1e6, defl_processed_bwd * 1e9, ".-", label="Retract", **plot_kwargs)
 ax.set_xlabel("Distance(μm)")
 ax.set_ylabel("Force(nN)")
 plt.axvline(cp_fwd, color="grey", linestyle="--", linewidth=1)
-ax.legend()
+ax.legend(loc="lower left")
 # %%
+fig, axes = plt.subplots(2, 1, figsize=(5, 3), sharex=True, sharey=True)
+plot_kwargs = {"markersize": 2.0, "alpha": 0.7}
+axes[0].plot(dist_fwd * 1e6, defl_fwd * 1e9, ".-", label="Approach", **plot_kwargs)
+axes[0].plot(dist_bwd * 1e6, defl_bwd * 1e9, ".-", label="Retract", **plot_kwargs)
+axes[1].plot(dist_fwd * 1e6, defl_processed_fwd * 1e9, ".-", label="Approach", **plot_kwargs)
+axes[1].plot(dist_bwd * 1e6, defl_processed_bwd * 1e9, ".-", label="Retract", **plot_kwargs)
+for ax in axes:
+    ax.set_ylabel("Force(nN)")
+    ax.axvline(cp_fwd, color="grey", linestyle="--", linewidth=1)
+axes[-1].set_xlabel("Distance(μm)")
+axes[0].legend()
+#%%
 fig, ax = plt.subplots(1, 1, figsize=(7, 5))
 ax.plot(dist_fwd, z_fwd, label="forward")
 ax.plot(dist_bwd, z_bwd, label="backward")
@@ -121,13 +136,14 @@ force -= force[0]
 sampling_rate = get_sampling_rate(config)
 time = np.arange(len(indentation)) / sampling_rate
 print(len(time))
-fig, axes = plt.subplots(2, 1, figsize=(7, 5), sharex=True)
-axes[0].plot(time, indentation * 1e6)
-axes[0].set_xlabel("Time(s)")
+#%%
+plot_kwargs = {"markersize": 2.0, "alpha": 0.7}
+fig, axes = plt.subplots(2, 1, figsize=(6, 4), sharex=True)
+axes[0].plot(time, indentation * 1e6, ".", color="darkred", **plot_kwargs)
 axes[1].set_xlabel("Time(s)")
 axes[0].set_ylabel("Indentation(μm)")
 axes[1].set_ylabel("Force(nN)")
-axes[1].plot(time, force * 1e9)
+axes[1].plot(time, force * 1e9, ".", color="navy", **plot_kwargs)
 # %%
 max_ind = np.argmax(indentation)
 t_max = time[max_ind]

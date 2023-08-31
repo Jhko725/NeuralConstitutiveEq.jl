@@ -31,7 +31,7 @@ d_ret = -10.0 * t_ret
 v_app = 10.0 * jnp.ones_like(t_app)
 v_ret = -10.0 * jnp.ones_like(t_ret)
 # %%
-sls = SimpleLinearSolid(E0=8, E_inf=2, tau=1.0)
+sls = SimpleLinearSolid(E0=8, E_inf=2, tau=0.2)
 t_app = jnp.linspace(0, 0.5, 100)
 t_ret = jnp.linspace(0.5, 1.0, 100)
 sls(t_app)
@@ -120,7 +120,7 @@ class BernsteinNN(eqx.Module):
         super().__init__()
         self.net = net
         self.scale = jnp.asarray(1.0)
-        self.bias = jnp.asarray(5.0)
+        self.bias = jnp.asarray(0.0)
         self.nodes, self.weights = scipy.special.roots_legendre(num_quadrature)
 
     def __call__(self, t: Array) -> Array:
@@ -128,9 +128,10 @@ class BernsteinNN(eqx.Module):
         weights = jax.lax.stop_gradient(self.weights)
         h = jax.vmap(self.net)(nodes)
         expmx = 0.5 * (nodes + 1)
-        return jax.nn.relu(self.scale) * 0.5 * jnp.dot(
-            h * expmx ** (t - 1), weights
-        ) + jax.nn.relu(self.bias)
+        return (
+            jax.nn.relu(self.scale) * 0.5 * jnp.dot(h * expmx ** (t - 1), weights)
+            + self.bias
+        )
 
 
 class BernsteinNN2(eqx.Module):
@@ -143,7 +144,7 @@ class BernsteinNN2(eqx.Module):
     def __init__(self, net: Callable, num_quadrature: int = 100):
         super().__init__()
         self.net = net
-        self.scale = jnp.asarray(1.0)
+        self.scale = jnp.asarray(0.1)
         self.bias = jnp.asarray(0.5)
         nodes, weights = scipy.special.roots_laguerre(num_quadrature)
         self.nodes = jnp.asarray(nodes)
@@ -152,7 +153,7 @@ class BernsteinNN2(eqx.Module):
     def __call__(self, t: Array) -> Array:
         nodes = jax.lax.stop_gradient(self.nodes)
         weights = jax.lax.stop_gradient(self.weights)
-        t_ = t + 1e-2
+        t_ = t + 5e-2
         h = jax.vmap(self.net)(nodes / t_)
         return jax.nn.relu(self.scale) * jnp.dot(weights, h) / t_ + jax.nn.relu(
             self.bias
@@ -191,15 +192,15 @@ phi_prony = PronyNN(1e-4, 1e3, 50)
 phi_prony.scales
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-# ax.plot(t_app, jax.vmap(phi_bern)(t_app))
-ax.plot(t_app, jax.vmap(phi_prony)(t_app))
+ax.plot(t_app, jax.vmap(phi_bern)(t_app))
+# ax.plot(t_app, jax.vmap(phi_prony)(t_app))
 # %%
 # plt.plot(t_app, jax.vmap(phi_nn)(-jnp.log1p(t_app) + jnp.log(2)))
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-F_app_pred = force_approach(t_app, phi_prony, t_app, d_app, v_app, 1.0, 1.5)
+F_app_pred = force_approach(t_app, phi_bern, t_app, d_app, v_app, 1.0, 1.5)
 t1 = find_t1(t_ret, phi_bern, t_app, t_ret, v_app, v_ret)
-F_ret_pred = force_retract(t_ret, t1, phi_prony, t_app, d_app, v_app, 1.0, 1.5)
+F_ret_pred = force_retract(t_ret, t1, phi_bern, t_app, d_app, v_app, 1.0, 1.5)
 ax.plot(t_app, f_app, label="approach")
 ax.plot(t_ret, f_ret, label="retract")
 ax.plot(t_app, F_app_pred, label="approach (nn)")
@@ -215,11 +216,11 @@ def compute_loss(model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret):
     t1_pred = find_t1(t_ret, model, t_app, t_ret, v_app, v_ret)
     F_ret_pred = force_retract(t_ret, t1_pred, model, t_app, d_app, v_app, 1.0, 1.5)
     # Mean squared error loss
-    l1 = jnp.sum(jnp.abs(model.weights)) + jnp.abs(model.bias)
+    # l1 = jnp.sum(jnp.abs(model.weights)) + jnp.abs(model.bias)
     return (
         jnp.mean((F_app - F_app_pred) ** 2)
         + jnp.mean((F_ret - F_ret_pred) ** 2)
-        + 1e-3 * l1
+        # + 1e-3 * l1
     )
 
 
@@ -229,8 +230,8 @@ def compute_loss_approach(model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret
     # t1_pred = find_t1(t_ret, model, t_app, t_ret, v_app, v_ret)
     # F_ret_pred = force_retract(t_ret, t1_pred, model, t_app, d_app, v_app, 1.0, 1.5)
     # Mean squared error loss
-    l1 = jnp.sum(jnp.abs(model.weights)) + jnp.abs(model.bias)
-    return jnp.mean((F_app - F_app_pred) ** 2) + 1e-3 * l1
+    # l1 = jnp.sum(jnp.abs(model.weights)) + jnp.abs(model.bias)
+    return jnp.mean((F_app - F_app_pred) ** 2)  # + 1e-3 * l1
 
 
 @eqx.filter_value_and_grad
@@ -245,9 +246,10 @@ def compute_loss_retract(model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret)
 # %%
 import numpy as np
 
-
-optim = optax.chain(optax.rmsprop(1e-3), optax.keep_params_nonnegative())
-opt_state = optim.init(phi_prony)
+model = phi_bern
+# %%
+optim = optax.rmsprop(1e-3)
+opt_state = optim.init(model)
 
 
 @eqx.filter_jit
@@ -279,10 +281,10 @@ def make_step_ret(model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret, opt_st
 
 
 # %%
-max_epochs = 2000
+max_epochs = 650
 loss_history = np.empty(max_epochs)
 for step in range(max_epochs):
-    loss, model, opt_state = make_step_app(
+    loss, model, opt_state = make_step(
         model, t_app, t_ret, d_app, v_app, v_ret, f_app, f_ret, opt_state
     )
     # print(model.taus)
@@ -296,23 +298,53 @@ fig, ax = plt.subplots(1, 1, figsize=(5, 3))
 F_app = force_approach(t_app, model, t_app, d_app, v_app, 1.0, 1.5)
 t1 = find_t1(t_ret, model, t_app, t_ret, v_app, v_ret)
 F_ret = force_retract(t_ret, t1, model, t_app, d_app, v_app, 1.0, 1.5)
-ax.plot(t_app, F_app, label="Approach (pred)")
-ax.plot(t_ret, F_ret, label="Retract (pred)")
-ax.plot(t_app, f_app, ".", label="Approach (true)")
-ax.plot(t_ret, f_ret, ".", label="Retract (true)")
-ax.legend()
-fig
+
+plot_kwargs = {"markersize": 3.0, "alpha": 0.8}
+fig, axes = plt.subplots(2, 1, figsize=(5, 5))
+
+axes[0].plot(t_app, f_app, ".", color="k", label="Simulated data", **plot_kwargs)
+axes[0].plot(t_ret, f_ret, ".", color="k", **plot_kwargs)
+# axes[0].plot(t_app, F_app, "-", color="royalblue", label="Prediction", **plot_kwargs)
+# axes[0].plot(t_ret, F_ret, "-", color="royalblue", **plot_kwargs)
+axes[0].plot(t_app, F_app, "-", color="red", label="Initial prediction", **plot_kwargs)
+axes[0].plot(t_ret, F_ret, "-", color="red", **plot_kwargs)
+axes[0].set_ylabel("Force $F(t)$ (a.u.)")
+
+axes[1].plot(
+    t_app, jax.vmap(sls)(t_app), ".", color="k", label="Ground truth", **plot_kwargs
+)
+axes[1].set_ylabel("Relaxation function $G(t)$ (a.u.)")
+# axes[1].plot(
+#     t_app,
+#     jax.vmap(model)(t_app),
+#     "-",
+#     color="royalblue",
+#     label="Extracted",
+#     **plot_kwargs,
+# )
+axes[1].plot(
+    t_app,
+    jax.vmap(model)(t_app),
+    "-",
+    color="red",
+    label="Initial prediction",
+    **plot_kwargs,
+)
+
+
+for ax in axes:
+    ax.grid(color="lightgray", linestyle="--")
+    ax.spines.right.set_visible(False)
+    ax.spines.top.set_visible(False)
+    ax.legend()
+axes[-1].set_xlabel("Time $t$ (a.u.)")
 # %%
-model.weights
-# %%
-model.scales
-# %%
-fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-ax.plot(loss_history)
-ax.set_yscale("log", base=10)
-# %%
-fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-ax.plot(t_app, jax.vmap(model)(t_app), label="learned")
-ax.plot(t_app, jax.vmap(sls)(t_app), label="ground truth")
-ax.legend()
+fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+ax.plot(loss_history, color="orangered", linewidth=1.0)
+ax.set_xlabel("Training epochs")
+ax.set_ylabel("Mean squared loss")
+ax.set_yscale("log")
+ax.grid(color="lightgray", linestyle="--")
+ax.spines.right.set_visible(False)
+ax.spines.top.set_visible(False)
 # %%
