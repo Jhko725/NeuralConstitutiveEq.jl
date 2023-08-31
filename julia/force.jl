@@ -10,7 +10,7 @@ function force(t, constit::ConstitutiveEqn, indent::Indentation, tip::TipGeometr
     F(t) = _force(t, constit, indent, tip)
     return t <= t_max ? F(t) : F(t₁(t, constit, indent))
 end
-
+##
 function force2(t, constit::ConstitutiveEqn, indent::Indentation, tip::TipGeometry)
     t_max = max_indent_time(indent)
     E₀, t₀, γ = constit.E₀, constit.t₀, constit.γ
@@ -24,7 +24,11 @@ function force2(t, constit::ConstitutiveEqn, indent::Indentation, tip::TipGeomet
         return f * SpecialFunctions.beta_inc(b, 1 - γ, z)[1]
     end
 end
+<<<<<<< HEAD:force.jl
+##
+=======
 
+>>>>>>> a20faa8cd6973b6c6918b00ed8d0f7805c1254e8:julia/force.jl
 function force_kv(t, constit::ConstitutiveEqn, indent::Indentation, tip::TipGeometry)
     t_max = max_indent_time(indent)
     F1(t) = kv_force_app(t, constit, indent, tip)
@@ -81,18 +85,20 @@ function kv_force_app(t, constit::KelvinVoigt{T}, indent::Triangular{T}, tip::Ti
     E, η = constit.E, constit.η
     v = indent.v
     a, b = α(tip), β(tip)
-    coeff = a*v^b
-    return coeff*t*(6*η+E*t)
+    coeff = a * v^b
+    return coeff * t * (6 * η + E * t)
 end
 
 function kv_force_ret(t, constit::KelvinVoigt{T}, indent::Triangular{T}, tip::TipGeometry) where {T}
     E = constit.E
     v = indent.v
     a, b = α(tip), β(tip)
-    coeff = a*v^b
-    return coeff*E*t^b
+    coeff = a * v^b
+    return coeff * E * t^b
 end
 
+<<<<<<< HEAD:force.jl
+=======
 function sls_force_app(t, constit::SLS{T}, indent::Triangular{T}, tip::TipGeometry) where {T}
     E₁ = constit.E₁
     E₂ = constit.E₂
@@ -112,3 +118,4 @@ function sls_force_ret(t, t₁, constit::SLS{T}, indent::Triangular{T}, tip::Tip
     coeff = a*v^b
     return coeff*(E₁*t-3*η*((exp(-E₂*(t-t₁)/(3*η)))*t₁-(3*η/E₂)*exp(E₂*t₁/(3*η))+3*η/E₂))
 end
+>>>>>>> a20faa8cd6973b6c6918b00ed8d0f7805c1254e8:julia/force.jl
