@@ -9,7 +9,8 @@ import scipy.special as sc
 import matplotlib.pyplot as plt
 from neuralconstitutive.preprocessing import process_approach_data, estimate_derivative
 from neuralconstitutive.tipgeometry import Conical
-E_0 = 572 # Pa
+
+E_0 = 572  # Pa
 gamma = 0.42
 t_0 = 1.0  # s
 v = 10 * 1e-6  # m/s
