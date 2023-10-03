@@ -104,7 +104,7 @@ class FullyConnectedNetwork(eqx.Module):
     def __call__(self, t: Array) -> Array:
         for layer in self.layers:
             # t = self.activation(layer(t))
-            t = jax.nn.tanh(layer(t))
+            t = jnp.sin(layer(t))
         # return self.final_activation(t)
         return jax.nn.softplus(t)
 
@@ -188,8 +188,8 @@ class PronyNN(eqx.Module):
 # phi_nn = FullyConnectedNetwork(["scalar", 100, "scalar"], jax.nn.elu, jax.nn.softplus)
 phi_nn = FullyConnectedNetwork(["scalar", 20, 20, 20, 20, "scalar"])
 phi_bern = BernsteinNN(phi_nn, 100)
-phi_prony = PronyNN(1e-4, 1e3, 50)
-phi_prony.scales
+# phi_prony = PronyNN(1e-4, 1e3, 50)
+# phi_prony.scales
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
 ax.plot(t_app, jax.vmap(phi_bern)(t_app))
@@ -281,7 +281,7 @@ def make_step_ret(model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret, opt_st
 
 
 # %%
-max_epochs = 650
+max_epochs = 4000
 loss_history = np.empty(max_epochs)
 for step in range(max_epochs):
     loss, model, opt_state = make_step(
