@@ -32,7 +32,7 @@ from neuralconstitutive.utils import squared_error
 configure_matplotlib_defaults()
 
 filepath = (
-    "Hydrogel AFM data/SD-Sphere-CONT-S/Highly Entangled Hydrogel(10nN, 1s, liquid).nid"
+    "data/230927_onion/onion_pbs_3_Image01396.nid"
 )
 config, data = nanosurf.read_nid(filepath)
 
@@ -80,7 +80,7 @@ print(cp_fwd, cp_bwd)
 # %%
 # Translation
 dist_fwd = dist_fwd - cp_fwd
-dist_bwd = dist_bwd - cp_fwd
+dist_bwd = dist_bwd - cp_bwd
 
 # %%
 # Polynomial fitting
@@ -99,14 +99,14 @@ ax.set_ylabel("Force(nN)")
 plt.axvline(cp_fwd, color="grey", linestyle="--", linewidth=1)
 ax.legend()
 # %%
-fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+fig, ax = plt.subplots(1, 1, figsize=(7, 5))
 plot_kwargs = {"markersize": 2.0, "alpha": 0.7}
 ax.plot(dist_fwd * 1e6, defl_processed_fwd * 1e9, ".-", label="Approach", **plot_kwargs)
 ax.plot(dist_bwd * 1e6, defl_processed_bwd * 1e9, ".-", label="Retract", **plot_kwargs)
 ax.set_xlabel("Distance(μm)")
 ax.set_ylabel("Force(nN)")
 plt.axvline(cp_fwd, color="grey", linestyle="--", linewidth=1)
-ax.legend(loc="lower left")
+ax.legend()
 # %%
 fig, axes = plt.subplots(2, 1, figsize=(5, 3), sharex=True, sharey=True)
 plot_kwargs = {"markersize": 2.0, "alpha": 0.7}
