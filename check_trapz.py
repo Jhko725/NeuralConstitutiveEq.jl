@@ -281,7 +281,7 @@ def make_step_ret(model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret, opt_st
 
 
 # %%
-max_epochs = 4000
+max_epochs = 3200
 loss_history = np.empty(max_epochs)
 for step in range(max_epochs):
     loss, model, opt_state = make_step(
@@ -347,4 +347,14 @@ ax.set_yscale("log")
 ax.grid(color="lightgray", linestyle="--")
 ax.spines.right.set_visible(False)
 ax.spines.top.set_visible(False)
+# %%
+plt.plot(
+    t_app,
+    jax.vmap(model.net)(t_app),
+    "-",
+    color="red",
+    label="Initial prediction",
+    **plot_kwargs,
+)
+
 # %%
