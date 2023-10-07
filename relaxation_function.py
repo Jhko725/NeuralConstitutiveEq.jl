@@ -752,7 +752,7 @@ F_ret_kww = F_ret_integral_KWW(
     tip_=tip,
 )
 F_ret_fung = F_ret_integral_Fung(
-    t__=t_1_kww,
+    t__=t_1_fung,
     t___=t_ret,
     E0_=E0_fung,
     C_=C_fung,
@@ -807,7 +807,6 @@ F_ret_fung[np.isnan(F_ret_fung)] = 0
 F_total_fung = np.append(F_app_fung, F_ret_fung[1:])
 
 # %%
-
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
 plot_kwargs = {"markersize": 3.0, "alpha": 0.2}
 ax.plot(t_array, F_total * 1e9, ".", label="PLR", **plot_kwargs)

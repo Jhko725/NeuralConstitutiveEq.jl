@@ -1,6 +1,5 @@
-# %%
+#%%
 from functools import partial
-
 import jax
 import jax.numpy as jnp
 import equinox as eqx
@@ -56,18 +55,29 @@ t_i, h_i = spectrum()
 fig, ax = plt.subplots(1, 1, figsize=(7, 5))
 ax.plot(t_i, h_i, ".")
 ax.set_xscale("log", base=10)
+ax.set_xlabel("Relaxation Time τ[s]")
+ax.set_ylabel("Relaxation Spectrum H(τ)[Pa]")
 # %%
 #@partial(jax.vmap, in_axes=(0, None, None))
 def function_from_discrete_spectra(t: float, t_i: jax.Array, h_i: jax.Array):
     h0 = jnp.log(t_i[1]) - jnp.log(t_i[0])
     return jnp.dot(h_i * h0, jnp.exp(-t / t_i))
 # %%
-t = jnp.arange(0.0, 10.0, 0.001)
+t = jnp.arange(1e-5, 10.0, 0.001)
 #g = function_from_discrete_spectra(t, *spectrum())
 phi = partial(function_from_discrete_spectra, t_i=spectrum()[0],h_i=spectrum()[1])
-# phi = jax.vmap(phi)(t)
+g = jax.vmap(phi)(t)
+plt.plot(t, g)
 # %%
-# plt.plot(t, phi, ".") 
+# Relaxation function curve fitting
+def Fung(t, E0, C, tau1, tau2):
+    return E0 * (
+        (1 + C * (sc.exp1(t / tau2) - sc.exp1(t / tau1)))
+        / (1 + C * np.log(tau2 / tau1))
+    )
+popt_fung, pcov_fung = curve_fit(Fung, t, g)
+popt_fung
+#%%
 # %%
 def DLNM_Integrand(t_, t, phi, velocity, indentation, tip):
     a = tip.alpha
@@ -107,10 +117,6 @@ def F_ret_integral(t__, t___, phi_, velocity_, indentation_, tip_):
         )
         F.append(quad(integrand_, 0, i)[0])
     return F
-#%%
-t = jnp.arange(0.0, 10.0, 0.001)
-theta = (18.0 / 180.0) * np.pi
-tip = Conical(theta)
 # %%
 def v_app(t_):
     v = 10 * 1e-6
@@ -133,9 +139,14 @@ def i_ret(t_):
 # %%
 # plt.plot(t, F)
 #%%
+# Tip Geometry
+theta = (18.0 / 180.0) * np.pi
+tip = Conical(theta)
+#%%
+# Data points
 space = 201  # odd number
 idx = int((space - 1) / 2)
-t_array = np.linspace(0, 10, space)
+t_array = np.linspace(1e-6, 10, space)
 t_app = t_array[: idx + 1]
 t_ret = t_array[idx:]
 t_max = t_array[idx]
@@ -204,8 +215,10 @@ F_ret = np.array(F_ret)
 F_app[np.isnan(F_app)] = 0
 F_ret[np.isnan(F_ret)] = 0
 F_total = np.append(F_app, F_ret[1:])
+#%%
+fig, ax = plt.subplots(1, 1, figsize=(7,5))
+ax.plot(t_array, F_total)
 
-plt.plot(t_array, F_total)
 #%%
 def PLR_constit_integand(t_, t, E0, alpha, t_prime, velocity, indentation, tip):
     a = tip.alpha
@@ -361,11 +374,11 @@ def F_total_integral(
         )
         F_ret.append(quad(integrand_, 0, j)[0])
 
-    F = F_app[:-1] + F_ret
+    F = F_app + F_ret[1:]
     return F
 
 def F_total_integral_Fung(
-    time, E0_, C_, tau1_, tau2_, max_ind, indentation_, tip_, velocity_app, velocity_ret
+    time, C_, E0_, tau1_, tau2_, max_ind, indentation_, tip_, velocity_app, velocity_ret
 ):
     time_app = time[: max_ind + 1]
     time_ret = time[max_ind:]
@@ -402,7 +415,7 @@ def F_total_integral_Fung(
         )
         F_ret.append(quad(integrand_, 0, j)[0])
 
-    F = F_app[:-1] + F_ret
+    F = F_app + F_ret[1:]
     return F
 
 F_total_func = partial(
@@ -414,7 +427,7 @@ F_total_func = partial(
     velocity_ret=v_ret,
     tip_=tip,
 )
-
+#%%
 F_total_func_Fung = partial(
     F_total_integral_Fung,
     max_ind=idx,
@@ -425,13 +438,12 @@ F_total_func_Fung = partial(
 )
 # %%
 popt_total, pcov_total = curve_fit(F_total_func, t_array, F_total)
-popt_total_fung, pcov_total_fung = curve_fit(F_total_func_Fung, t_array, F_total)
 #%%
+popt_total_fung, pcov_total_fung = curve_fit(F_total_func_Fung, t_array, F_total)
 F_total_curvefit = np.array(F_total_func(t_array, *popt_total))
 F_total_curvefit_fung = np.array(F_total_func_Fung(t_array, *popt_total_fung))
-print(popt_total_fung)
+print(popt_total_fung, popt_total)
 # %%
-F_total_curvefit_fung[np.isnan(F_total_curvefit_fung)]=0
 fig, ax = plt.subplots(1, 1, figsize=(7,5))
 ax.plot(t_array, F_total_curvefit, label = "PLR")
 ax.plot(t_array, F_total_curvefit_fung, label="Fung")
@@ -440,12 +452,22 @@ ax.legend()
 #%%
 def RS_PLR(tau, t_prime, E0, alpha):
     return E0*t_prime*(np.exp(-t_prime/tau))*(t_prime/tau)**(alpha-1)/tau/gamma(alpha)
-a = RS_PLR(t_i, 1e-5, *popt_total)
+
+def RS_Fung(tau, C, tau1, tau2):
+    a = np.zeros(len(tau))
+    idx1 = np.where(tau1<tau)[0][0]
+    idx2 = np.where(tau<tau2)[0][-1]
+    a[idx1:idx2+1] = C
+    return a
+
+spectrum_PLR = RS_PLR(t_i, 1e-5, *popt_total)
+spectrum_Fung = RS_Fung(t_i, popt_fung[0], popt_fung[2], popt_fung[3])
+#%%
 fig, ax = plt.subplots(1, 1, figsize=(7, 5))
-ax.plot(t_i, a, ".")
-ax.plot(t_i, h_i, ".")
+ax.plot(t_i, h_i, label="DLNM")
+ax.plot(t_i, spectrum_PLR, label="PLR")
+ax.plot(t_i, spectrum_Fung, label="Fung")
 ax.set_xscale("log", base=10)
-# %%
-
-
+ax.set_xlabel("Relaxation Time τ[s]")
+ax.set_ylabel("Relaxation Spectrum H(τ)[Pa]")
 # %%
