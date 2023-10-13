@@ -224,7 +224,7 @@ ax.plot(time, force, ".", color="black", label="Data")
 for f, lab in zip(f_fit, labels):
     ax.plot(time, f, label=lab)
 ax.set_xlabel("Time(s)")
-ax.set_ylabel("Force(nN)")
+ax.set_ylabel("Force(nN)") 
 ax.legend()
 
 # %%
