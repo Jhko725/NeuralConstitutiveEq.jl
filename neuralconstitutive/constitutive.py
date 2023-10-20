@@ -18,8 +18,11 @@ class AbstractConstitutiveEqn(eqx.Module):
     def relaxation_spectrum(self, t: Array) -> Array | None:
         return None
 
+    def __call__(self, t: ArrayLike) -> Array:
+        t_array = jnp.asarray(t)
+        return self.relaxation_function(t_array)
 
-@jax.jit
+
 def relaxation_function(t: ArrayLike, constit: AbstractConstitutiveEqn) -> Array:
     t_array = jnp.asarray(t)
     return constit.relaxation_function(t_array)
@@ -74,7 +77,10 @@ class LogDiscretizedSpectrum(AbstractConstitutiveEqn):
     log10_t_grid: Array
     h_grid: Array
 
+    def __init__(self, sampled_spectrum: tuple[Array, Array]):
+        self.log10_t_grid, self.h_grid = sampled_spectrum
+
     def relaxation_function(self, t: Array) -> Array:
         h0 = self.log10_t_grid[1] - self.log10_t_grid[0]
         t_grid = 10**self.log10_t_grid
-        return jnp.dot(self.h_grid * h0, jnp.exp(-t / t_grid))
+        return jnp.matmul(jnp.exp(-jnp.expand_dims(t, -1) / t_grid), self.h_grid * h0)

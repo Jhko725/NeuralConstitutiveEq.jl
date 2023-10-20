@@ -18,7 +18,7 @@ from neuralconstitutive.preprocessing import (
     fit_baseline_polynomial,
 )
 from neuralconstitutive.tipgeometry import Spherical, TipGeometry
-from neuralconstitutive.constitutive import PowerLawRheology, StandardLinearSolid
+#from neuralconstitutive.constitutive import PowerLawRheology, StandardLinearSolid
 from neuralconstitutive.ting import force_approach, force_retract
 from neuralconstitutive.fitting import (
     fit_approach,
@@ -45,7 +45,9 @@ z_bwd, defl_bwd = get_z_and_defl(backward)
 dist_fwd = calc_tip_distance(z_fwd, defl_fwd)
 dist_bwd = calc_tip_distance(z_bwd, defl_bwd)
 #%%
-
+fig, ax = plt.subplots(1, 1, figsize = (5, 3))
+defl = np.concatenate([defl_fwd, defl_bwd[::-1]])
+ax.plot(np.arange(len(defl)), defl, ".", markersize = 3)
 # %%
 # ROV method
 N = 10
