@@ -18,15 +18,6 @@ class AbstractConstitutiveEqn(eqx.Module):
     def relaxation_spectrum(self, t: Array) -> Array | None:
         return None
 
-    def __call__(self, t: ArrayLike) -> Array:
-        t_array = jnp.asarray(t)
-        return self.relaxation_function(t_array)
-
-
-def relaxation_function(t: ArrayLike, constit: AbstractConstitutiveEqn) -> Array:
-    t_array = jnp.asarray(t)
-    return constit.relaxation_function(t_array)
-
 
 class ModifiedPowerLaw(AbstractConstitutiveEqn):
     E0: float
