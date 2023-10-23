@@ -7,6 +7,8 @@ import jax.numpy as jnp
 from jax.scipy.special import exp1
 import equinox as eqx
 
+from .relaxation_spectrum import AbstractLogDiscreteSpectrum
+
 
 class AbstractConstitutiveEqn(eqx.Module):
     """Abstract base class for all constitutive equations"""
@@ -22,7 +24,7 @@ class AbstractConstitutiveEqn(eqx.Module):
 class ModifiedPowerLaw(AbstractConstitutiveEqn):
     E0: float
     alpha: float
-    t0: float
+    t0: float = eqx.field(static=True)
 
     def relaxation_function(self, t):
         return self.E0 * (1 + t / self.t0) ** (-self.alpha)
@@ -68,10 +70,14 @@ class LogDiscretizedSpectrum(AbstractConstitutiveEqn):
     log10_t_grid: Array
     h_grid: Array
 
-    def __init__(self, sampled_spectrum: tuple[Array, Array]):
-        self.log10_t_grid, self.h_grid = sampled_spectrum
+    def __init__(self, relaxation_spectrum: AbstractLogDiscreteSpectrum):
+        self.log10_t_grid, self.h_grid = relaxation_spectrum.discrete_spectrum()
 
     def relaxation_function(self, t: Array) -> Array:
         h0 = self.log10_t_grid[1] - self.log10_t_grid[0]
         t_grid = 10**self.log10_t_grid
         return jnp.matmul(jnp.exp(-jnp.expand_dims(t, -1) / t_grid), self.h_grid * h0)
+
+    @property
+    def t_grid(self) -> Array:
+        return 10**self.log10_t_grid

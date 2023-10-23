@@ -5,7 +5,7 @@ import jax.numpy as jnp
 import equinox as eqx
 
 
-class AbstractDiscreteSpectrum(eqx.Module):
+class AbstractLogDiscreteSpectrum(eqx.Module):
     @abc.abstractmethod
     def discrete_spectrum(self) -> tuple[Array, Array]:
         pass
@@ -14,7 +14,7 @@ class AbstractDiscreteSpectrum(eqx.Module):
         return self.discrete_spectrum()
 
 
-class HonerkampWeeseBimodal(AbstractDiscreteSpectrum):
+class HonerkampWeeseBimodal(AbstractLogDiscreteSpectrum):
     A: float
     B: float
     t_x: float
