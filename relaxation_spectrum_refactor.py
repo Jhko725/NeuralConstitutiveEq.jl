@@ -24,12 +24,14 @@ fig, ax = plt.subplots(1, 1, figsize=(5, 3))
 ax.plot(bimodal.t_grid, bimodal.h_grid, ".")
 ax.set_xscale("log", base=10)
 # %%
-t = jnp.arange(1e-2, 100.0, 0.0001)
+t = jnp.arange(1e-3, 100.0, 0.01)
 y = bimodal.relaxation_function(t)
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
 ax.plot(t, y, ".")
 ax.set_xlabel("Time")
 ax.set_ylabel("Relaxation function")
+# %%
+constit = Fung(1.0, 1e-2, 10.0, 1.0)
 
 
 # %%
@@ -42,7 +44,7 @@ solver = optx.LevenbergMarquardt(
     rtol=1e-8, atol=1e-8, verbose=frozenset({"step", "accepted", "loss", "step_size"})
 )
 sol = optx.least_squares(
-    relaxation_residual, solver, StandardLinearSolid(1.0, 0.0, 10.0), (t, y)
+    relaxation_residual, solver, Fung(1.0, 1e-2, 10.0, 1.0), (t, y)
 )
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))

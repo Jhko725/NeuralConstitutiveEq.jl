@@ -25,6 +25,7 @@ jax.config.update("jax_enable_x64", True)
 sls = SimpleLinearSolid(E0=8.0, E_inf=2.0, tau=0.01)
 t_app = jnp.linspace(0, 0.2, 100)
 t_ret = jnp.linspace(0.2, 0.4, 100)
+
 sls(t_app)
 d_app = 10.0 * t_app
 d_ret = -10.0 * t_ret

@@ -57,7 +57,17 @@ class Fung(AbstractConstitutiveEqn):
     C: float
 
     def relaxation_function(self, t):
-        numerator = 1 + self.C * (exp1(t / self.tau2) - exp1(t / self.tau1))
+        def _exp1_diff(t_i: float) -> float:
+            return exp1(t_i / self.tau2) - exp1(t_i / self.tau1)
+
+        # A workaround for https://github.com/google/jax/issues/13543
+        # Note that the use of jax.lax.map causes the time complexity of this function
+        # to scale with the length of array t
+        # Tested on an array of length 100, this is 25 times (~550ms vs 13.5s)
+        # faster than the commented out vectorized version
+
+        numerator = 1 + self.C * jax.lax.map(_exp1_diff, t)
+        # numerator = 1 + self.C * (exp1(t / self.tau2) - exp1(t / self.tau1))
         denominator = 1 + self.C * jnp.log(self.tau2 / self.tau1)
         return self.E0 * numerator / denominator
 
