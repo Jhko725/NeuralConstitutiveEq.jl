@@ -1,7 +1,6 @@
 # %%
-from typing import Literal, Sequence, Callable
+from typing import Callable
 
-from more_itertools import pairwise
 import numpy as np
 import scipy
 import matplotlib.pyplot as plt
@@ -24,11 +23,12 @@ from neuralconstitutive.preprocessing import (
     fit_baseline_polynomial,
 )
 from neuralconstitutive.jax.ting import force_approach, force_retract, find_t1
-
+from neuralconstitutive.nn import FullyConnectedNetwork
+from neuralconstitutive.models import BernsteinNN
 
 configure_matplotlib_defaults()
 
-filepath = "Hydrogel AFM data/SD-Sphere-CONT-M/Highly Entangled Hydrogel(10nN, 10s, liquid).nid"
+filepath = "data/Image02582.nid"
 config, data = nanosurf.read_nid(filepath)
 
 forward, backward = data["spec forward"], data["spec backward"]
@@ -176,60 +176,6 @@ ax.plot(d_ret, F_ret)
 
 
 # %%
-class FullyConnectedNetwork(eqx.Module):
-    layers: list
-    # activation: Callable
-    # final_activation: Callable
-
-    def __init__(
-        self,
-        nodes: Sequence[int | Literal["scalar"]],
-        # activation: Callable,
-        # final_activation: Callable | None,
-        seed: int = 0,
-    ):
-        super().__init__()
-        keys = jax.random.split(jax.random.PRNGKey(seed), len(nodes) - 1)
-        self.layers = [
-            eqx.nn.Linear(*feats, key=k) for (feats, k) in zip(pairwise(nodes), keys)
-        ]
-        # self.activation = activation
-        # self.final_activation = (
-        #    eqx.nn.Identity() if final_activation is None else final_activation
-        # )
-
-    def __call__(self, t: Array) -> Array:
-        for layer in self.layers:
-            # t = self.activation(layer(t))
-            t = jax.nn.tanh(layer(t))
-        # return self.final_activation(t)
-        return jax.nn.softplus(t)
-
-
-class BernsteinNN(eqx.Module):
-    net: eqx.Module
-    scale: Array
-    bias: Array
-    nodes: Array
-    weights: Array
-
-    def __init__(self, net: eqx.Module, num_quadrature: int = 500):
-        super().__init__()
-        self.net = net
-        self.scale = jnp.asarray(1.0)
-        self.bias = jnp.asarray(1.0)
-        self.nodes, self.weights = scipy.special.roots_legendre(num_quadrature)
-
-    def __call__(self, t: Array) -> Array:
-        nodes = jax.lax.stop_gradient(self.nodes)
-        weights = jax.lax.stop_gradient(self.weights)
-        h = jax.vmap(self.net)(nodes)
-        expmx = 0.5 * (nodes + 1)
-        return jax.nn.relu(self.scale) * 0.5 * jnp.dot(
-            h * expmx ** (t - 1), weights
-        ) + jax.nn.relu(self.bias)
-
-
 class BernsteinNN2(eqx.Module):
     net: eqx.Module
     scale: Array
