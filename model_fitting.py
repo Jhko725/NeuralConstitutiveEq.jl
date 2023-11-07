@@ -32,7 +32,7 @@ from neuralconstitutive.utils import squared_error
 configure_matplotlib_defaults()
 
 filepath = (
-    "data/230927_onion/onion_pbs_3_Image01396.nid"
+    "data/230926_pAAm/Image01388.nid"
 )
 config, data = nanosurf.read_nid(filepath)
 
@@ -88,7 +88,7 @@ print(cp_fwd, cp_bwd)
 # %%
 # Translation
 dist_fwd = dist_fwd - cp_fwd
-dist_bwd = dist_bwd - cp_bwd
+dist_bwd = dist_bwd - cp_fwd
 
 # %%
 # Polynomial fitting
