@@ -3,3 +3,4 @@ wandb/
 lightning_logs/
 .vscode/
 hydrogel/
+data/

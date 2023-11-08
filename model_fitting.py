@@ -1,4 +1,5 @@
 # %%
+from pathlib import Path
 from typing import Callable, Literal
 from functools import partial
 
@@ -27,19 +28,25 @@ from neuralconstitutive.fitting import (
     split_approach_retract,
 )
 from neuralconstitutive.utils import squared_error
-
+from neuralconstitutive.trajectory import Trajectory
 
 configure_matplotlib_defaults()
 
 filepath = (
     "data/230926_pAAm/Image01388.nid"
 )
-config, data = nanosurf.read_nid(filepath)
 
+def read_spectroscopy_point(filepath: Path) -> tuple[Trajectory, Trajectory]:
+    config, data = nanosurf.read_nid(filepath)
+    forward, backward = data["spec forward"], data["spec backward"]
+    fs = get_sampling_rate(config)
+    
+    z_fwd, defl_fwd = get_z_and_defl(forward)
+    z_bwd, defl_bwd = get_z_and_defl(backward)
 # %%
 forward, backward = data["spec forward"], data["spec backward"]
 
-# %%
+# %% 
 z_fwd, defl_fwd = get_z_and_defl(forward)
 z_bwd, defl_bwd = get_z_and_defl(backward)
 dist_fwd = calc_tip_distance(z_fwd, defl_fwd)

@@ -46,7 +46,7 @@ def calc_tip_distance(piezo_z_pos: ndarray, deflection: ndarray) -> ndarray:
 def ratio_of_variances_numpy(
     deflection: ndarray, window_size: int
 ) -> tuple[ndarray, int]:
-    """Numpy version of the ratio_of_variances function.
+    """Numpy version of the ratio_of_variances function for testing / pedagogical purposes.
 
     Note that the performance difference between this function and the ratio_of_variances function is very large (~1000x).
     Therefore, this function is kept only for pedagogical purposes.
