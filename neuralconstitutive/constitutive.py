@@ -2,7 +2,6 @@ import abc
 
 import jax
 from jax import Array
-from jax.typing import ArrayLike
 import jax.numpy as jnp
 from jax.scipy.special import exp1
 import equinox as eqx

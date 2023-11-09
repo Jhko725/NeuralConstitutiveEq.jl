@@ -5,17 +5,81 @@ from typing import BinaryIO, ByteString, overload, Any, Self
 from configparser import ConfigParser
 from dataclasses import dataclass
 from collections.abc import Sequence
+import re
 
 import numpy as np
 
 NestedConfigDict = dict[str, dict[str, Any]]
 
 
+@dataclass(frozen=True)
+class NIDChannelHeader:
+    _channel_header: dict[str, Any]
+
+    @property
+    def name(self) -> str:
+        return self._channel_header["Frame"]
+
+    @property
+    def dtype(self) -> np.dtype:
+        saveorder = self._channel_header["SaveOrder"]
+        savesign = self._channel_header["SaveSign"]
+        savebits = int(self._channel_header["SaveBits"])
+
+        endian = "<" if saveorder == "Intel" else ">"
+        data_format = "i" if savesign == "Signed" else "u"
+        num_bytes = savebits // 8
+        return np.dtype(f"{endian}{data_format}{num_bytes}")
+
+    @property
+    def shape(self) -> tuple[int, int]:
+        num_x = int(self._channel_header["Points"])
+        num_y = int(self._channel_header["Lines"])
+        return (num_x, num_y)
+
+    def sizeof(self) -> int:
+        """Returns the size of the data associated with the channel in bytes"""
+        bytes_per_point = self.dtype.itemsize
+        n_pixels = self.shape[0] * self.shape[1]
+        return n_pixels * bytes_per_point
+        # if not self.is_jagged():
+        #     n_pixels = self.shape[0] * self.shape[1]
+        #     return n_pixels * bytes_per_point
+        # else:
+        #     n_jags = self.shape[1]
+        #     n_data = sum(
+        #         int(self._channel_header[f"LineDim{i}Points"]) for i in range(n_jags)
+        #     )
+        #     return n_data * bytes_per_point
+
+    def is_jagged(self) -> bool:
+        """Returns whether if the channel represents normal array/tensor like data
+        or if it represents a jagged/ragged array/tensor, which is usually created though
+        measurements that terminate/trigger though a setpoint value."""
+
+        header_keys = self._channel_header.keys()
+        return any(
+            bool(re.match(r"LineDim\d+(?:Range|Min|Points)", k)) for k in header_keys
+        )
+
+
 @dataclass
 class NIDChannel:
     index: int
     parent_index: int
+    header: NIDChannelHeader
     data: np.ndarray | None = None
+
+    def __post_init__(self):
+        if self.data is None:
+            self.data = np.empty(self.header.shape, self.header.dtype)
+
+    def load_data_from_bytestream(self, iostream: BinaryIO) -> None:
+        data_binary = iostream.read(self.header.sizeof())
+        data_array_view = np.frombuffer(data_binary, self.header.dtype).reshape(
+            self.data.shape
+        )
+        np.copyto(self.data, data_array_view)
 
 
 @dataclass
@@ -63,7 +127,7 @@ def configparser_to_dict(config: ConfigParser) -> NestedConfigDict:
     return config_dict
 
 
-@dataclass
+@dataclass(frozen=True)
 class NIDHeader:
     _header: dict[str, dict[str, Any]]
 
@@ -102,7 +166,10 @@ class NIDHeader:
         for channel_idx in range(max_channels):
             # Real number of channels is determined by the existance of the following key
             if f"Gr{group_idx}-Ch{channel_idx}" in self.dataset_config.keys():
-                channels.append(NIDChannel(channel_idx, group_idx))
+                channel_header = NIDChannelHeader(
+                    self._header[f"DataSet-{group_idx}:{channel_idx}"]
+                )
+                channels.append(NIDChannel(channel_idx, group_idx, channel_header))
 
         return NIDGroup(group_idx, grp_name, grp_id, channels)
 
@@ -124,9 +191,14 @@ with open(filepath, "rb") as file:
     with mmap.mmap(file.fileno(), length=0, access=mmap.ACCESS_READ) as memorymap:
         raw_header = read_raw_header(memorymap)
         header = NIDHeader.from_bytes(raw_header)
+        groups = header.get_groups()
+        for grp in groups:
+            for chnl in grp.channels:
+                chnl.load_data_from_bytestream(memorymap)
 
-header.get_groups()
 # %%
+groups[0]
 
-
+# %%
+1838848 - 1826992
 # %%
