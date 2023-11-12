@@ -12,10 +12,8 @@ from jhelabtoolkit.utils.plotting import configure_matplotlib_defaults
 
 configure_matplotlib_defaults()
 
-filepath = "data/230926_pAAm/Image01388.nid"
+filepath = "data/20231110_onion/Image02676.nid"
 config, data = nanosurf.read_nid(filepath)
-
-
 # %%
 def get_sampling_rate(nid_config: ConfigParser) -> float:
     spec_config = dict(config[r"DataSet\DataSetInfos\Spec"])
@@ -24,13 +22,11 @@ def get_sampling_rate(nid_config: ConfigParser) -> float:
     modulation_time = float(spec_config["modulation time"].split(" ")[0])
     return num_points / modulation_time
 
-
 get_sampling_rate(config)
 # %%
 forward, backward = data["spec forward"], data["spec backward"]
-
-forward
-
+forward_pause, backward_pause = data["spec fwd pause"]
+#%%
 
 # %%
 def get_z_and_defl(spectroscopy_data: xr.DataArray) -> tuple[ndarray, ndarray]:
