@@ -12,7 +12,7 @@ import optimistix as optx
 from neuralconstitutive.jax.integrate import integrate_to, integrate_from
 from neuralconstitutive.jax.tipgeometry import AbstractTipGeometry, Spherical
 from neuralconstitutive.constitutive import ModifiedPowerLaw
-from neuralconstitutive.indentation import Indentation
+from neuralconstitutive.trajectory import Indentation
 
 
 @partial(eqx.filter_vmap, in_axes=(0, None, None, None))
