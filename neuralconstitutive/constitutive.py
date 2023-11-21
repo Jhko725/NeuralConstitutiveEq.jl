@@ -71,7 +71,7 @@ class Fung(AbstractConstitutiveEqn):
         return self.E0 * numerator / denominator
 
 
-class LogDiscretizedSpectrum(AbstractConstitutiveEqn):
+class FromLogDiscreteSpectrum(AbstractConstitutiveEqn):
     """
     Assume that log_t_grid is equispaced
     """
@@ -83,10 +83,15 @@ class LogDiscretizedSpectrum(AbstractConstitutiveEqn):
         self.log10_t_grid, self.h_grid = relaxation_spectrum.discrete_spectrum()
 
     def relaxation_function(self, t: Array) -> Array:
-        h0 = self.log10_t_grid[1] - self.log10_t_grid[0]
-        t_grid = 10**self.log10_t_grid
-        return jnp.matmul(jnp.exp(-jnp.expand_dims(t, -1) / t_grid), self.h_grid * h0)
+        h0 = jnp.log(self.t_grid[1]) - jnp.log(self.t_grid[0])
+        return jnp.matmul(
+            jnp.exp(-jnp.expand_dims(t, -1) / self.t_grid), self.h_grid * h0
+        )
 
     @property
     def t_grid(self) -> Array:
         return 10**self.log10_t_grid
+
+    @property
+    def discrete_spectrum(self) -> tuple[Array, Array]:
+        return self.t_grid, self.h_grid
