@@ -31,7 +31,7 @@ class HonerkampWeeseBimodal(AbstractLogDiscreteSpectrum):
         t_y: float = 5.0,
         t_a: float = 1e-3,
         t_b: float = 1e2,
-        n: int = 100,
+        n: int = 1000,
     ):
         self.A = A
         self.B = B
