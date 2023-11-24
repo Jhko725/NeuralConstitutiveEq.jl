@@ -163,7 +163,8 @@ def build_L_curve(
     #
     # This is the costliest step
     #
-    for i, lambda_ in reversed(enumerate(lambdas)):
+    for i in reversed(range(n_lambda)):
+        lambda_ = lambdas[i]
         H, G0 = get_H(lambda_, G, weights, H, kernel, G0)
         rho[i] = np.linalg.norm(weights * (1 - kernel_prestore(H, kernel, G0) / G))
         B = make_B_matrix(H, kernel, G, weights, G0)
@@ -214,7 +215,13 @@ def build_L_curve(
     return lamM, lambda_, rho, eta, logP, Hlambda
 
 
-def residualLM(H, lam, Gexp, wexp, kernMat):
+def residualLM(
+    H: np.ndarray,
+    lambda_: float,
+    G: np.ndarray,
+    weights: np.ndarray,
+    kernel: np.ndarray,
+) -> np.ndarray:
     """
     %
     % HELPER FUNCTION: Gets Residuals r
@@ -223,36 +230,36 @@ def residualLM(H, lam, Gexp, wexp, kernMat):
               Gexp    = experimental data,
               wexp    = weighting factors,
               kernMat = matrix for faster kernel evaluation
-                G0      = plateau
 
      Output : a set of n+nl residuals,
               the first n correspond to the kernel
               the last  nl correspond to the smoothness criterion
     %"""
 
-    n = kernMat.shape[0]
-    ns = kernMat.shape[1]
-    nl = ns - 2
+    N, Ns = kernel.shape
+    Nl = Ns - 2
 
-    r = np.zeros(n + nl)
+    r = np.zeros(N + Nl)
 
     # if plateau then unfurl G0
-    if len(H) > ns:
-        G0 = H[-1]
-        H = H[:-1]
-        # r[0:n] = (1. - kernel_prestore(H, kernMat, G0)/Gexp)  # the Gt and
-        r[0:n] = wexp * (1.0 - kernel_prestore(H, kernMat, G0) / Gexp)  # the Gt and
+    if len(H) == Ns + 1:
+        H, G0 = H[:-1], H[-1]
     else:
-        # r[0:n] = (1. - kernel_prestore(H, kernMat)/Gexp)
-        r[0:n] = wexp * (1.0 - kernel_prestore(H, kernMat) / Gexp)
+        H, G0 = H, None
 
+    r[0:N] = weights * (1.0 - kernel_prestore(H, kernel, G0) / G)  # the Gt and
     # the curvature constraint is not affected by G0
-    r[n : n + nl] = np.sqrt(lam) * np.diff(H, n=2)  # second derivative
-
+    r[N:] = np.sqrt(lambda_) * np.diff(H, n=2)  # second derivative
     return r
 
 
-def jacobianLM(H, lam, Gexp, wexp, kernMat):
+def jacobianLM(
+    H: np.ndarray,
+    lambda_: float,
+    G: np.ndarray,
+    weights: np.ndarray,
+    kernel: np.ndarray,
+) -> np.ndarray:
     """
     HELPER FUNCTION for optimization: Get Jacobian J
 
@@ -263,40 +270,31 @@ def jacobianLM(H, lam, Gexp, wexp, kernMat):
     It uses kernelD, which approximates dK_i/dH_j, where K is the kernel
 
     """
-    n = kernMat.shape[0]
-    ns = kernMat.shape[1]
-    nl = ns - 2
+    N, Ns = kernel.shape
+    Nl = Ns - 2
 
     # L is a ns*ns tridiagonal matrix with 1 -2 and 1 on its diagonal;
     L = (
-        np.diag(np.ones(ns - 1), 1)
-        + np.diag(np.ones(ns - 1), -1)
-        + np.diag(-2.0 * np.ones(ns))
+        np.diag(np.ones(Ns - 1), 1)
+        + np.diag(np.ones(Ns - 1), -1)
+        + np.diag(-2.0 * np.ones(Ns))
     )
-    L = L[1 : nl + 1, :]
+    L = L[1 : Nl + 1, :]
 
     # Furnish the Jacobian Jr (n+ns)*ns matrix
     # Kmatrix         = np.dot((1./Gexp).reshape(n,1), np.ones((1,ns)));
-    Kmatrix = np.dot((wexp / Gexp).reshape(n, 1), np.ones((1, ns)))
+    K = np.dot((weights / G).reshape(N, 1), np.ones((1, Ns)))
 
-    if len(H) > ns:
-        G0 = H[-1]
+    Nh = len(H)
+    Jr = np.zeros((N + Nl, Nh))
+
+    if Nh == Ns + 1:
         H = H[:-1]
+        Jr[N:, -1] = np.zeros(Nl)  # column for dr_i/dG0 = 0
+        Jr[:N, -1] = -weights / G  # column for dr_i/dG0
 
-        Jr = np.zeros((n + nl, ns + 1))
-
-        Jr[0:n, 0:ns] = -kernelD(H, kernMat) * Kmatrix
-        # Jr[0:n, ns]     = -1./Gexp							# column for dr_i/dG0
-        Jr[0:n, ns] = -wexp / Gexp  # column for dr_i/dG0
-
-        Jr[n : n + nl, 0:ns] = np.sqrt(lam) * L
-        Jr[n : n + nl, ns] = np.zeros(nl)  # column for dr_i/dG0 = 0
-
-    else:
-        Jr = np.zeros((n + nl, ns))
-
-        Jr[0:n, 0:ns] = -kernelD(H, kernMat) * Kmatrix
-        Jr[n : n + nl, 0:ns] = np.sqrt(lam) * L
+    Jr[:N, :Ns] = -kernelD(H, kernel) * K
+    Jr[N:, :Ns] = np.sqrt(lambda_) * L
 
     return Jr
 
