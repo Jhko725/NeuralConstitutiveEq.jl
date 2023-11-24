@@ -14,7 +14,7 @@
 # Filename for "experimental" data. PlainTXT
 # It should contain G(t) in 2 columns [t Gt]
 #
-GexpFile 	: 'tests/test1.dat'
+GexpFile 	: 'tests/test'
 
 #
 # Plateau Modulus: is there a residual plateau in the data?
@@ -39,7 +39,7 @@ plotting  	: True
 #
 # Number of grid points to represent the continuous spectrum (typical 50-100)
 #
-ns			: 100
+ns			: 200
 
 #
 # Specify lambda_C instead of using the one inferred from the L-curve
