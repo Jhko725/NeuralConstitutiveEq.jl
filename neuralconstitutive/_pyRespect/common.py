@@ -20,7 +20,7 @@ def get_kernel_matrix(s: np.ndarray, t: np.ndarray) -> np.ndarray:
     return np.exp(-T / S) * hsv
 
 
-def kernel_prestore(H, kernMat, *argv):
+def kernel_prestore(H: np.ndarray, kernel: np.ndarray, G0: float | None):
     """
     turbocharging kernel function evaluation by prestoring kernel matrix
         Function: kernel_prestore(input) returns K*h, where h = exp(H)
@@ -36,9 +36,7 @@ def kernel_prestore(H, kernMat, *argv):
 
     """
 
-    if len(argv) > 0:
-        G0 = argv[0]
-    else:
+    if G0 is None:
         G0 = 0.0
 
-    return np.dot(kernMat, np.exp(H)) + G0
+    return np.dot(kernel, np.exp(H)) + G0

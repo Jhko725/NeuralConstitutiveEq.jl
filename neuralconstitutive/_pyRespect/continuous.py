@@ -76,57 +76,51 @@ def get_H(
         residualLM, H_, jac=jacobianLM, args=(lambda_, G, weights, kernel)
     )
     result_ = res_lsq.x
-    result = (result_, None) if G0 is None else (result_[:-1], result_[-1])
-
-    return result
+    return (result_, None) if G0 is None else (result_[:-1], result_[-1])
 
 
-def getAmatrix(ns):
+def make_A_matrix(N: int) -> np.ndarray:
     """Generate symmetric matrix A = L' * L required for error analysis:
     helper function for lcurve in error determination"""
-    # L is a ns*ns tridiagonal matrix with 1 -2 and 1 on its diagonal;
-    nl = ns - 2
+    # L is a N*N tridiagonal matrix with 1 -2 and 1 on its diagonal;
+    nl = N - 2
     L = (
-        np.diag(np.ones(ns - 1), 1)
-        + np.diag(np.ones(ns - 1), -1)
-        + np.diag(-2.0 * np.ones(ns))
+        np.diag(np.ones(N - 1), 1)
+        + np.diag(np.ones(N - 1), -1)
+        + np.diag(-2.0 * np.ones(N))
     )
     L = L[1 : nl + 1, :]
 
     return np.dot(L.T, L)
 
 
-def getBmatrix(H, kernMat, Gexp, wexp, *argv):
-    """get the Bmatrix required for error analysis; helper for lcurve()
+def make_B_matrix(
+    H: np.ndarray,
+    kernel: np.ndarray,
+    G: np.ndarray,
+    weights: np.ndarray,
+    G0: float | None,
+) -> np.ndarray:
+    """Get the Bmatrix required for error analysis; helper for lcurve()
     not explicitly accounting for G0 in Jr because otherwise I get underflow problems"""
-    n = kernMat.shape[0]
-    ns = kernMat.shape[1]
-    nl = ns - 2
-    r = np.zeros(n)
-    # vector of size (n);
-
-    # furnish relevant portion of Jacobian and residual
-
-    # Kmatrix = np.dot((1./Gexp).reshape(n,1), np.ones((1,ns)));
-    Kmatrix = np.dot((wexp / Gexp).reshape(n, 1), np.ones((1, ns)))
-    Jr = -kernelD(H, kernMat) * Kmatrix
-
-    # if plateau then unfurl G0
-    if len(argv) > 0:
-        G0 = argv[0]
-        # r  = (1. - kernel_prestore(H, kernMat, G0)/Gexp)
-        r = wexp * (1.0 - kernel_prestore(H, kernMat, G0) / Gexp)
-
-    else:
-        # r = (1. - kernel_prestore(H, kernMat)/Gexp)
-        r = wexp * (1.0 - kernel_prestore(H, kernMat) / Gexp)
-
+    N, Ns = kernel.shape
+    K = np.dot((weights / G).reshape(N, 1), np.ones((1, Ns)))
+    Jr = -kernelD(H, kernel) * K
+    r = weights * (1 - kernel_prestore(H, kernel, G0) / G)
     B = np.dot(Jr.T, Jr) + np.diag(np.dot(r.T, Jr))
-
     return B
 
 
-def lcurve(Gexp, wexp, Hgs, kernMat, par, *argv):
+def build_L_curve(
+    G: np.ndarray,
+    weights: np.ndarray,
+    H_guess: np.ndarray,
+    kernel: np.ndarray,
+    G0: float | None = None,
+    range_lambda: tuple[float, float] = (1e-10, 1e3),
+    lambdas_per_decade: int = 2,
+    smoothness: float = 0.0,
+):
     """
      Function: lcurve(input)
 
@@ -134,10 +128,11 @@ def lcurve(Gexp, wexp, Hgs, kernMat, par, *argv):
              wexp    = weights associated with datapoints
             Hgs     = guessed H,
             kernMat = matrix for faster kernel evaluation
-            par     = parameter dictionary
+            range_lambda = tuple corresponding to the min and max of the lambda parameter
+                           originally corresponds to lam_min, lam_max in the inp file
             G0      = optionally
 
-     Output: lamC and 3 vectors of size npoints*1 contains a range of lambda, rho
+     Output: lamC and 3 vectors of size n_lambda*1 contains a range of lambda, rho
              and eta. "Elbow"  = lamC is estimated using a *NEW* heuristic AND by Hansen method
 
 
@@ -145,63 +140,51 @@ def lcurve(Gexp, wexp, Hgs, kernMat, par, *argv):
                 also gives an error estimate
 
     """
-    if par["plateau"]:
-        G0 = argv[0]
+    l_min, l_max = range_lambda
+    n_lambda = int(lambdas_per_decade * (np.log10(l_max) - np.log10(l_min)))
+    lambdas = np.geomspace(l_min, l_max, n_lambda)
 
-    npoints = int(
-        par["lamDensity"] * (np.log10(par["lam_max"]) - np.log10(par["lam_min"]))
+    eta, rho, logP = (
+        np.zeros_like(lambdas),
+        np.zeros_like(lambdas),
+        np.zeros_like(lambdas),
     )
-    hlam = (par["lam_max"] / par["lam_min"]) ** (1.0 / (npoints - 1.0))
-    lam = par["lam_min"] * hlam ** np.arange(npoints)
-    eta = np.zeros(npoints)
-    rho = np.zeros(npoints)
-    logP = np.zeros(npoints)
-    H = Hgs.copy()
-    n = len(Gexp)
+
+    H = H_guess.copy()
     ns = len(H)
-    nl = ns - 2
+
     logPmax = -np.inf  # so nothing surprises me!
-    Hlambda = np.zeros((ns, npoints))
+    Hlambda = np.zeros((ns, n_lambda))
 
     # Error Analysis: Furnish A_matrix
-    Amat = getAmatrix(len(H))
-    _, LogDetN = np.linalg.slogdet(Amat)
+    A = make_A_matrix(ns)
+    _, LogDetN = np.linalg.slogdet(A)
 
     #
     # This is the costliest step
     #
-    for i in reversed(range(len(lam))):
-        lamb = lam[i]
-
-        if par["plateau"]:
-            H, G0 = get_H(lamb, Gexp, wexp, H, kernMat, G0)
-            # rho[i]  = np.linalg.norm((1. - kernel_prestore(H, kernMat, G0)/Gexp))
-            rho[i] = np.linalg.norm(
-                wexp * (1.0 - kernel_prestore(H, kernMat, G0) / Gexp)
-            )
-            Bmat = getBmatrix(H, kernMat, Gexp, wexp, G0)
-        else:
-            H = get_H(lamb, Gexp, wexp, H, kernMat)
-            # rho[i]  = np.linalg.norm((1. - kernel_prestore(H,kernMat)/Gexp))
-            rho[i] = np.linalg.norm(wexp * (1.0 - kernel_prestore(H, kernMat) / Gexp))
-            Bmat = getBmatrix(H, kernMat, Gexp, wexp)
+    for i, lambda_ in reversed(enumerate(lambdas)):
+        H, G0 = get_H(lambda_, G, weights, H, kernel, G0)
+        rho[i] = np.linalg.norm(weights * (1 - kernel_prestore(H, kernel, G0) / G))
+        B = make_B_matrix(H, kernel, G, weights, G0)
 
         eta[i] = np.linalg.norm(np.diff(H, n=2))
         Hlambda[:, i] = H
 
-        _, LogDetC = np.linalg.slogdet(lamb * Amat + Bmat)
-        V = rho[i] ** 2 + lamb * eta[i] ** 2
+        _, LogDetC = np.linalg.slogdet(lambda_ * A + B)
+        V = rho[i] ** 2 + lambda_ * eta[i] ** 2
 
         # this assumes a prior exp(-lam)
-        logP[i] = -V + 0.5 * (LogDetN + ns * np.log(lamb) - LogDetC) - lamb
+        logP[i] = -V + 0.5 * (LogDetN + ns * np.log(lambda_) - LogDetC) - lambda_
 
+        # Store needed parameters
         if logP[i] > logPmax:
             logPmax = logP[i]
         elif logP[i] < logPmax - 18:
             break
 
     # truncate all to significant lambda
-    lam = lam[i:]
+    lambdas = lambdas[i:]
     logP = logP[i:]
     eta = eta[i:]
     rho = rho[i:]
@@ -216,37 +199,19 @@ def lcurve(Gexp, wexp, Hgs, kernMat, par, *argv):
     # lamC = oldLamC(par, lam, rho, eta)
     plam = np.exp(logP)
     plam = plam / np.sum(plam)
-    lamM = np.exp(np.sum(plam * np.log(lam)))
+    lamM = np.exp(np.sum(plam * np.log(lambda_)))
 
     #
     # Dialling in the Smoothness Factor
     #
-    if par["SmFacLam"] > 0:
-        lamM = np.exp(
-            np.log(lamM) + par["SmFacLam"] * (max(np.log(lam)) - np.log(lamM))
-        )
-    elif par["SmFacLam"] < 0:
-        lamM = np.exp(
-            np.log(lamM) + par["SmFacLam"] * (np.log(lamM) - min(np.log(lam)))
-        )
+    if smoothness == 0:
+        lamM = lamM
+    elif smoothness > 0:
+        lamM = np.exp(np.log(lamM) + smoothness * (max(np.log(lambda_)) - np.log(lamM)))
+    else:
+        lamM = np.exp(np.log(lamM) + smoothness * (np.log(lamM) - min(np.log(lambda_))))
 
-    #
-    # printing this here for now because storing lamC for sometime only
-    #
-    if par["plotting"]:
-        plt.clf()
-        # plt.axvline(x=lamC, c='k', label=r'$\lambda_c$')
-        plt.axvline(x=lamM, c="gray", label=r"$\lambda_m$")
-        plt.ylim(-20, 1)
-        plt.plot(lam, logP, "o-")
-        plt.xscale("log")
-        plt.xlabel(r"$\lambda$")
-        plt.ylabel(r"$\log\,p(\lambda)$")
-        plt.legend(loc="upper left")
-        plt.tight_layout()
-        plt.savefig("output/logP.pdf")
-
-    return lamM, lam, rho, eta, logP, Hlambda
+    return lamM, lambda_, rho, eta, logP, Hlambda
 
 
 def residualLM(H, lam, Gexp, wexp, kernMat):
@@ -336,7 +301,7 @@ def jacobianLM(H, lam, Gexp, wexp, kernMat):
     return Jr
 
 
-def kernelD(H, kernMat):
+def kernelD(H: np.ndarray, kernel: np.ndarray) -> np.ndarray:
     """
     Function: kernelD(input)
 
@@ -349,11 +314,10 @@ def kernelD(H, kernMat):
     Output: DK = Jacobian of H
     """
 
-    n = kernMat.shape[0]
-    ns = kernMat.shape[1]
+    N, Ns = kernel.shape
 
     # A n*ns matrix with all the rows = H'
-    Hsuper = np.dot(np.ones((n, 1)), np.exp(H).reshape(1, ns))
-    DK = kernMat * Hsuper
+    Hsuper = np.dot(np.ones((N, 1)), np.exp(H).reshape(1, Ns))
+    DK = kernel * Hsuper
 
     return DK

@@ -4,6 +4,8 @@ import logging
 import numpy as np
 
 from ._pyRespect.common import get_kernel_matrix
+from ._pyRespect.continuous import initialize_H, build_L_curve, get_H
+
 
 SpectrumWindowMode: TypeAlias = Literal["lenient", "normal", "strict"]
 
@@ -15,6 +17,9 @@ def estimate_continous_spectrum(
     n_spectrum_points: int = 100,
     spectrum_window_mode: SpectrumWindowMode = "lenient",
     fit_plateau: bool = False,
+    range_lambda: tuple[float, float] = (1e-10, 1e3),
+    lambdas_per_decade: int = 2,
+    L_curve_smoothness: float = 0.0,
     verbose: bool = True,
 ):
     ## Initialize logger
@@ -36,6 +41,26 @@ def estimate_continous_spectrum(
     s_minmax = get_spectrum_window(t, spectrum_window_mode)
     s = np.geomspace(*s_minmax, len(t))
     kernel = get_kernel_matrix(s, t)
+
+    ## Get initial guesses for the spectrum H and G0
+    Hgs, G0 = initialize_H(G, weights, s, kernel, fit_plateau=fit_plateau)
+
+    ## Find Optimum Lambda with 'L-curve'
+    lamC, lam, rho, eta, logP, Hlam = build_L_curve(
+        G,
+        weights,
+        Hgs,
+        kernel,
+        G0,
+        range_lambda=range_lambda,
+        lambdas_per_decade=lambdas_per_decade,
+        smoothness=L_curve_smoothness,
+    )
+
+    ## Get the best spectrum
+    H, G0 = get_H(lamC, G, weights, Hgs, kernel, G0)
+
+    return H, lamC
 
 
 def get_spectrum_window(
