@@ -1,95 +1,117 @@
 from typing import Callable
 from functools import partial
 
-from jax import Array, vmap
+from jax import Array
 import jax.numpy as jnp
+import equinox as eqx
 import jaxopt
 
-from .integrate import integrate_from, integrate_to
+from neuralconstitutive.jax.integrate import integrate_to, integrate_from
+from neuralconstitutive.jax.tipgeometry import AbstractTipGeometry
+from neuralconstitutive.trajectory import Trajectory
 
 
-@partial(vmap, in_axes=(0, None, None, None, None, None, None))
 def force_approach(
-    t: float,
-    model: Callable,
-    t_app: Array,
-    d_app: Array,
-    v_app: Array,
-    a: float,
-    b: float,
-):
-    phi_app: Array = vmap(model)(t - t_app)
-    integrand = phi_app * v_app * d_app ** (b - 1)
-    return integrate_to(t, t_app, integrand) * a
+    approach: Trajectory, relaxation: Callable[[Array], Array], tip: AbstractTipGeometry
+) -> Array:
+    return _force_approach(approach.t, relaxation, approach, tip)
 
 
-@partial(vmap, in_axes=(0, 0, None, None, None, None, None, None))
 def force_retract(
+    approach: Trajectory,
+    retract: Trajectory,
+    relaxation: Callable[[Array], Array],
+    tip: AbstractTipGeometry,
+) -> Array:
+    t1 = find_t1(retract.t, relaxation, approach, retract)
+    return _force_retract(retract.t, t1, relaxation, approach, tip)
+
+
+@partial(eqx.filter_vmap, in_axes=(0, None, None, None))
+def _force_approach(
     t: float,
+    relaxation: Callable[[Array], Array],
+    approach: Trajectory,
+    tip: AbstractTipGeometry,
+) -> Array:
+    t_s = approach.t
+    b = tip.b()
+
+    @partial(eqx.filter_vmap, in_axes=(0, None))
+    def force_integrand(t_, t):
+        return relaxation(t - t_) * approach.v(t_) * approach.z(t_) ** (b - 1)
+
+    return integrate_to(t, t_s, force_integrand(t_s, t)) * tip.a()
+
+
+# %%
+def t1_constraint(
     t1: float,
-    model: Callable,
-    t_app: Array,
-    d_app: Array,
-    v_app: Array,
-    a: float,
-    b: float,
-):
-    phi_app: Array = vmap(model)(t - t_app)
-    integrand = phi_app * v_app * d_app ** (b - 1)
-    return integrate_to(t1, t_app, integrand) * a
+    t: float,
+    relaxation: Callable[[Array], Array],
+    approach: Trajectory,
+    retract: Trajectory,
+) -> float:
+    @partial(eqx.filter_vmap, in_axes=(0, None))
+    def app_integrand(t_, t):
+        return relaxation(t - t_) * approach.v(t_)
+
+    @partial(eqx.filter_vmap, in_axes=(0, None))
+    def ret_integrand(t_, t):
+        return relaxation(t - t_) * retract.v(t_)
+
+    t_app, t_ret = approach.t, retract.t
+    return integrate_from(t1, t_app, app_integrand(t_app, t)) + integrate_to(
+        t, t_ret, ret_integrand(t_ret, t)
+    )
 
 
-@partial(vmap, in_axes=(0, None, None, None, None, None))
+@partial(eqx.filter_vmap, in_axes=(0, None, None, None))
 def find_t1(
     t: float,
-    model: Callable,
-    t_app: Array,
-    t_ret: Array,
-    v_app: Array,
-    v_ret: Array,
+    relaxation: Callable[[Array], Array],
+    approach: Trajectory,
+    retract: Trajectory,
 ) -> Array:
-    sol_exists = t1_constraint(t_app[0], t, model, t_app, t_ret, v_app, v_ret) > 0.0
+    sol_exists = t1_constraint(approach.t[0], t, relaxation, approach, retract) > 0.0
     return jnp.where(
-        sol_exists, _find_t1(t, model, t_app, t_ret, v_app, v_ret), jnp.asarray(0.0)
+        sol_exists, _find_t1(t, relaxation, approach, retract), jnp.asarray(0.0)
     )
 
 
 def _find_t1(
     t: float,
-    model: Callable,
-    t_app: Array,
-    t_ret: Array,
-    v_app: Array,
-    v_ret: Array,
+    relaxation: Callable[[Array], Array],
+    approach: Trajectory,
+    retract: Trajectory,
 ) -> Array:
     root_finder = jaxopt.Bisection(
         optimality_fun=t1_constraint,
-        lower=t_app[0],
-        upper=t_app[-1],
+        lower=approach.t[0],
+        upper=approach.t[-1],
         check_bracket=False,
     )
     return root_finder.run(
         t=t,
-        model=model,
-        t_app=t_app,
-        t_ret=t_ret,
-        v_app=v_app,
-        v_ret=v_ret,
+        relaxation=relaxation,
+        approach=approach,
+        retract=retract,
     ).params
 
 
-def t1_constraint(
-    t1: float,
+@partial(eqx.filter_vmap, in_axes=(0, 0, None, None, None))
+def _force_retract(
     t: float,
-    model: Callable,
-    t_app: Array,
-    t_ret: Array,
-    v_app: Array,
-    v_ret: Array,
+    t1: float,
+    relaxation: Callable[[Array], Array],
+    approach: Trajectory,
+    tip: AbstractTipGeometry,
 ) -> Array:
-    model_ = vmap(model)
-    phi_app = model_(t - t_app)
-    phi_ret = model_(t - t_ret)
-    return integrate_from(t1, t_app, phi_app * v_app) + integrate_to(
-        t, t_ret, phi_ret * v_ret
-    )
+    t_s = approach.t
+    b = tip.b()
+
+    @partial(eqx.filter_vmap, in_axes=(0, None))
+    def force_integrand(t_, t):
+        return relaxation(t - t_) * approach.v(t_) * approach.z(t_) ** (b - 1)
+
+    return integrate_to(t1, t_s, force_integrand(t_s, t)) * tip.a()
