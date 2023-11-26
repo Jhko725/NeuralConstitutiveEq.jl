@@ -22,7 +22,7 @@ class BernsteinNN(eqx.Module):
     def __call__(self, t: Array) -> Array:
         nodes = jax.lax.stop_gradient(self.nodes)
         weights = jax.lax.stop_gradient(self.weights)
-        h = jax.vmap(self.net)(nodes)
+        h = eqx.filter_vmap(self.net)(nodes)
         expmx = 0.5 * (nodes + 1)
         return jax.nn.relu(self.scale) * 0.5 * jnp.dot(
             h * expmx ** (t - 1), weights

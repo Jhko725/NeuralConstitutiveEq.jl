@@ -12,7 +12,7 @@ import optimistix as optx
 from neuralconstitutive.jax.integrate import integrate_to, integrate_from
 from neuralconstitutive.jax.tipgeometry import AbstractTipGeometry, Spherical
 from neuralconstitutive.constitutive import ModifiedPowerLaw
-from neuralconstitutive.trajectory import Trajectory
+from neuralconstitutive.trajectory import Trajectory, make_triangular
 
 
 @partial(eqx.filter_vmap, in_axes=(0, None, None, None))
@@ -142,14 +142,9 @@ def find_t12(
 # %%
 plr = ModifiedPowerLaw(572.0, 0.2, 1e-5)
 tip = Spherical(1.0)
-Dt = 1e-2
-t_app = jnp.arange(0, 101) * Dt
-t_ret = jnp.arange(100, 201) * Dt
-d_app = 10.0 * t_app
-d_ret = 10.0 * (2 * t_ret[0] - t_ret)
-app = Trajectory(t_app, d_app)
-ret = Trajectory(t_ret, d_ret)
 
+
+app, ret = make_triangular(1.0, 1e-2, 10.0)
 # %%
 f_app = force_approach(app.t, plr.relaxation_function, app, tip)
 t1 = find_t1(ret.t, plr.relaxation_function, app, ret)

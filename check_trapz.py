@@ -1,62 +1,46 @@
 # %%
-from typing import Callable, Sequence, Literal
+from typing import Callable
 
 import jax
 from jax import Array
 import jax.numpy as jnp
-
-
+import numpy as np
 import equinox as eqx
 import optax
-from more_itertools import pairwise
 import matplotlib.pyplot as plt
 import scipy
 
-from neuralconstitutive.jax.constitutive import SimpleLinearSolid
+from neuralconstitutive.constitutive import StandardLinearSolid
 from neuralconstitutive.jax.ting import (
     force_approach,
     force_retract,
     find_t1,
 )
+from neuralconstitutive.jax.tipgeometry import Spherical, AbstractTipGeometry
+from neuralconstitutive.trajectory import make_triangular, Trajectory
+from neuralconstitutive.nn import FullyConnectedNetwork
+from neuralconstitutive.models import BernsteinNN
 
 jax.config.update("jax_enable_x64", True)
 
-
-sls = SimpleLinearSolid(E0=8.0, E_inf=2.0, tau=0.01)
-t_app = jnp.linspace(0, 0.2, 100)
-t_ret = jnp.linspace(0.2, 0.4, 100)
-sls(t_app)
-d_app = 10.0 * t_app
-d_ret = -10.0 * t_ret
-v_app = 10.0 * jnp.ones_like(t_app)
-v_ret = -10.0 * jnp.ones_like(t_ret)
 # %%
-sls = SimpleLinearSolid(E0=8, E_inf=2, tau=0.2)
-t_app = jnp.linspace(0, 0.5, 100)
-t_ret = jnp.linspace(0.5, 1.0, 100)
-sls(t_app)
-d_app = 1.0 * t_app
-d_ret = -1.0 * t_ret
-v_app = 1.0 * jnp.ones_like(t_app)
-v_ret = -1.0 * jnp.ones_like(t_ret)
+sls = StandardLinearSolid(E0=8, E_inf=2, tau=0.2)
+tip = Spherical(1.0)
+app, ret = make_triangular(0.5, 5e-3, 1.0)
 
 
 # %%
 def simulate_data(
-    model: Callable,
-    t_app: Array,
-    t_ret: Array,
-    d_app: Array,
-    d_ret: Array,
-    v_app: Array,
-    v_ret: Array,
+    app: Trajectory,
+    ret: Trajectory,
+    relaxation: Callable[[Array], Array],
+    tip: AbstractTipGeometry,
     noise_strength: float,
     random_seed: int,
 ) -> tuple[Array, Array]:
     key = jax.random.PRNGKey(random_seed)
-    f_app = force_approach(t_app, model, t_app, d_app, v_app, 1.0, 1.5)
-    t1 = find_t1(t_ret, model, t_app, t_ret, v_app, v_ret)
-    f_ret = force_retract(t_ret, t1, model, t_app, d_app, v_app, 1.0, 1.5)
+    f_app = force_approach(app, relaxation, tip)
+    f_ret = force_retract(app, ret, relaxation, tip)
     noise_scale = jnp.max(f_app)
     noise_app = jax.random.normal(key, f_app.shape) * noise_strength * noise_scale
     noise_ret = (
@@ -68,72 +52,19 @@ def simulate_data(
 
 
 # %%
-f_app, f_ret = simulate_data(sls, t_app, t_ret, d_app, d_ret, v_app, v_ret, 5e-3, 0)
+f_app, f_ret = simulate_data(
+    app, ret, sls.relaxation_function, tip, noise_strength=5e-3, random_seed=0
+)
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-ax.plot(t_app, f_app, ".", label="approach")
-ax.plot(t_ret, f_ret, ".", label="retract")
+ax.plot(app.t, f_app, ".", label="approach")
+ax.plot(ret.t, f_ret, ".", label="retract")
 ax.legend()
 fig
 # %%
-plt.plot(t_app, jax.vmap(sls)(t_app))
+plt.plot(app.t, sls.relaxation_function(app.t))
 
 
 # %%
-class FullyConnectedNetwork(eqx.Module):
-    layers: list
-    # activation: Callable
-    # final_activation: Callable
-
-    def __init__(
-        self,
-        nodes: Sequence[int | Literal["scalar"]],
-        # activation: Callable,
-        # final_activation: Callable | None,
-        seed: int = 0,
-    ):
-        super().__init__()
-        keys = jax.random.split(jax.random.PRNGKey(seed), len(nodes) - 1)
-        self.layers = [
-            eqx.nn.Linear(*feats, key=k) for (feats, k) in zip(pairwise(nodes), keys)
-        ]
-        # self.activation = activation
-        # self.final_activation = (
-        #    eqx.nn.Identity() if final_activation is None else final_activation
-        # )
-
-    def __call__(self, t: Array) -> Array:
-        for layer in self.layers:
-            # t = self.activation(layer(t))
-            t = jnp.sin(layer(t))
-        # return self.final_activation(t)
-        return jax.nn.softplus(t)
-
-
-class BernsteinNN(eqx.Module):
-    net: eqx.Module
-    scale: Array
-    bias: Array
-    nodes: Array
-    weights: Array
-
-    def __init__(self, net: eqx.Module, num_quadrature: int = 500):
-        super().__init__()
-        self.net = net
-        self.scale = jnp.asarray(1.0)
-        self.bias = jnp.asarray(0.0)
-        self.nodes, self.weights = scipy.special.roots_legendre(num_quadrature)
-
-    def __call__(self, t: Array) -> Array:
-        nodes = jax.lax.stop_gradient(self.nodes)
-        weights = jax.lax.stop_gradient(self.weights)
-        h = jax.vmap(self.net)(nodes)
-        expmx = 0.5 * (nodes + 1)
-        return (
-            jax.nn.relu(self.scale) * 0.5 * jnp.dot(h * expmx ** (t - 1), weights)
-            + self.bias
-        )
-
-
 class BernsteinNN2(eqx.Module):
     net: eqx.Module
     scale: Array
@@ -185,26 +116,28 @@ class PronyNN(eqx.Module):
         ) + jax.nn.relu(self.bias)
 
 
-# phi_nn = FullyConnectedNetwork(["scalar", 100, "scalar"], jax.nn.elu, jax.nn.softplus)
-phi_nn = FullyConnectedNetwork(["scalar", 20, 20, 20, 20, "scalar"])
+phi_nn = FullyConnectedNetwork(
+    ["scalar", 20, 20, 20, 20, "scalar"],
+    activation=jax.nn.tanh,
+    final_activation=jax.nn.softplus,
+)
 phi_bern = BernsteinNN(phi_nn, 100)
 # phi_prony = PronyNN(1e-4, 1e3, 50)
 # phi_prony.scales
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-ax.plot(t_app, jax.vmap(phi_bern)(t_app))
+ax.plot(app.t, eqx.filter_vmap(phi_bern)(app.t))
 # ax.plot(t_app, jax.vmap(phi_prony)(t_app))
 # %%
 # plt.plot(t_app, jax.vmap(phi_nn)(-jnp.log1p(t_app) + jnp.log(2)))
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-F_app_pred = force_approach(t_app, phi_bern, t_app, d_app, v_app, 1.0, 1.5)
-t1 = find_t1(t_ret, phi_bern, t_app, t_ret, v_app, v_ret)
-F_ret_pred = force_retract(t_ret, t1, phi_bern, t_app, d_app, v_app, 1.0, 1.5)
-ax.plot(t_app, f_app, label="approach")
-ax.plot(t_ret, f_ret, label="retract")
-ax.plot(t_app, F_app_pred, label="approach (nn)")
-ax.plot(t_ret, F_ret_pred, label="retract (nn)")
+F_app_pred = force_approach(app, eqx.filter_vmap(phi_bern), tip)
+F_ret_pred = force_retract(app, ret, eqx.filter_vmap(phi_bern), tip)
+ax.plot(app.t, f_app, label="approach")
+ax.plot(ret.t, f_ret, label="retract")
+ax.plot(app.t, F_app_pred, label="approach (nn)")
+ax.plot(ret.t, F_ret_pred, label="retract (nn)")
 ax.legend()
 fig
 
