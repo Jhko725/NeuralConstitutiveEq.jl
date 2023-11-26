@@ -12,14 +12,14 @@ import optimistix as optx
 from neuralconstitutive.jax.integrate import integrate_to, integrate_from
 from neuralconstitutive.jax.tipgeometry import AbstractTipGeometry, Spherical
 from neuralconstitutive.constitutive import ModifiedPowerLaw
-from neuralconstitutive.trajectory import Indentation
+from neuralconstitutive.trajectory import Trajectory
 
 
 @partial(eqx.filter_vmap, in_axes=(0, None, None, None))
 def force_approach(
     t: float,
     relaxation: Callable[[Array], Array],
-    approach: Indentation,
+    approach: Trajectory,
     tip: AbstractTipGeometry,
 ):
     t_s = approach.t
@@ -37,8 +37,8 @@ def t1_constraint(
     t1: float,
     t: float,
     relaxation: Callable[[Array], Array],
-    approach: Indentation,
-    retract: Indentation,
+    approach: Trajectory,
+    retract: Trajectory,
 ) -> float:
     @partial(eqx.filter_vmap, in_axes=(0, None))
     def app_integrand(t_, t):
@@ -58,8 +58,8 @@ def t1_constraint(
 def find_t1(
     t: float,
     relaxation: Callable[[Array], Array],
-    approach: Indentation,
-    retract: Indentation,
+    approach: Trajectory,
+    retract: Trajectory,
 ) -> Array:
     sol_exists = t1_constraint(approach.t[0], t, relaxation, approach, retract) > 0.0
     return jnp.where(
@@ -70,8 +70,8 @@ def find_t1(
 def _find_t1(
     t: float,
     relaxation: Callable[[Array], Array],
-    approach: Indentation,
-    retract: Indentation,
+    approach: Trajectory,
+    retract: Trajectory,
 ) -> Array:
     root_finder = jaxopt.Bisection(
         optimality_fun=t1_constraint,
@@ -92,7 +92,7 @@ def force_retract(
     t: float,
     t1: float,
     relaxation: Callable[[Array], Array],
-    approach: Indentation,
+    approach: Trajectory,
     tip: AbstractTipGeometry,
 ):
     t_s = approach.t
@@ -112,8 +112,8 @@ def force_retract(
 def find_t12(
     t: float,
     relaxation: Callable[[Array], Array],
-    approach: Indentation,
-    retract: Indentation,
+    approach: Trajectory,
+    retract: Trajectory,
 ) -> Array:
     t_app, t_ret = approach.time, retract.time
     v_app, v_ret = approach.velocity, retract.velocity
@@ -147,8 +147,8 @@ t_app = jnp.arange(0, 101) * Dt
 t_ret = jnp.arange(100, 201) * Dt
 d_app = 10.0 * t_app
 d_ret = 10.0 * (2 * t_ret[0] - t_ret)
-app = Indentation(t_app, d_app)
-ret = Indentation(t_ret, d_ret)
+app = Trajectory(t_app, d_app)
+ret = Trajectory(t_ret, d_ret)
 
 # %%
 f_app = force_approach(app.t, plr.relaxation_function, app, tip)
