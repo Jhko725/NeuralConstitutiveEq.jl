@@ -116,28 +116,24 @@ class PronyNN(eqx.Module):
         ) + jax.nn.relu(self.bias)
 
 
+# %%
 phi_nn = FullyConnectedNetwork(
     ["scalar", 20, 20, 20, 20, "scalar"],
-    activation=jax.nn.tanh,
-    final_activation=jax.nn.softplus,
 )
-phi_bern = BernsteinNN(phi_nn, 100)
-# phi_prony = PronyNN(1e-4, 1e3, 50)
-# phi_prony.scales
+phi_bern = BernsteinNN(sls.relaxation_function, 100)
+
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-ax.plot(app.t, eqx.filter_vmap(phi_bern)(app.t))
-# ax.plot(t_app, jax.vmap(phi_prony)(t_app))
-# %%
-# plt.plot(t_app, jax.vmap(phi_nn)(-jnp.log1p(t_app) + jnp.log(2)))
+ax.plot(app.t, jax.vmap(phi_bern)(app.t))
+
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-F_app_pred = force_approach(app, eqx.filter_vmap(phi_bern), tip)
-F_ret_pred = force_retract(app, ret, eqx.filter_vmap(phi_bern), tip)
+F_app_pred = force_approach(app, jax.vmap(phi_bern), tip)
+F_ret_pred = force_retract(app, ret, jax.vmap(phi_bern), tip)
 ax.plot(app.t, f_app, label="approach")
 ax.plot(ret.t, f_ret, label="retract")
 ax.plot(app.t, F_app_pred, label="approach (nn)")
-ax.plot(ret.t, F_ret_pred, label="retract (nn)")
+# ax.plot(ret.t, F_ret_pred, label="retract (nn)")
 ax.legend()
 fig
 
