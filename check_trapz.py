@@ -136,8 +136,6 @@ ax.plot(app.t, F_app_pred, label="approach (nn)")
 ax.plot(ret.t, F_ret_pred, label="retract (nn)")
 ax.legend()
 fig
-# %%
-eqx.filter_vmap(phi_bern)(jnp.asarray(0.2))
 
 
 # %%
@@ -228,7 +226,12 @@ axes[0].plot(ret.t, F_ret, "-", color="red", **plot_kwargs)
 axes[0].set_ylabel("Force $F(t)$ (a.u.)")
 
 axes[1].plot(
-    app.t, jax.vmap(sls)(app.t), ".", color="k", label="Ground truth", **plot_kwargs
+    app.t,
+    sls.relaxation_function(app.t),
+    ".",
+    color="k",
+    label="Ground truth",
+    **plot_kwargs,
 )
 axes[1].set_ylabel("Relaxation function $G(t)$ (a.u.)")
 # axes[1].plot(
@@ -241,7 +244,7 @@ axes[1].set_ylabel("Relaxation function $G(t)$ (a.u.)")
 # )
 axes[1].plot(
     app.t,
-    jax.vmap(model)(app.t),
+    model(app.t),
     "-",
     color="red",
     label="Initial prediction",
@@ -257,7 +260,7 @@ for ax in axes:
 axes[-1].set_xlabel("Time $t$ (a.u.)")
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 5))
-ax.plot(loss_history, color="orangered", linewidth=1.0)
+ax.plot(loss_history[:690], color="orangered", linewidth=1.0)
 ax.set_xlabel("Training epochs")
 ax.set_ylabel("Mean squared loss")
 ax.set_yscale("log")
