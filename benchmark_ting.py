@@ -1,4 +1,3 @@
-# %%
 import jax
 from jax import Array
 import jax.numpy as jnp

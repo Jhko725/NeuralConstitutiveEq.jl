@@ -119,22 +119,25 @@ class PronyNN(eqx.Module):
 phi_nn = FullyConnectedNetwork(
     ["scalar", 20, 20, 20, 20, "scalar"],
 )
-phi_bern = BernsteinNN(sls.relaxation_function, 100)
+phi_bern = BernsteinNN(phi_nn, 100)
+# %%
+phi_bern(0.1)
+# %%
+fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+ax.plot(app.t, phi_bern(app.t))
 
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-ax.plot(app.t, eqx.filter_vmap(phi_bern)(app.t))
-
-# %%
-fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-F_app_pred = force_approach(app, eqx.filter_vmap(phi_bern), tip)
-F_ret_pred = force_retract(app, ret, eqx.filter_vmap(phi_bern), tip)
+F_app_pred = force_approach(app, phi_bern, tip)
+F_ret_pred = force_retract(app, ret, phi_bern, tip)
 ax.plot(app.t, f_app, label="approach")
 ax.plot(ret.t, f_ret, label="retract")
 ax.plot(app.t, F_app_pred, label="approach (nn)")
-# ax.plot(ret.t, F_ret_pred, label="retract (nn)")
+ax.plot(ret.t, F_ret_pred, label="retract (nn)")
 ax.legend()
 fig
+# %%
+eqx.filter_vmap(phi_bern)(jnp.asarray(0.2))
 
 
 # %%

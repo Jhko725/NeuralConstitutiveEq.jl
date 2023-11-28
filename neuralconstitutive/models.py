@@ -20,10 +20,21 @@ class BernsteinNN(eqx.Module):
         self.nodes, self.weights = scipy.special.roots_legendre(num_quadrature)
 
     def __call__(self, t: Array) -> Array:
-        nodes = jax.lax.stop_gradient(self.nodes)
-        weights = jax.lax.stop_gradient(self.weights)
-        h = jax.vmap(self.net)(nodes)
-        expmx = 0.5 * (nodes + 1)
-        return jax.nn.relu(self.scale) * 0.5 * jnp.dot(
-            h * expmx ** (t - 1), weights
-        ) + jax.nn.relu(self.bias)
+        # Trick from https://github.com/google/jax/discussions/17243
+        # This makes it so that t can be either float or Array
+        # and the resulting output is either Scalar or Array
+        t = jnp.asarray(t)
+        out_shape = t.shape
+        t = jnp.atleast_1d(t)
+
+        @eqx.filter_vmap
+        def _call(t: float) -> Array:
+            nodes = jax.lax.stop_gradient(self.nodes)
+            weights = jax.lax.stop_gradient(self.weights)
+            h = eqx.filter_vmap(self.net)(nodes)
+            expmx = 0.5 * (nodes + 1)
+            return jax.nn.relu(self.scale) * 0.5 * jnp.dot(
+                h * expmx ** (t - 1), weights
+            ) + jax.nn.relu(self.bias)
+
+        return _call(t).reshape(out_shape)
