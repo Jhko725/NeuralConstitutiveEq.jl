@@ -39,7 +39,7 @@ plotting  	: True
 #
 # Number of grid points to represent the continuous spectrum (typical 50-100)
 #
-ns			: 200
+ns			: 2000
 
 #
 # Specify lambda_C instead of using the one inferred from the L-curve
