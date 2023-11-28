@@ -14,7 +14,6 @@ from neuralconstitutive.constitutive import StandardLinearSolid
 from neuralconstitutive.jax.ting import (
     force_approach,
     force_retract,
-    find_t1,
 )
 from neuralconstitutive.jax.tipgeometry import Spherical, AbstractTipGeometry
 from neuralconstitutive.trajectory import make_triangular, Trajectory
@@ -124,12 +123,12 @@ phi_bern = BernsteinNN(sls.relaxation_function, 100)
 
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-ax.plot(app.t, jax.vmap(phi_bern)(app.t))
+ax.plot(app.t, eqx.filter_vmap(phi_bern)(app.t))
 
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-F_app_pred = force_approach(app, jax.vmap(phi_bern), tip)
-F_ret_pred = force_retract(app, ret, jax.vmap(phi_bern), tip)
+F_app_pred = force_approach(app, eqx.filter_vmap(phi_bern), tip)
+F_ret_pred = force_retract(app, ret, eqx.filter_vmap(phi_bern), tip)
 ax.plot(app.t, f_app, label="approach")
 ax.plot(ret.t, f_ret, label="retract")
 ax.plot(app.t, F_app_pred, label="approach (nn)")
@@ -140,10 +139,9 @@ fig
 
 # %%
 @eqx.filter_value_and_grad
-def compute_loss(model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret):
-    F_app_pred = force_approach(t_app, model, t_app, d_app, v_app, 1.0, 1.5)
-    t1_pred = find_t1(t_ret, model, t_app, t_ret, v_app, v_ret)
-    F_ret_pred = force_retract(t_ret, t1_pred, model, t_app, d_app, v_app, 1.0, 1.5)
+def compute_loss(model, app, ret, F_app, F_ret, tip):
+    F_app_pred = force_approach(app, model, tip)
+    F_ret_pred = force_retract(app, ret, model, tip)
     # Mean squared error loss
     # l1 = jnp.sum(jnp.abs(model.weights)) + jnp.abs(model.bias)
     return (
@@ -154,27 +152,21 @@ def compute_loss(model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret):
 
 
 @eqx.filter_value_and_grad
-def compute_loss_approach(model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret):
-    F_app_pred = force_approach(t_app, model, t_app, d_app, v_app, 1.0, 1.5)
-    # t1_pred = find_t1(t_ret, model, t_app, t_ret, v_app, v_ret)
-    # F_ret_pred = force_retract(t_ret, t1_pred, model, t_app, d_app, v_app, 1.0, 1.5)
+def compute_loss_approach(model, app, ret, F_app, F_ret, tip):
+    F_app_pred = force_approach(app, model, tip)
     # Mean squared error loss
     # l1 = jnp.sum(jnp.abs(model.weights)) + jnp.abs(model.bias)
     return jnp.mean((F_app - F_app_pred) ** 2)  # + 1e-3 * l1
 
 
 @eqx.filter_value_and_grad
-def compute_loss_retract(model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret):
-    # F_app_pred = force_approach(t_app, model, t_app, d_app, v_app, 1.0, 1.5)
-    t1_pred = find_t1(t_ret, model, t_app, t_ret, v_app, v_ret)
-    F_ret_pred = force_retract(t_ret, t1_pred, model, t_app, d_app, v_app, 1.0, 1.5)
+def compute_loss_retract(model, app, ret, tip):
+    F_ret_pred = force_retract(app, ret, model, tip)
     # Mean squared error loss
     return jnp.mean((F_ret - F_ret_pred) ** 2)
 
 
 # %%
-import numpy as np
-
 model = phi_bern
 # %%
 optim = optax.rmsprop(1e-3)
@@ -182,28 +174,24 @@ opt_state = optim.init(model)
 
 
 @eqx.filter_jit
-def make_step(model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret, opt_state):
-    loss, grads = compute_loss(model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret)
+def make_step(model, app, ret, F_app, F_ret, tip, opt_state):
+    loss, grads = compute_loss(model, app, ret, F_app, F_ret, tip)
     updates, opt_state = optim.update(grads, opt_state, params=model)
     model = eqx.apply_updates(model, updates)
     return loss, model, opt_state
 
 
 @eqx.filter_jit
-def make_step_app(model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret, opt_state):
-    loss, grads = compute_loss_approach(
-        model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret
-    )
+def make_step_app(model, app, ret, F_app, F_ret, tip, opt_state):
+    loss, grads = compute_loss_approach(model, app, ret, F_app, F_ret, tip)
     updates, opt_state = optim.update(grads, opt_state, params=model)
     model = eqx.apply_updates(model, updates)
     return loss, model, opt_state
 
 
 @eqx.filter_jit
-def make_step_ret(model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret, opt_state):
-    loss, grads = compute_loss_retract(
-        model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret
-    )
+def make_step_ret(model, app, ret, F_app, F_ret, tip, opt_state):
+    loss, grads = compute_loss_retract(model, app, ret, F_app, F_ret, tip)
     updates, opt_state = optim.update(grads, opt_state)
     model = eqx.apply_updates(model, updates)
     return loss, model, opt_state
@@ -213,9 +201,7 @@ def make_step_ret(model, t_app, t_ret, d_app, v_app, v_ret, F_app, F_ret, opt_st
 max_epochs = 3200
 loss_history = np.empty(max_epochs)
 for step in range(max_epochs):
-    loss, model, opt_state = make_step(
-        model, t_app, t_ret, d_app, v_app, v_ret, f_app, f_ret, opt_state
-    )
+    loss, model, opt_state = make_step(model, app, ret, f_app, f_ret, tip, opt_state)
     # print(model.taus)
     # print(model.weights)
     loss = loss.item()
@@ -224,23 +210,22 @@ for step in range(max_epochs):
 
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-F_app = force_approach(t_app, model, t_app, d_app, v_app, 1.0, 1.5)
-t1 = find_t1(t_ret, model, t_app, t_ret, v_app, v_ret)
-F_ret = force_retract(t_ret, t1, model, t_app, d_app, v_app, 1.0, 1.5)
+F_app = force_approach(app, model, tip)
+F_ret = force_retract(app, ret, model, tip)
 
 plot_kwargs = {"markersize": 3.0, "alpha": 0.8}
 fig, axes = plt.subplots(2, 1, figsize=(5, 5))
 
-axes[0].plot(t_app, f_app, ".", color="k", label="Simulated data", **plot_kwargs)
-axes[0].plot(t_ret, f_ret, ".", color="k", **plot_kwargs)
+axes[0].plot(app.t, f_app, ".", color="k", label="Simulated data", **plot_kwargs)
+axes[0].plot(ret.t, f_ret, ".", color="k", **plot_kwargs)
 # axes[0].plot(t_app, F_app, "-", color="royalblue", label="Prediction", **plot_kwargs)
 # axes[0].plot(t_ret, F_ret, "-", color="royalblue", **plot_kwargs)
-axes[0].plot(t_app, F_app, "-", color="red", label="Initial prediction", **plot_kwargs)
-axes[0].plot(t_ret, F_ret, "-", color="red", **plot_kwargs)
+axes[0].plot(app.t, F_app, "-", color="red", label="Initial prediction", **plot_kwargs)
+axes[0].plot(ret.t, F_ret, "-", color="red", **plot_kwargs)
 axes[0].set_ylabel("Force $F(t)$ (a.u.)")
 
 axes[1].plot(
-    t_app, jax.vmap(sls)(t_app), ".", color="k", label="Ground truth", **plot_kwargs
+    app.t, jax.vmap(sls)(app.t), ".", color="k", label="Ground truth", **plot_kwargs
 )
 axes[1].set_ylabel("Relaxation function $G(t)$ (a.u.)")
 # axes[1].plot(
@@ -252,8 +237,8 @@ axes[1].set_ylabel("Relaxation function $G(t)$ (a.u.)")
 #     **plot_kwargs,
 # )
 axes[1].plot(
-    t_app,
-    jax.vmap(model)(t_app),
+    app.t,
+    jax.vmap(model)(app.t),
     "-",
     color="red",
     label="Initial prediction",
@@ -278,8 +263,8 @@ ax.spines.right.set_visible(False)
 ax.spines.top.set_visible(False)
 # %%
 plt.plot(
-    t_app,
-    jax.vmap(model.net)(t_app),
+    app.t,
+    jax.vmap(model.net)(app.t),
     "-",
     color="red",
     label="Initial prediction",

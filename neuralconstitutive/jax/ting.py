@@ -1,13 +1,12 @@
 from typing import Callable
 from functools import partial
 
-import jax
 from jax import Array
 import jax.numpy as jnp
 import equinox as eqx
-import jaxopt
+import optimistix as optx
 
-from neuralconstitutive.jax.integrate import integrate_to, integrate_from
+from neuralconstitutive.jax.integrate import integrate
 from neuralconstitutive.jax.tipgeometry import AbstractTipGeometry
 from neuralconstitutive.trajectory import Trajectory
 
@@ -28,74 +27,67 @@ def force_retract(
     return _force_retract(retract.t, t1, relaxation, approach, tip)
 
 
-@partial(jax.vmap, in_axes=(0, None, None, None))
+@partial(eqx.filter_vmap, in_axes=(0, None, None, None))
 def _force_approach(
     t: float,
     relaxation: Callable[[Array], Array],
     approach: Trajectory,
     tip: AbstractTipGeometry,
 ) -> Array:
-    t_s = approach.t
-    b = tip.b()
+    t_app = approach.t
+    dx = t_app[1] - t_app[0]
+    a, b = tip.a(), tip.b()
 
-    def force_integrand(t_: Array, t: float) -> Array:
+    def force_integrand(t_: Array) -> Array:
         return relaxation(t - t_) * approach.v(t_) * approach.z(t_) ** (b - 1)
 
-    return integrate_to(t, t_s, force_integrand(t_s, t)) * tip.a()
+    return a * integrate(force_integrand, t_app[0], t, dx)
 
 
-# %%
-def t1_constraint(
-    t1: float,
-    t: float,
-    relaxation: Callable[[Array], Array],
-    approach: Trajectory,
-    retract: Trajectory,
-) -> float:
-    def app_integrand(t_: Array, t: float) -> Array:
-        return relaxation(t - t_) * approach.v(t_)
-
-    def ret_integrand(t_: Array, t: float) -> Array:
-        return relaxation(t - t_) * retract.v(t_)
-
-    t_app, t_ret = approach.t, retract.t
-    return integrate_from(t1, t_app, app_integrand(t_app, t)) + integrate_to(
-        t, t_ret, ret_integrand(t_ret, t)
-    )
-
-
-@partial(jax.vmap, in_axes=(0, None, None, None))
+@partial(eqx.filter_vmap, in_axes=(0, None, None, None))
 def find_t1(
     t: float,
     relaxation: Callable[[Array], Array],
     approach: Trajectory,
     retract: Trajectory,
 ) -> Array:
-    sol_exists = t1_constraint(approach.t[0], t, relaxation, approach, retract) > 0.0
-    return jnp.where(sol_exists, _find_t1(t, relaxation, approach, retract), 0.0)
+    def app_integrand(t_: Array) -> Array:
+        return relaxation(t - t_) * approach.v(t_)
 
+    def ret_integrand(t_: Array) -> Array:
+        return relaxation(t - t_) * retract.v(t_)
 
-def _find_t1(
-    t: float,
-    relaxation: Callable[[Array], Array],
-    approach: Trajectory,
-    retract: Trajectory,
-) -> float:
-    root_finder = jaxopt.Bisection(
-        optimality_fun=t1_constraint,
-        lower=approach.t[0],
-        upper=approach.t[-1],
-        check_bracket=False,
+    t_app, t_ret = approach.t, retract.t
+    dt = t_app[1] - t_app[0]
+    constant = integrate(ret_integrand, t_ret[0], t, dt)
+
+    def t1_constraint(t1, args=None):
+        out = integrate(app_integrand, t1, t_app[-1], dt) + constant
+        return out
+
+    solver = optx.Bisection(rtol=1e-3, atol=1e-3, flip=True)
+    sol = optx.root_find(
+        t1_constraint,
+        solver,
+        0.5 * (t_app[0] + t_app[-1]),
+        options={"lower": t_app[0], "upper": t_app[-1]},
+        max_steps=30,
+        throw=False,
     )
-    return root_finder.run(
-        t=t,
-        relaxation=relaxation,
-        approach=approach,
-        retract=retract,
-    ).params
+
+    condlist = jnp.asarray(
+        [
+            t == t_ret[0],
+            sol.result != optx.RESULTS.successful,
+            sol.result == optx.RESULTS.successful,
+        ]
+    )
+    choicelist = jnp.asarray([t_ret[0], t_app[0], sol.value])
+
+    return jnp.select(condlist, choicelist)
 
 
-@partial(jax.vmap, in_axes=(0, 0, None, None, None))
+@partial(eqx.filter_vmap, in_axes=(0, 0, None, None, None))
 def _force_retract(
     t: float,
     t1: float,
@@ -103,10 +95,11 @@ def _force_retract(
     approach: Trajectory,
     tip: AbstractTipGeometry,
 ) -> Array:
-    t_s = approach.t
-    b = tip.b()
+    t_app = approach.t
+    dx = t_app[1] - t_app[0]
+    a, b = tip.a(), tip.b()
 
-    def force_integrand(t_: Array, t: float) -> Array:
+    def force_integrand(t_: Array) -> Array:
         return relaxation(t - t_) * approach.v(t_) * approach.z(t_) ** (b - 1)
 
-    return integrate_to(t1, t_s, force_integrand(t_s, t)) * tip.a()
+    return a * integrate(force_integrand, t_app[0], t1, dx)
