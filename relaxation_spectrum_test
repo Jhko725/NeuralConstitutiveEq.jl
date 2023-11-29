@@ -18,7 +18,6 @@ from neuralconstitutive.constitutive import FromLogDiscreteSpectrum
 from neuralconstitutive.relaxation_spectrum import HonerkampWeeseBimodal
 
 jax.config.update("jax_enable_x64", True)
-
 # %%
 bimodal = FromLogDiscreteSpectrum(HonerkampWeeseBimodal())
 t_i, h_i = bimodal.discrete_spectrum
@@ -28,8 +27,9 @@ ax.set_xscale("log", base=10)
 ax.set_xlabel("Relaxation Time τ[s]")
 ax.set_ylabel("Relaxation Spectrum H(τ)[Pa]")
 # %%
+print(len(t_i))
 # %%
-number = 1000000
+number = 1000
 t_min = 1e-4
 t_max = 1e3
 t = np.linspace(t_min, t_max, number)
@@ -57,11 +57,6 @@ ax.set_title(f"t=({t_min}, {t_max}), {number} points")
 ax.set_xscale("log")
 ax.set_xlabel("Time[s]")
 ax.set_ylabel("Relaxation Spectrum[Pa]")
-
-
-
-
-
 #%%
 
 
