@@ -4,7 +4,6 @@ from typing import Callable
 import jax
 from jax import Array
 import jax.numpy as jnp
-import numpy as np
 import equinox as eqx
 import optax
 import matplotlib.pyplot as plt
@@ -19,6 +18,7 @@ from neuralconstitutive.jax.tipgeometry import Spherical, AbstractTipGeometry
 from neuralconstitutive.trajectory import make_triangular, Trajectory
 from neuralconstitutive.nn import FullyConnectedNetwork
 from neuralconstitutive.models import BernsteinNN
+from neuralconstitutive.training import loss_total, train_model
 
 jax.config.update("jax_enable_x64", True)
 
@@ -118,10 +118,11 @@ class PronyNN(eqx.Module):
 # %%
 phi_nn = FullyConnectedNetwork(
     ["scalar", 20, 20, 20, 20, "scalar"],
+    activation=jax.nn.tanh,
+    final_activation=jax.nn.softplus,
 )
 phi_bern = BernsteinNN(phi_nn, 100)
-# %%
-phi_bern(0.1)
+
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
 ax.plot(app.t, phi_bern(app.t))
@@ -139,80 +140,20 @@ fig
 
 
 # %%
-@eqx.filter_value_and_grad
-def compute_loss(model, app, ret, F_app, F_ret, tip):
-    F_app_pred = force_approach(app, model, tip)
-    F_ret_pred = force_retract(app, ret, model, tip)
-    # Mean squared error loss
-    # l1 = jnp.sum(jnp.abs(model.weights)) + jnp.abs(model.bias)
-    return (
-        jnp.mean((F_app - F_app_pred) ** 2)
-        + jnp.mean((F_ret - F_ret_pred) ** 2)
-        # + 1e-3 * l1
-    )
-
-
-@eqx.filter_value_and_grad
-def compute_loss_approach(model, app, ret, F_app, F_ret, tip):
-    F_app_pred = force_approach(app, model, tip)
-    # Mean squared error loss
-    # l1 = jnp.sum(jnp.abs(model.weights)) + jnp.abs(model.bias)
-    return jnp.mean((F_app - F_app_pred) ** 2)  # + 1e-3 * l1
-
-
-@eqx.filter_value_and_grad
-def compute_loss_retract(model, app, ret, tip):
-    F_ret_pred = force_retract(app, ret, model, tip)
-    # Mean squared error loss
-    return jnp.mean((F_ret - F_ret_pred) ** 2)
-
-
-# %%
-model = phi_bern
-# %%
-optim = optax.rmsprop(1e-3)
-opt_state = optim.init(model)
-
-
-@eqx.filter_jit
-def make_step(model, app, ret, F_app, F_ret, tip, opt_state):
-    loss, grads = compute_loss(model, app, ret, F_app, F_ret, tip)
-    updates, opt_state = optim.update(grads, opt_state, params=model)
-    model = eqx.apply_updates(model, updates)
-    return loss, model, opt_state
-
-
-@eqx.filter_jit
-def make_step_app(model, app, ret, F_app, F_ret, tip, opt_state):
-    loss, grads = compute_loss_approach(model, app, ret, F_app, F_ret, tip)
-    updates, opt_state = optim.update(grads, opt_state, params=model)
-    model = eqx.apply_updates(model, updates)
-    return loss, model, opt_state
-
-
-@eqx.filter_jit
-def make_step_ret(model, app, ret, F_app, F_ret, tip, opt_state):
-    loss, grads = compute_loss_retract(model, app, ret, F_app, F_ret, tip)
-    updates, opt_state = optim.update(grads, opt_state)
-    model = eqx.apply_updates(model, updates)
-    return loss, model, opt_state
-
-
-# %%
-max_epochs = 3200
-loss_history = np.empty(max_epochs)
-for step in range(max_epochs):
-    loss, model, opt_state = make_step(model, app, ret, f_app, f_ret, tip, opt_state)
-    # print(model.taus)
-    # print(model.weights)
-    loss = loss.item()
-    loss_history[step] = loss
-    print(f"step={step}, loss={loss}")
+trained_model, loss_history = train_model(
+    phi_bern,
+    (app, ret),
+    (f_app, f_ret),
+    tip,
+    loss_total,
+    optimizer=optax.rmsprop(1e-3),
+    max_epochs=3000,
+)
 
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-F_app = force_approach(app, model, tip)
-F_ret = force_retract(app, ret, model, tip)
+F_app = force_approach(app, trained_model, tip)
+F_ret = force_retract(app, ret, trained_model, tip)
 
 plot_kwargs = {"markersize": 3.0, "alpha": 0.8}
 fig, axes = plt.subplots(2, 1, figsize=(5, 5))
@@ -244,7 +185,7 @@ axes[1].set_ylabel("Relaxation function $G(t)$ (a.u.)")
 # )
 axes[1].plot(
     app.t,
-    model(app.t),
+    trained_model(app.t),
     "-",
     color="red",
     label="Initial prediction",
@@ -260,21 +201,13 @@ for ax in axes:
 axes[-1].set_xlabel("Time $t$ (a.u.)")
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 5))
-ax.plot(loss_history[:690], color="orangered", linewidth=1.0)
+ax.plot(loss_history, color="orangered", linewidth=1.0)
 ax.set_xlabel("Training epochs")
 ax.set_ylabel("Mean squared loss")
 ax.set_yscale("log")
 ax.grid(color="lightgray", linestyle="--")
 ax.spines.right.set_visible(False)
 ax.spines.top.set_visible(False)
-# %%
-plt.plot(
-    app.t,
-    jax.vmap(model.net)(app.t),
-    "-",
-    color="red",
-    label="Initial prediction",
-    **plot_kwargs,
-)
+
 
 # %%

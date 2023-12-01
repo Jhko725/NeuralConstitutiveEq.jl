@@ -23,5 +23,5 @@ def integrate(
 
     _init_val = (x_lower, jnp.zeros_like(f(x_lower)))
 
-    _, I_x = while_loop(_cond_fun, _body_fun, _init_val, kind="bounded", max_steps=1000)
+    _, I_x = while_loop(_cond_fun, _body_fun, _init_val, kind="bounded", max_steps=300)
     return I_x
