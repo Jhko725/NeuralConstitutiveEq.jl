@@ -1,4 +1,5 @@
 from jax import Array
+import jax.numpy as jnp
 import equinox as eqx
 import diffrax
 
@@ -20,3 +21,11 @@ class Trajectory(eqx.Module):
 
     def v(self, t: Array) -> Array:
         return self.trajectory.derivative(t)
+
+
+def make_triangular(t_max: float, dt: float, v: float) -> tuple[Trajectory, Trajectory]:
+    t_app = jnp.arange(0, t_max + dt, dt)
+    t_ret = jnp.arange(t_max, 2 * t_max + dt, dt)
+    d_app = v * t_app
+    d_ret = v * (2 * t_ret[0] - t_ret)
+    return Trajectory(t_app, d_app), Trajectory(t_ret, d_ret)

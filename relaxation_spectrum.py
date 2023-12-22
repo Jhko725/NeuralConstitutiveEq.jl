@@ -189,7 +189,7 @@ tip = Conical(theta)
 # Data points
 space = 201  # odd number
 idx = int((space - 1) / 2)
-t_array = np.linspace(1e-5, 10, space)
+t_array = np.linspace(1e-5, 100, space)
 t_app = t_array[: idx + 1]
 t_ret = t_array[idx:]
 t_max = t_array[idx]
@@ -261,9 +261,9 @@ F_total = np.append(F_app, F_ret[1:])
 F_total = F_total * 1e9
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(7, 5))
+ax.set_xlabel("Time[s]")
+ax.set_ylabel("Force(nN)")
 ax.plot(t_array, F_total)
-
-
 # %%
 def PLR_constit_integand(t_, t, E0, alpha, t_prime, velocity, indentation, tip):
     a = tip.alpha
