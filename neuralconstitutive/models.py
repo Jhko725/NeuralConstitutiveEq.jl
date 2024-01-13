@@ -15,8 +15,8 @@ class BernsteinNN(eqx.Module):
     def __init__(self, net: eqx.Module, num_quadrature: int = 500):
         super().__init__()
         self.net = net
-        self.scale = jnp.asarray(0.25)
-        self.bias = jnp.asarray(1.0)
+        self.scale = jnp.asarray(0.015)
+        self.bias = jnp.asarray(0.51)
         self.nodes, self.weights = scipy.special.roots_legendre(num_quadrature)
 
     def __call__(self, t: Array) -> Array:
