@@ -1,6 +1,8 @@
 # %%
 from configparser import ConfigParser
+from functools import partial
 
+from scipy.optimize import curve_fit
 import numpy as np
 from numpy import ndarray
 import xarray as xr
@@ -36,21 +38,6 @@ def get_z_and_defl(spectroscopy_data: xr.DataArray) -> tuple[ndarray, ndarray]:
 
 def calc_tip_distance(piezo_z_pos: ndarray, deflection: ndarray) -> ndarray:
     return piezo_z_pos - deflection
-
-
-def find_contact_point(distance: ndarray, deflection: ndarray) -> float:
-    # Right now, only support 1D arrays of tip_distance and tip_deflection
-    locator = kneed.KneeLocator(
-        distance,
-        deflection,
-        S=10,
-        curve="convex",
-        direction="increasing",
-        interp_method="polynomial",
-        polynomial_degree=7,
-    )
-    return locator.knee
-
 
 def find_contact_point1(deflection: ndarray, N: int) -> ndarray:
     # Ratio of Variance
@@ -90,9 +77,6 @@ z_fwd, defl_fwd = get_z_and_defl(forward)
 z_bwd, defl_bwd = get_z_and_defl(backward)
 dist_fwd = calc_tip_distance(z_fwd, defl_fwd)
 dist_bwd = calc_tip_distance(z_bwd, defl_bwd)
-cp = find_contact_point(dist_fwd, defl_fwd)
-# %%
-cp
 # %%
 # ROV method
 N = 4
@@ -109,16 +93,17 @@ ax.plot(dist_fwd[N : np.size(dist_fwd) - N], find_contact_point1(defl_fwd, N)[0]
 ax.set_xlabel("Distance(forward)")
 ax.set_ylabel("ROV")
 # %%
-fig, ax = plt.subplots(1, 1, figsize=(7, 5))
-ax.plot(dist_fwd, defl_fwd, label="forward")
-ax.plot(dist_bwd, defl_bwd, label="backward")
-ax.legend()
-# %%
 # Find contact point
 cp_fwd = dist_fwd[N + idx_fwd]
 cp_bwd = dist_bwd[N + idx_bwd]
 print(cp_fwd, cp_bwd)
 # %%
+fig, ax = plt.subplots(1, 1, figsize=(7, 5))
+ax.plot(dist_fwd, defl_fwd, label="forward")
+ax.plot(dist_bwd, defl_bwd, label="backward")
+plt.axvline(cp_fwd, color="grey", linestyle="--", linewidth=1)
+ax.legend()
+#%%
 # Translation
 dist_fwd = dist_fwd - cp_fwd
 dist_bwd = dist_bwd - cp_fwd
@@ -134,19 +119,33 @@ defl_processed_bwd = defl_bwd - baseline_poly_bwd(dist_bwd)
 fig, ax = plt.subplots(1, 1, figsize=(7, 5))
 ax.plot(dist_fwd, defl_fwd, label="forward")
 ax.plot(dist_bwd, defl_bwd, label="backward")
-plt.axvline(cp_fwd, color="grey", linestyle="--", linewidth=1)
 ax.legend()
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(7, 5))
 ax.plot(dist_fwd, defl_processed_fwd, label="forward")
 ax.plot(dist_bwd, defl_processed_bwd, label="backward")
-plt.axvline(cp_fwd, color="grey", linestyle="--", linewidth=1)
+plt.axvline(0, color="grey", linestyle="--", linewidth=1)
 ax.legend()
-# %%
-fig, ax = plt.subplots(1, 1, figsize=(7, 5))
-ax.plot(dist_fwd, z_fwd, label="forward")
-ax.plot(dist_bwd, z_bwd, label="backward")
-ax.legend()
+
+#%%
+indentation_idx = dist_fwd >= 0
+indentation_fwd = dist_fwd[indentation_idx] 
+k = 0.2
+force_fwd = defl_fwd[indentation_idx] * k 
+#%%
+def Hertzian(I, E, v, R):
+    return 4.0/3.0*E*R**(1/2)*I**(3/2)/(1-v**2)
+
+hertzian_fit = partial(
+    Hertzian, 
+    v=0.4,
+    R=10.0*1e-9,)
+popt, pocv = curve_fit(hertzian_fit, indentation_fwd, force_fwd)
+popt
+#%%
+fig, ax = plt.subplots(1, 1, figsize=(7,5))
+ax.plot(indentation_fwd, force_fwd)
+ax.plot(indentation_fwd, hertzian_fit(indentation_fwd, *popt))
 # %%
 dist_total = np.concatenate((dist_fwd, dist_bwd[::-1]), axis=-1)
 defl_total = np.concatenate((defl_fwd, defl_bwd[::-1]), axis=-1)
