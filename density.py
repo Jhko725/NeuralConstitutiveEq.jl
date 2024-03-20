@@ -107,7 +107,7 @@ plt.plot(x, y_nn, ".")
 sls = StandardLinearSolid(E0=8, E_inf=2, tau=0.2)
 bimodal = FromLogDiscreteSpectrum(HonerkampWeeseBimodal())
 tip = Spherical(1.0)
-app, ret = make_triangular(0.5, 5e-3, 1.0)
+app, ret = make_triangular(100, 1.0, 1.0)
 
 
 def simulate_data(
