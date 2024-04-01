@@ -52,7 +52,7 @@ def simulate_data(
 
 # %%
 f_app, f_ret = simulate_data(
-    app, ret, sls.relaxation_function, tip, noise_strength=5e-3, random_seed=0
+    app, ret, sls.relaxation_function, tip, noise_strength=0.0, random_seed=0
 )
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
 ax.plot(app.t, f_app, ".", label="approach")

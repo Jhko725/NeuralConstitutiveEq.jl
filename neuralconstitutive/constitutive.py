@@ -20,6 +20,15 @@ class AbstractConstitutiveEqn(eqx.Module):
         return None
 
 
+class PowerLaw(AbstractConstitutiveEqn):
+    E0: float
+    alpha: float
+    t0: float = eqx.field(static=True)
+
+    def relaxation_function(self, t):
+        return self.E0 * (t / self.t0) ** (-self.alpha)
+
+
 class ModifiedPowerLaw(AbstractConstitutiveEqn):
     E0: float
     alpha: float
