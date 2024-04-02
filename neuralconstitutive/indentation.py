@@ -1,3 +1,4 @@
+# ruff: noqa: F722
 from jaxtyping import Array, Float
 import equinox as eqx
 import diffrax

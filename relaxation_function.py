@@ -1,13 +1,80 @@
 # %%
+# ruff: noqa: F722
 from functools import partial
+
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import quad
 from scipy.optimize import curve_fit
 from scipy.optimize import root_scalar
 import scipy.special as sc
-import matplotlib.ticker as ticker
-from neuralconstitutive.tipgeometry import Conical
+import jax
+import jax.numpy as jnp
+from jaxtyping import Array, Float
+import equinox as eqx
+import optimistix as optx
+
+from neuralconstitutive.tipgeometry import AbstractTipGeometry, Conical
+from neuralconstitutive.constitutive import (
+    AbstractConstitutiveEqn,
+    ModifiedPowerLaw,
+    StandardLinearSolid,
+    KohlrauschWilliamsWatts,
+    Fung,
+)
+from neuralconstitutive.indentation import Indentation
+from neuralconstitutive.ting import force_ting
+from neuralconstitutive.plotting import plot_relaxation_fn, plot_indentation
+
+jax.config.update("jax_enable_x64", True)
+
+
+@eqx.filter_jit
+def fit_relaxation_fn(
+    constitutive: AbstractConstitutiveEqn,
+    time: Float[Array, " len_data"],
+    relaxation: Float[Array, " len_data"],
+    solver,
+    *,
+    max_steps: int = 1024
+):
+
+    def residual(constitutive: AbstractConstitutiveEqn, args):
+        (time,) = args
+        del args
+        relaxation_pred = eqx.filter_vmap(constitutive.relaxation_function)(time)
+        return relaxation_pred - relaxation
+
+    args = (time,)
+    result = optx.least_squares(
+        residual, solver, constitutive, args, max_steps=max_steps
+    )
+    return result
+
+
+@eqx.filter_jit
+def fit_force(
+    constitutive: AbstractConstitutiveEqn,
+    tip: AbstractTipGeometry,
+    indentations: tuple[Indentation, Indentation],
+    forces: tuple[Float[Array, " len_app"], Float[Array, " len_ret"]],
+    solver,
+    *,
+    max_steps=1024
+):
+    def residual(constitutive, args):
+        tip, indentations, forces = args
+        del args
+        f_pred = jnp.concatenate(forces)
+        f_true = force_ting(constitutive, tip, *indentations)
+        f_true = jnp.concatenate(f_true)
+        return f_pred - f_true
+
+    args = (tip, indentations, forces)
+    result = optx.least_squares(
+        residual, solver, constitutive, args, max_steps=max_steps
+    )
+    return result
 
 
 # %%
@@ -23,7 +90,7 @@ def KWW(t, E0, E_inf, tau, beta):
     return E_inf + (E0 - E_inf) * np.exp(-((t / tau) ** beta))
 
 
-def Fung(t, E0, C, tau1, tau2):
+def Fung2(t, E0, C, tau1, tau2):
     return E0 * (
         (1 + C * (sc.exp1(t / tau2) - sc.exp1(t / tau1)))
         / (1 + C * np.log(tau2 / tau1))
@@ -31,22 +98,33 @@ def Fung(t, E0, C, tau1, tau2):
 
 
 # %%
-E0 = 572
-t_prime = 1e-5
-alpha = 0.2
 t = np.linspace(1e-2, 1e2, 1000)
 # %%
-plr_t = PLR(t, E0, t_prime, alpha)
-fig, ax = plt.subplots(1, 1, figsize=(7, 5))
-ax.plot(t, plr_t)
+plr = ModifiedPowerLaw(572.0, 0.2, 1e-5)
+
+fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+ax = plot_relaxation_fn(ax, plr, t)
 # %%
+plr_data = eqx.filter_vmap(plr.relaxation_function)(t)
 # SLS model fitting(3 version)
-popt_sls, pcov_sls = curve_fit(SLS, t, plr_t)
-E0_sls, E_inf_sls, tau_sls = popt_sls[0], popt_sls[1], popt_sls[2]
-popt_sls
+sls = StandardLinearSolid(100.0, 1.0, 1.0)
+kww = KohlrauschWilliamsWatts(100.0, 1.0, 10.0, 1.0)
+fung = Fung(10.0, 0.01, 1.0, 1.0)
+solver = optx.LevenbergMarquardt(atol=1e-3, rtol=1e-3)
 # %%
-sls_t = SLS(t, *popt_sls)
+result = fit_relaxation_fn(sls, t, plr_data, solver)
 # %%
+result = fit_relaxation_fn(kww, t, plr_data, solver)
+# %%
+result = fit_relaxation_fn(fung, t, plr_data, solver)
+# %%
+fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+ax = plot_relaxation_fn(ax, result.value, t)
+ax.plot(t, plr_data, ".", label="Ground truth")
+ax.legend()
+# %%
+## Figure out how to do curve fit with latin hypercube sampling
+
 # E0_sls1, E0_sls2, E0_sls3 = 60, 70, 80
 # E_inf_sls1, E_inf_sls2, E_inf_sls3 = 5, 25, 40
 tau_sls1, tau_sls2, tau_sls3 = 15.0, 20.0, 30.0
@@ -515,11 +593,42 @@ def Calculation_t1_Fung(
 
 
 # %%
-E_0 = E0  # Pa
-gamma = alpha
-t_prime = 1e-5  # s
-theta = (18.0 / 180.0) * np.pi
-tip = Conical(theta)
+# Make indentation (with normalized time and indentation)
+dt = 1e-2
+t_app = jnp.arange(0.0, 1.0 + dt, dt)
+t_ret = jnp.arange(1.0, 2.0 + dt, dt)
+h_app = 1.0 * t_app
+h_ret = 1.0 * (2.0 - t_ret)
+app, ret = Indentation(t_app, h_app), Indentation(t_ret, h_ret)
+fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+ax = plot_indentation(ax, app, marker=".")
+ax = plot_indentation(ax, ret, marker=".")
+ax
+# %%
+tip = Conical(jnp.pi / 10)  # in radians
+plr = ModifiedPowerLaw(572.0, 0.2, 1e-5)
+
+force_plr = force_ting(plr, tip, app, ret)
+fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+ax.plot(app.time, force_plr[0], ".")
+ax.plot(ret.time, force_plr[1], ".")
+# %%
+sls = StandardLinearSolid(100.0, 1.0, 1.0)
+solver = optx.LevenbergMarquardt(atol=1e-3, rtol=1e-3)
+result_sls = fit_force(sls, tip, (app, ret), force_plr, solver)
+
+
+# %%
+@eqx.filter_jit
+def force_objective(constitutive, tip, indentations, forces):
+    f_pred = jnp.concatenate(forces)
+    f_true = force_ting(constitutive, tip, *indentations)
+    f_true = jnp.concatenate(f_true)
+    return jnp.sum((f_pred - f_true) ** 2)
+
+
+val = eqx.filter_grad(force_objective)(sls, tip, (app, ret), force_plr)
+print(val)
 # %%
 E_inf, tau, beta = popt_kww
 E0_sls, E_inf_sls, tau_sls = popt_sls

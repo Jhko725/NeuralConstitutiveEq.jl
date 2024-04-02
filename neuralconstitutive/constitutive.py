@@ -1,12 +1,15 @@
 import abc
+from functools import partial
 
-import jax
 from jax import Array
 import jax.numpy as jnp
 from jax.scipy.special import exp1
 import equinox as eqx
 
-from .relaxation_spectrum import AbstractLogDiscreteSpectrum
+from neuralconstitutive.custom_types import FloatScalar, as_floatscalar
+from neuralconstitutive.relaxation_spectrum import AbstractLogDiscreteSpectrum
+
+floatscalar_field = partial(eqx.field, converter=as_floatscalar)
 
 
 class AbstractConstitutiveEqn(eqx.Module):
@@ -21,37 +24,37 @@ class AbstractConstitutiveEqn(eqx.Module):
 
 
 class PowerLaw(AbstractConstitutiveEqn):
-    E0: float
-    alpha: float
-    t0: float = eqx.field(static=True)
+    E0: FloatScalar = floatscalar_field()
+    alpha: FloatScalar = floatscalar_field()
+    t0: FloatScalar = floatscalar_field(static=True)
 
     def relaxation_function(self, t):
         return self.E0 * (t / self.t0) ** (-self.alpha)
 
 
 class ModifiedPowerLaw(AbstractConstitutiveEqn):
-    E0: float
-    alpha: float
-    t0: float = eqx.field(static=True)
+    E0: FloatScalar = floatscalar_field()
+    alpha: FloatScalar = floatscalar_field()
+    t0: FloatScalar = floatscalar_field(static=True)
 
     def relaxation_function(self, t):
         return self.E0 * (1 + t / self.t0) ** (-self.alpha)
 
 
 class StandardLinearSolid(AbstractConstitutiveEqn):
-    E0: float
-    E_inf: float
-    tau: float
+    E0: FloatScalar = floatscalar_field()
+    E_inf: FloatScalar = floatscalar_field()
+    tau: FloatScalar = floatscalar_field()
 
     def relaxation_function(self, t):
         return self.E_inf + (self.E0 - self.E_inf) * jnp.exp(-t / self.tau)
 
 
 class KohlrauschWilliamsWatts(AbstractConstitutiveEqn):
-    E0: float
-    E_inf: float
-    tau: float
-    beta: float
+    E0: FloatScalar = floatscalar_field()
+    E_inf: FloatScalar = floatscalar_field()
+    tau: FloatScalar = floatscalar_field()
+    beta: FloatScalar = floatscalar_field()
 
     def relaxation_function(self, t):
         exponent = (t / self.tau) ** self.beta
@@ -59,10 +62,10 @@ class KohlrauschWilliamsWatts(AbstractConstitutiveEqn):
 
 
 class Fung(AbstractConstitutiveEqn):
-    E0: float
-    tau1: float
-    tau2: float
-    C: float
+    E0: FloatScalar = floatscalar_field()
+    tau1: FloatScalar = floatscalar_field()
+    tau2: FloatScalar = floatscalar_field()
+    C: FloatScalar = floatscalar_field()
 
     def relaxation_function(self, t):
         def _exp1_diff(t_i: float) -> float:
@@ -74,7 +77,7 @@ class Fung(AbstractConstitutiveEqn):
         # Tested on an array of length 100, this is 25 times (~550ms vs 13.5s)
         # faster than the commented out vectorized version
 
-        numerator = 1 + self.C * jax.lax.map(_exp1_diff, t)
+        numerator = 1 + self.C * _exp1_diff(t)
         # numerator = 1 + self.C * (exp1(t / self.tau2) - exp1(t / self.tau1))
         denominator = 1 + self.C * jnp.log(self.tau2 / self.tau1)
         return self.E0 * numerator / denominator

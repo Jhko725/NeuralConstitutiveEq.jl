@@ -1,4 +1,6 @@
+# ruff: noqa: F722
 import jax.numpy as jnp
+from jaxtyping import Float, Array
 import equinox as eqx
 import diffrax
 import optimistix as optx
@@ -76,11 +78,23 @@ def force_ting(
     tip: AbstractTipGeometry,
     approach: Indentation,
     retract: Indentation,
-):
+) -> tuple[Float[Array, " {len(approach)}"], Float[Array, " {len(retract)}"]]:
     ting = _TingIndentationProblem(constitutive, tip, approach, retract)
     f_app = _force_approach(approach, ting)
     f_ret = _force_retract(retract, ting)
     return f_app, f_ret
+
+
+@eqx.filter_jit
+def force_approach(
+    constitutive: AbstractConstitutiveEqn,
+    tip: AbstractTipGeometry,
+    approach: Indentation,
+    retract: Indentation,
+) -> tuple[Float[Array, " {len(approach)}"], Float[Array, " {len(retract)}"]]:
+    ting = _TingIndentationProblem(constitutive, tip, approach, retract)
+    f_app = _force_approach(approach, ting)
+    return f_app
 
 
 def _force_approach(approach: Indentation, problem: _TingIndentationProblem):
