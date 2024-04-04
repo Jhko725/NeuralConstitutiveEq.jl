@@ -1,122 +1,245 @@
 # %%
 import jax
 import jax.numpy as jnp
+import jax.tree_util as jtu
 import equinox as eqx
+import diffrax
+import optimistix as optx
 import matplotlib.pyplot as plt
 
-from neuralconstitutive.constitutive import ModifiedPowerLaw, Fung
-from neuralconstitutive.tipgeometry import Conical
+from neuralconstitutive.custom_types import FloatScalar
+from neuralconstitutive.constitutive import (
+    AbstractConstitutiveEqn,
+    ModifiedPowerLaw,
+    PowerLaw,
+    Fung,
+)
+from neuralconstitutive.tipgeometry import AbstractTipGeometry, Conical
 from neuralconstitutive.indentation import Indentation
-from neuralconstitutive.ting import force_ting, force_approach
+from neuralconstitutive.integrate import integrate
+
+# from neuralconstitutive.ting import force_ting, force_approach
 
 jax.config.update("jax_enable_x64", True)
+# jax.config.update("jax_debug_nans", True)
 
-
-# %%
 t = jnp.arange(0.0, 1.0 + 1e-3, 1e-3)
 h = 1.0 * t
 app = Indentation(t, h)
 t_ret = jnp.arange(1.0, 2.0 + 1e-3, 1e-3)
 h_ret = 2.0 - t_ret
 ret = Indentation(t_ret, h_ret)
-# plr = PowerLaw(1.0, 0.5, 1.0)
-fung = Fung(10.0, 0.1, 10.0, 1.0)
-plr = ModifiedPowerLaw(1.0, -0.5, 1.0)
+# plr = PowerLaw(2.0, 0.5, 1.0)
+# fung = Fung(10.0, 0.1, 10.0, 1.0)
+plr = ModifiedPowerLaw(1.0, 0.5, 1.0)
 tip = Conical(jnp.pi / 18)
 del t, h, t_ret, h_ret
-
-# %%
-f_app, f_ret = force_ting(plr, tip, app, ret)
-# f_app, f_ret = force_ting(fung, tip, app, ret)
-# %%
-fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-ax.plot(app.time, f_app, ".")
-ax.plot(ret.time, f_ret, ".")
+app_interp = diffrax.LinearInterpolation(app.time, app.depth)
 
 
 # %%
-@eqx.filter_jit
-def test(const, tip, app, ret):
-    f_app = force_approach(const, tip, app, ret)
-    return jnp.sum(f_app)
+def relaxation_fn(t_constit: tuple[float, AbstractConstitutiveEqn]):
+    t, constitutive = t_constit
+    return constitutive.relaxation_function(t)
+
+
+def Drelaxation_fn(t_constit: tuple[float, AbstractConstitutiveEqn]):
+    dG_pytree = eqx.filter_grad(relaxation_fn)(t_constit)
+    dG_array, tree_def = jtu.tree_flatten(dG_pytree)
+    dG_array = jnp.asarray(dG_array)
+    return dG_array, tree_def
+
+
+def force_integrand(s, t, constit, app_interp, tip):
+    g = relaxation_fn((t - s, constit))
+    a, b = tip.a(), tip.b()
+    d_hb = b * app_interp.derivative(s) * app_interp.evaluate(s) ** (b - 1)
+    return a * g * d_hb
+
+
+def Dforce_integrand(s, t, constit, app_interp, tip):
+    dG, _ = Drelaxation_fn((t - s, constit))
+    a, b = tip.a(), tip.b()
+    d_hb = b * app_interp.derivative(s) * app_interp.evaluate(s) ** (b - 1)
+    return a * dG * d_hb
 
 
 # %%
-value = eqx.filter_grad(test)(plr, tip, app, ret)
-print(value)
-# %%
-value.E0
-
-# %%
-import diffrax
-import quadax
-from neuralconstitutive.integrate import integrate
-
-
-# %%
-def make_force_integrand(constitutive, tip, approach_interp):
+## Approach 1. Automatic gradient
+def force_approach_auto(
+    t: FloatScalar,
+    constitutive: AbstractConstitutiveEqn,
+    tip: AbstractTipGeometry,
+    approach: Indentation,
+):
+    app_interp = diffrax.LinearInterpolation(approach.time, approach.depth)
     a, b = tip.a(), tip.b()
 
     def dF(s, t):
-        g = constitutive.relaxation_function(t - s)
-        dh_b = (
-            b * approach_interp.derivative(s) * approach_interp.evaluate(s) ** (b - 1)
-        )
+        g = constitutive.relaxation_function(jnp.clip(t - s, 0.0))
+        dh_b = b * app_interp.derivative(s) * app_interp.evaluate(s) ** (b - 1)
         return a * g * dh_b
 
-    return dF
+    dF = eqx.filter_closure_convert(dF, approach.time[0], approach.time[1])
 
-
-@eqx.filter_jit
-def force_approach2(constitutive, tip, approach, retract):
-    del retract
-    app_interp = diffrax.LinearInterpolation(approach.time, approach.depth)
-
-    dF = make_force_integrand(constitutive, tip, app_interp)
-
-    def F(t):
-        return integrate(dF, (0.0, t), (t,))
-
-    return eqx.filter_vmap(F)(approach.time)
-
-
-@eqx.filter_jit
-def force_approach3(constitutive, tip, approach, retract):
-    del retract
-    app_interp = diffrax.LinearInterpolation(approach.time, approach.depth)
-
-    dF = make_force_integrand(constitutive, tip, app_interp)
-
-    def F(t):
-        return quadax.quadgk(dF, (0.0, t), (t,))[0]
-
-    return eqx.filter_vmap(F)(approach.time[1:])
+    return integrate(dF, (0, t), (t,))
 
 
 # %%
-# f1 = force_approach(plr, tip, app, ret)
-f2 = force_approach2(plr, tip, app, ret)
+## Approach 2. Manual gradient
+def force_approach_manual(
+    t: FloatScalar,
+    constitutive: AbstractConstitutiveEqn,
+    tip: AbstractTipGeometry,
+    approach: Indentation,
+):
+    app_interp = diffrax.LinearInterpolation(approach.time, approach.depth)
+    return force_approach_((t, constitutive), app_interp, tip)
 
+
+@eqx.filter_custom_vjp
+def force_approach_(t_constit, app_interp, tip):
+    t, constitutive = t_constit
+    del t_constit
+    args = (t, constitutive, app_interp, tip)
+    bounds = (jnp.zeros_like(t), t)
+    return integrate(force_integrand, bounds, args)
+
+
+@force_approach_.def_fwd
+def force_approach_fwd(perturbed, t_constit, app_interp, tip):
+    del perturbed
+    f_app = force_approach_(t_constit, app_interp, tip)
+    return f_app, None  # other stuff
+
+
+@force_approach_.def_bwd
+def force_approach_bwd(residuals, grad_obj, perturbed, t_constit, app_interp, tip):
+    del residuals, perturbed
+    t, constitutive = t_constit
+    del t_constit
+    args = (t, constitutive, app_interp, tip)
+    bounds = (jnp.zeros_like(t), t)
+    out = integrate(Dforce_integrand, bounds, args)
+    out = out.at[0].add(force_integrand(t, t, constitutive, app_interp, tip))
+    out = out * grad_obj
+    _, tree_def = Drelaxation_fn((t, constitutive))
+    return jtu.tree_unflatten(tree_def, out)
+
+
+# %%
+plr = ModifiedPowerLaw(1.0, 0.5, 0.1)
+f_app_auto = eqx.filter_vmap(force_approach_auto, in_axes=(0, None, None, None))(
+    app.time, plr, tip, app
+)
+
+# %%
+plr = ModifiedPowerLaw(1.0, 0.5, 0.1)
+f_app_manual = eqx.filter_vmap(force_approach_manual, in_axes=(0, None, None, None))(
+    app.time, plr, tip, app
+)
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-# ax.plot(app.time, f1, ".", label="Impl 1")
-ax.plot(app.time, f2, ".", label="Impl 2")
-ax
+ax.plot(app.time, f_app_auto, ".", label="Automatic diff")
+ax.plot(app.time, f_app_manual, ".", label="Manual diff")
+# %%
+# %%timeit
+grad_f_auto = eqx.filter_jit(
+    eqx.filter_vmap(eqx.filter_grad(force_approach_auto), in_axes=(0, None, None, None))
+)(app.time, plr, tip, app)
+# %%
+# %%timeit
+grad_f_manual = eqx.filter_jit(
+    eqx.filter_vmap(
+        eqx.filter_grad(force_approach_manual), in_axes=(0, None, None, None)
+    )
+)(app.time, plr, tip, app)
+# %%
+fig, axes = plt.subplots(1, 2, figsize=(7, 3))
+axes[0].plot(app.time, grad_f_auto, ".", label="Automatic diff")
+axes[0].plot(app.time, grad_f_manual, ".", label="Manual diff")
+# axes[1].plot(app.time, grad_f_auto.alpha, ".", label="Automatic diff")
+# axes[1].plot(app.time, grad_f_manual.alpha, ".", label="Manual diff")
+
+# %%
+grad_f_manual
 
 
 # %%
-def test1(constitutive, tip, approach, retract):
-    return jnp.sum(force_approach(constitutive, tip, approach, retract))
+def find_t1_auto(
+    constitutive: AbstractConstitutiveEqn,
+    t: FloatScalar,
+    approach: Indentation,
+    retract: Indentation,
+) -> FloatScalar:
+    t_m = approach.time[-1]
 
+    app_interp = diffrax.LinearInterpolation(approach.time, approach.depth)
+    ret_interp = diffrax.LinearInterpolation(retract.time, retract.depth)
 
-def test2(constitutive, tip, approach, retract):
-    return jnp.sum(force_approach2(constitutive, tip, approach, retract))
+    def t1_integrand_lower(s, t):
+        return constitutive.relaxation_function(t - s) * app_interp.derivative(s)
+
+    def t1_integrand_upper(s, t):
+        return constitutive.relaxation_function(t - s) * ret_interp.derivative(s)
+
+    def residual(t1, t):
+        return integrate(t1_integrand_lower, (t1, t_m), (t,)) + integrate(
+            t1_integrand_upper, (t_m, t), (t,)
+        )
+
+    solver = optx.Bisection(rtol=1e-3, atol=1e-3, flip=True)
+
+    cond = residual(0.0, t) <= 0
+    t_ = jnp.where(cond, t_m, t)
+    return jnp.where(
+        cond,
+        jnp.zeros_like(t),
+        optx.root_find(
+            residual,
+            solver,
+            t_m,
+            args=t_,
+            options={"lower": 0.0, "upper": t_m},
+            max_steps=30,
+            throw=False,
+            adjoint=optx.RecursiveCheckpointAdjoint(),
+        ).value,
+    )
+
+    # _find_t1 = eqx.filter_closure_convert(_find_t1, retract.time[0])
+    # return eqx.filter_vmap(_find_t1)(retract.time)
 
 
 # %%
-val, dval = eqx.filter_value_and_grad(test)(plr, tip, app, ret)
+@eqx.filter_custom_vjp
+def _find_t1(t_constit, app_interp, tip):
+    t, constitutive = t_constit
+    del t_constit
+    args = (t, constitutive, app_interp, tip)
+    bounds = (jnp.zeros_like(t), t)
+    return integrate(force_integrand, bounds, args)
+
+
+# %%
+res = find_t1(plr, app, ret)
+# %%
+fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+ax.plot(ret.time, res)
+
+
+# %%
+def test(constitutive, approach, retract):
+    return find_t12(constitutive, approach, retract)[10]
+
+
+# %%
+val, dval = eqx.filter_value_and_grad(test)(plr, app, ret)
 print(val, dval.E0, dval.alpha, dval.t0)
+# print(dval.time, dval.depth)
 # %%
 val2, dval2 = eqx.filter_value_and_grad(test2)(plr, tip, app, ret)
 print(val2, dval2.E0, dval2.alpha, dval2.t0)
+# %%
+dval.depth
 # %%

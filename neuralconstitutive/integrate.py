@@ -14,7 +14,7 @@ def integrate(fn: Callable, bounds: tuple[float, float], args: tuple):
     cond = lower == upper
     # Add some random small value to upper so that upper==lower never happens
     # This is to avoid the nan gradient problem outlined in https://jax.readthedocs.io/en/latest/faq.html#gradients-contain-nan-where-using-where
-    upper_ = jnp.where(cond, upper + 1e-3, upper)
+    upper_ = upper + 1e-3  # jnp.where(cond, upper + 1.0, upper)
     return jnp.where(
         cond,
         0.0,
