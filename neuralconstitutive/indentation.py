@@ -1,22 +1,18 @@
-from jax import Array
+# ruff: noqa: F722
+from jaxtyping import Array, Float
 import equinox as eqx
 import diffrax
 
 
 class Indentation(eqx.Module):
-    trajectory: diffrax.AbstractGlobalInterpolation
+    time: Float[Array, " N"]
+    depth: Float[Array, " N"]
 
-    def __init__(self, time: Array, indentation: Array):
-        # TODO: add keyword argument that determines what interpolation to use
-        # TODO: check input to see if indentation is monotone increasing or not
-        self.trajectory = diffrax.LinearInterpolation(time, indentation)
+    # Might want to check monotonicity of time here
+    # Also might want to check monotonicity of depth, and assign whether approach or retract
+    def __len__(self) -> int:
+        return len(self.time)
 
-    @property
-    def t(self) -> Array:
-        return self.trajectory.ts
 
-    def z(self, t: Array) -> Array:
-        return self.trajectory.evaluate(t)
-
-    def v(self, t: Array) -> Array:
-        return self.trajectory.derivative(t)
+def interpolate_indentation(indentation: Indentation):
+    return diffrax.LinearInterpolation(indentation.time, indentation.depth)
