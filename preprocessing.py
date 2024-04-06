@@ -4,7 +4,7 @@ from configparser import ConfigParser
 import numpy as np
 from numpy import ndarray
 import xarray as xr
-import kneed
+# import kneed
 from numpy.polynomial.polynomial import Polynomial
 import matplotlib.pyplot as plt
 from jhelabtoolkit.io.nanosurf import nanosurf
@@ -12,7 +12,7 @@ from jhelabtoolkit.utils.plotting import configure_matplotlib_defaults
 
 configure_matplotlib_defaults()
 
-filepath = "data/20231110_onion/Image02676.nid"
+filepath = "data/230602_highlyentangled_preliminary/Hydrogel(liquid, 10nN, 10s)-2.nid"
 config, data = nanosurf.read_nid(filepath)
 # %%
 def get_sampling_rate(nid_config: ConfigParser) -> float:

@@ -9,13 +9,11 @@ import scipy.special as sc
 import matplotlib.pyplot as plt
 from neuralconstitutive.preprocessing import estimate_derivative
 from neuralconstitutive.tipgeometry import Conical
-
-
 # %%
 # PLR model fitting
 def PLR_constit_integand(t_, t, E0, alpha, t_prime, velocity, indentation, tip):
-    a = tip.alpha
-    b = tip.beta
+    a = tip.a()
+    b = tip.b()
     return (
         a
         * b
