@@ -1,6 +1,9 @@
 # %%
 from configparser import ConfigParser
+from functools import partial
 
+from scipy.optimize import curve_fit
+from sklearn.metrics import r2_score
 import numpy as np
 from numpy import ndarray
 import xarray as xr
@@ -36,21 +39,6 @@ def get_z_and_defl(spectroscopy_data: xr.DataArray) -> tuple[ndarray, ndarray]:
 
 def calc_tip_distance(piezo_z_pos: ndarray, deflection: ndarray) -> ndarray:
     return piezo_z_pos - deflection
-
-
-def find_contact_point(distance: ndarray, deflection: ndarray) -> float:
-    # Right now, only support 1D arrays of tip_distance and tip_deflection
-    locator = kneed.KneeLocator(
-        distance,
-        deflection,
-        S=10,
-        curve="convex",
-        direction="increasing",
-        interp_method="polynomial",
-        polynomial_degree=7,
-    )
-    return locator.knee
-
 
 def find_contact_point1(deflection: ndarray, N: int) -> ndarray:
     # Ratio of Variance
@@ -90,12 +78,9 @@ z_fwd, defl_fwd = get_z_and_defl(forward)
 z_bwd, defl_bwd = get_z_and_defl(backward)
 dist_fwd = calc_tip_distance(z_fwd, defl_fwd)
 dist_bwd = calc_tip_distance(z_bwd, defl_bwd)
-cp = find_contact_point(dist_fwd, defl_fwd)
-# %%
-cp
 # %%
 # ROV method
-N = 4
+N = 8
 rov_fwd = find_contact_point1(defl_fwd, N)[0]
 idx_fwd = find_contact_point1(defl_fwd, N)[1]
 rov_fwd_max = find_contact_point1(defl_fwd, N)[2]
@@ -109,20 +94,22 @@ ax.plot(dist_fwd[N : np.size(dist_fwd) - N], find_contact_point1(defl_fwd, N)[0]
 ax.set_xlabel("Distance(forward)")
 ax.set_ylabel("ROV")
 # %%
-fig, ax = plt.subplots(1, 1, figsize=(7, 5))
-ax.plot(dist_fwd, defl_fwd, label="forward")
-ax.plot(dist_bwd, defl_bwd, label="backward")
-ax.legend()
-# %%
 # Find contact point
 cp_fwd = dist_fwd[N + idx_fwd]
 cp_bwd = dist_bwd[N + idx_bwd]
 print(cp_fwd, cp_bwd)
 # %%
+fig, ax = plt.subplots(1, 1, figsize=(7, 5))
+ax.plot(dist_fwd* 1e6, defl_fwd * 1e9, label="forward")
+ax.plot(dist_bwd* 1e6, defl_bwd * 1e9, label="backward")
+plt.axvline(cp_fwd * 1e6, color="grey", linestyle="--", linewidth=1)
+ax.set_xlabel("Distance[μm]")
+ax.set_ylabel("Force[nN]")
+ax.legend()
+#%%
 # Translation
 dist_fwd = dist_fwd - cp_fwd
 dist_bwd = dist_bwd - cp_fwd
-
 # %%
 # Polynomial fitting
 baseline_poly_fwd = fit_baseline_polynomial(dist_fwd, defl_fwd)
@@ -132,73 +119,59 @@ defl_processed_bwd = defl_bwd - baseline_poly_bwd(dist_bwd)
 
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(7, 5))
-ax.plot(dist_fwd, defl_fwd, label="forward")
-ax.plot(dist_bwd, defl_bwd, label="backward")
-plt.axvline(cp_fwd, color="grey", linestyle="--", linewidth=1)
+ax.plot(dist_fwd * 1e6, defl_fwd * 1e9, label="forward")
+ax.plot(dist_bwd * 1e6, defl_bwd * 1e9, label="backward")
+ax.set_xlabel("Distance[μm]")
+ax.set_ylabel("Force[nN]")
 ax.legend()
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(7, 5))
-ax.plot(dist_fwd, defl_processed_fwd, label="forward")
-ax.plot(dist_bwd, defl_processed_bwd, label="backward")
-plt.axvline(cp_fwd, color="grey", linestyle="--", linewidth=1)
+ax.plot(dist_fwd * 1e6, defl_processed_fwd * 1e9, label="forward")
+ax.plot(dist_bwd * 1e6, defl_processed_bwd * 1e9, label="backward")
+plt.axvline(0, color="grey", linestyle="--", linewidth=1)
+ax.set_xlabel("Distance[μm]")
+ax.set_ylabel("Force[nN]")
 ax.legend()
-# %%
-fig, ax = plt.subplots(1, 1, figsize=(7, 5))
-ax.plot(dist_fwd, z_fwd, label="forward")
-ax.plot(dist_bwd, z_bwd, label="backward")
-ax.legend()
-# %%
-dist_total = np.concatenate((dist_fwd, dist_bwd[::-1]), axis=-1)
-defl_total = np.concatenate((defl_fwd, defl_bwd[::-1]), axis=-1)
-is_contact = dist_total >= 0
-indentation = dist_total[is_contact]
-k = 0.2  # N/m
-force = defl_total[is_contact] * k
-sampling_rate = get_sampling_rate(config)
-time = np.arange(len(indentation)) / sampling_rate
 
-fig, axes = plt.subplots(2, 1, figsize=(7, 5), sharex=True)
-axes[0].plot(time, indentation)
-axes[0].set_xlabel("Time(s)")
-axes[1].set_xlabel("Time(s)")
-axes[0].set_ylabel("Indentation(m)")
-axes[1].set_ylabel("Force(N)")
-axes[1].plot(time, force)
-# %%
-max_ind = np.argmax(indentation)
-t_max = time[max_ind]
-t_max
-indent_max = indentation[max_ind]
-# %%
-Polynomial.fit(
-    time[: max_ind + 1],
-    indentation[: max_ind + 1],
-    deg=[
-        1,
-    ],
-).convert()
-# %%
-Polynomial.fit(
-    time[max_ind + 1 :],
-    indentation[max_ind + 1 :],
-    deg=[
-        1,
-    ],
-).convert()
-# %%
-indent_max / t_max
-# %%
-indent_max / (time[-1] - t_max)
-# %%
-v_avg = 2 * indent_max / time[-1]
-# %%
-np.savez(
-    "./Image00801.npz",
-    indentation=indentation,
-    time=time,
-    force=force,
-    v=v_avg,
-    t_max=t_max,
+#%%
+indentation_idx = dist_fwd >= 0
+indentation_fwd = dist_fwd[indentation_idx] 
+# k = 0.2
+force_fwd = defl_fwd[indentation_idx]
+#%%
+def Hertzian_para(I, E, v, R):
+    return 4.0/3.0*E*R**(1/2)*I**(3/2)/(1-v**2)
+
+def Hertzian_cone(I, E, I0, F0, v, theta):
+    I_ = np.clip(I-I0, 0, np.inf)
+    return 2.0/np.pi*E*np.tan(theta)*I_**2 - F0
+
+
+hertzian_fit_para = partial(
+    Hertzian_para, 
+    v=0.4,
+    R=10.0*1e-9,)
+popt_para, pocv_para = curve_fit(hertzian_fit_para, indentation_fwd, force_fwd)
+
+
+hertzian_fit_cone = partial(
+    Hertzian_cone,
+    v=0.4,
+    theta=20/180*np.pi,
 )
+popt_cone, pcov_cone = curve_fit(hertzian_fit_cone, indentation_fwd, force_fwd, p0=[1,0,0])
+r2 = r2_score(force_fwd, hertzian_fit_cone(indentation_fwd, *popt_cone))
 
-# %%
+
+print(popt_para, popt_cone)
+
+#%%
+fig, ax = plt.subplots(1, 1, figsize=(7,5))
+ax.plot(indentation_fwd * 1e6, force_fwd * 1e9, label="Experimental Data")
+ax.plot(indentation_fwd * 1e6, hertzian_fit_cone(indentation_fwd, *popt_cone) * 1e9, label="Hertzian Fit") 
+#ax.plot(indentation_fwd * 1e6, hertzian_fit_para(indentation_fwd, *popt_para) *1e9, label="Hertzian Fit_para")
+ax.set_xlabel("Indentation[μm]")
+ax.set_ylabel("Force[nN]")
+ax.legend()
+ax.set_title(f"r^2 = {r2}")
+#%%

@@ -1,10 +1,12 @@
 # ruff: noqa: F722
 import jax.numpy as jnp
+import jax.tree_util as jtu
 from jaxtyping import Float, Array
 import equinox as eqx
 import diffrax
 import optimistix as optx
 
+from neuralconstitutive.custom_types import FloatScalar
 from neuralconstitutive.constitutive import AbstractConstitutiveEqn
 from neuralconstitutive.tipgeometry import AbstractTipGeometry
 from neuralconstitutive.indentation import Indentation, interpolate_indentation
@@ -80,28 +82,105 @@ def force_ting(
     retract: Indentation,
 ) -> tuple[Float[Array, " {len(approach)}"], Float[Array, " {len(retract)}"]]:
     ting = _TingIndentationProblem(constitutive, tip, approach, retract)
-    f_app = _force_approach(approach, ting)
+
+    def _force_approach(t: FloatScalar) -> FloatScalar:
+        return integrate(ting.force_integrand, (0.0, t), (t,))
+
+    f_app = eqx.filter_vmap(_force_approach)(approach.time)
     f_ret = _force_retract(retract, ting)
     return f_app, f_ret
 
 
-@eqx.filter_jit
 def force_approach(
     constitutive: AbstractConstitutiveEqn,
-    tip: AbstractTipGeometry,
     approach: Indentation,
-    retract: Indentation,
-) -> tuple[Float[Array, " {len(approach)}"], Float[Array, " {len(retract)}"]]:
-    ting = _TingIndentationProblem(constitutive, tip, approach, retract)
-    f_app = _force_approach(approach, ting)
-    return f_app
+    tip: AbstractTipGeometry,
+) -> Float[Array, " {len(approach)}"]:
+    app_interp = diffrax.LinearInterpolation(approach.time, approach.depth)
 
+    def _force_approach(t, constitutive):
+        return force_approach_((t, constitutive), app_interp, tip)
 
-def _force_approach(approach: Indentation, problem: _TingIndentationProblem):
-    t_app = approach.time
-    return eqx.filter_vmap(integrate, in_axes=(None, None, 0, 0))(
-        problem.force_integrand, 0.0, t_app, t_app
+    return eqx.filter_vmap(_force_approach, in_axes=(0, None), out_axes=0)(
+        approach.time, constitutive
     )
+
+
+def force_approach_manual(
+    t: FloatScalar,
+    constitutive: AbstractConstitutiveEqn,
+    approach: Indentation,
+    tip: AbstractTipGeometry,
+):
+    app_interp = diffrax.LinearInterpolation(approach.time, approach.depth)
+    return force_approach_((t, constitutive), app_interp, tip)
+
+
+def relaxation_fn(t_constit: tuple[float, AbstractConstitutiveEqn]):
+    t, constitutive = t_constit
+    return constitutive.relaxation_function(t)
+
+
+def Drelaxation_fn(t_constit: tuple[float, AbstractConstitutiveEqn]):
+    dG_pytree = eqx.filter_grad(relaxation_fn)(t_constit)
+    dG_array, tree_def = jtu.tree_flatten(dG_pytree)
+    dG_array = jnp.asarray(dG_array)
+    return dG_array, tree_def
+
+
+def make_force_integrand(constit, app_interp, tip):
+    a, b = tip.a(), tip.b()
+
+    def _integrand(s, t):
+        g = relaxation_fn((jnp.clip(t - s, 0.0), constit))
+        dh_b = b * app_interp.derivative(s) * app_interp.evaluate(s) ** (b - 1)
+        return a * g * dh_b
+
+    return _integrand
+
+
+def make_dforce_integrand(constit, app_interp, tip):
+    a, b = tip.a(), tip.b()
+
+    def _integrand(s, t):
+        dG, _ = Drelaxation_fn((jnp.clip(t - s, 0.0), constit))
+        dh_b = b * app_interp.derivative(s) * app_interp.evaluate(s) ** (b - 1)
+        return a * dG * dh_b
+
+    return _integrand
+
+
+@eqx.filter_custom_vjp
+def force_approach_(t_constit, app_interp, tip):
+    t, constitutive = t_constit
+    del t_constit
+    force_integrand = make_force_integrand(constitutive, app_interp, tip)
+    args = (t,)
+    bounds = (jnp.zeros_like(t), t)
+    return integrate(force_integrand, bounds, args)
+
+
+@force_approach_.def_fwd
+def force_approach_fwd(perturbed, t_constit, app_interp, tip):
+    del perturbed
+    f_app = force_approach_(t_constit, app_interp, tip)
+    return f_app, None  # other stuff
+
+
+@force_approach_.def_bwd
+def force_approach_bwd(residuals, grad_obj, perturbed, t_constit, app_interp, tip):
+    del residuals, perturbed
+    t, constitutive = t_constit
+    del t_constit
+    force_integrand = make_force_integrand(constitutive, app_interp, tip)
+    dforce_integrand = make_dforce_integrand(constitutive, app_interp, tip)
+    args = (t,)
+    bounds = (jnp.zeros_like(t), t)
+    out = integrate(dforce_integrand, bounds, args)
+    out = out.at[0].add(force_integrand(t, t))
+    out = out * grad_obj
+    _, tree_def = Drelaxation_fn((t, constitutive))
+    return jtu.tree_unflatten(tree_def, out)
 
 
 def _force_retract(retract: Indentation, problem: _TingIndentationProblem):
@@ -116,10 +195,10 @@ def _find_t1(retract: Indentation, problem: _TingIndentationProblem):
 
     t_m = retract.time[0]
 
-    def residual(t1: float, args: tuple[float]) -> float:
-        (t,) = args
-        return integrate(problem.t1_integrand_lower, t1, t_m, t) + integrate(
-            problem.t1_integrand_upper, t_m, t, t
+    def residual(t1: float, t: float) -> float:
+
+        return integrate(problem.t1_integrand_lower, (t1, t_m), (t,)) + integrate(
+            problem.t1_integrand_upper, (t_m, t), (t,)
         )
 
     solver = optx.Bisection(rtol=1e-3, atol=1e-3, flip=True)
@@ -135,7 +214,7 @@ def _find_t1(retract: Indentation, problem: _TingIndentationProblem):
                 residual,
                 solver,
                 t_m,
-                args=(t_,),
+                args=t_,
                 options={"lower": 0.0, "upper": t_m},
                 max_steps=30,
                 throw=False,

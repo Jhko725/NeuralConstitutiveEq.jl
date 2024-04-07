@@ -117,8 +117,8 @@ velocity_ret_func = interp1d(time_ret, velocity_ret)
 # %%
 # PLR model fitting
 def PLR_constit_integand(t_, t, E0, alpha, t_prime, velocity, indentation, tip):
-    a = tip.alpha
-    b = tip.beta
+    a = tip.a()
+    b = tip.b()
     return (
         a
         * b
@@ -172,7 +172,7 @@ alpha = 0.42
 Force = F_app_integral(
     t__=time_app,
     E0_=E0,
-    alpha_=alpha,
+    alpha_= alpha,
     t_prime_=1e-5,
     indentation_=indentation_app_func,
     velocity_=velocity_app_func,
