@@ -1,77 +1,104 @@
-#%%
+# %%
+from pathlib import Path
+
 import pandas as pd
 import matplotlib.pyplot as plt
-import numpy as np
-# %%
-df_raw = pd.read_csv('open_data/PAAM hydrogel/PAA_speed 5_4nN.tab', sep='\t', skiprows=34)
-df_meta = pd.read_csv('open_data/PAAM hydrogel/PAA_speed 5_4nN.tsv', sep='\t')
-# %%
-# Assign raw data
-cp = -df_meta['Contact Point [nm]'].to_numpy() * 1e-9
+import jax
+import jax.numpy as jnp
+from jaxtyping import Array
 
-tip_position = -df_raw['tip position'].to_numpy()
-tip_height_pz = df_raw['height (piezo)'].to_numpy()
-tip_height_measured = df_raw['height (measured)'].to_numpy()
+from neuralconstitutive.indentation import Indentation
+from neuralconstitutive.plotting import plot_indentation
+from neuralconstitutive.constitutive import StandardLinearSolid
+from neuralconstitutive.tipgeometry import Spherical
+from neuralconstitutive.fitting import fit_approach, force_approach
 
-force = df_raw['force'].to_numpy()
-time = df_raw['time'].to_numpy()
-#%%
-# Visualization of force curve
-fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-axes[0].plot(tip_position*1e6, force*1e9)
-axes[0].axvline(cp*1e6, linestyle='--', color="grey", label="contact point")
-axes[0].set_xlabel("Indentation[μm]")
-axes[0].set_ylabel("Force[nN]")
-axes[0].legend()
+jax.config.update("jax_enable_x64", True)
 
-axes[1].plot(time, tip_position*1e6)
-axes[1].set_xlabel("Time[s]")
-axes[1].set_ylabel("Indentation[μm]")
 
-axes[2].plot(time, force*1e9)
-axes[2].set_xlabel("Time[s]")
-axes[2].set_ylabel("Force[nN]")
-#%%
-tip_position = tip_position-cp
-idx = np.where(0<=tip_position)
-indentation = tip_position[idx]
-force = force[idx]
-time = time[idx]
-#%%
-time = time - time[0]
-#%%
-fig, axes= plt.subplots(1, 2, figsize=(15,10))
-axes[0].plot(time, force*1e9)
-axes[0].set_xlabel("Time[s]")
-axes[0].set_ylabel("Force[nN]")
+def to_jax_numpy(series: pd.Series) -> Array:
+    return jnp.asarray(series.to_numpy())
 
-axes[1].plot(time, indentation*1e6)
-axes[1].set_xlabel("Time[s]")
-axes[1].set_ylabel("Indentation[μm]")
+
+def import_data(rawdata_file, metadata_file):
+    # Read csv files
+    df_raw = pd.read_csv(rawdata_file, sep="\t", skiprows=34)
+    df_meta = pd.read_csv(metadata_file, sep="\t")
+
+    # Extract relevant raw data
+    force = to_jax_numpy(df_raw["force"])
+    time = to_jax_numpy(df_raw["time"])
+    tip_position = -to_jax_numpy(df_raw["tip position"])
+    contact_point = -to_jax_numpy(df_meta["Contact Point [nm]"]) * 1e-9
+
+    # Retain only the indenting part of the data
+    depth = tip_position - contact_point
+    in_contact = depth >= 0
+    force, time, depth = force[in_contact], time[in_contact], depth[in_contact]
+    time = time - time[0]
+
+    # Split into approach and retract
+    idx_max = jnp.argmax(depth)
+    approach = Indentation(time[: idx_max + 1], depth[: idx_max + 1])
+    retract = Indentation(time[idx_max:], depth[idx_max:])
+    force_app, force_ret = force[: idx_max + 1], force[idx_max:]
+    return (approach, retract), (force_app, force_ret)
+
 
 # %%
-idx_max = np.argmax(force)
-force_app = force[:idx_max]
-force_ret = force[idx_max:]
+datadir = Path("open_data/PAAM hydrogel")
+(app, ret), (f_app, f_ret) = import_data(
+    datadir / "PAA_speed 5_4nN.tab", datadir / "PAA_speed 5_4nN.tsv"
+)
+# %%
+fig, axes = plt.subplots(1, 3, figsize=(10, 3))
+axes[0] = plot_indentation(axes[0], app, marker=".")
+axes[0] = plot_indentation(axes[0], ret, marker=".")
 
-time_app = time[:idx_max]
-time_ret = time[idx_max:]
+axes[1].plot(app.time, f_app, ".")
+axes[1].plot(ret.time, f_ret, ".")
 
-indentation_app = indentation[:idx_max]
-indentation_ret = indentation[idx_max:]
+axes[2].plot(app.depth, f_app, ".")
+axes[2].plot(ret.depth, f_ret, ".")
+# %%
 
-#%%
-fig, axes= plt.subplots(1, 2, figsize=(15,10))
-axes[0].plot(time_app, force_app*1e9)
-axes[0].set_xlabel("Time[s]")
-axes[0].set_ylabel("Force[nN]")
 
-axes[1].plot(time_app, indentation_app*1e6)
-axes[1].set_xlabel("Time[s]")
-axes[1].set_ylabel("Indentation[μm]")
+sls = StandardLinearSolid(5.0, 1.0, 1.0)
 
-fig, ax = plt.subplots(1, 1, figsize=(7, 5))
-ax.plot(indentation_app*1e6, force_app*1e9)
-ax.set_xlabel("Indentation[μm]")
-ax.set_ylabel("Force[nN]")
+
+def normalize_indentations(approach: Indentation, retract: Indentation):
+    t_m, h_m = approach.time[-1], approach.depth[-1]
+    t_app, t_ret = approach.time / t_m, retract.time / t_m
+    h_app, h_ret = approach.depth / h_m, retract.depth / h_m
+    app_norm = Indentation(t_app, h_app)
+    ret_norm = Indentation(t_ret, h_ret)
+    return (app_norm, ret_norm), (t_m, h_m)
+
+
+def normalize_forces(force_app, force_ret):
+    f_m = force_app[-1]
+    return (force_app / f_m, force_ret / f_m), f_m
+
+
+(f_app, f_ret), _ = normalize_forces(f_app, f_ret)
+(app, ret), (_, h_m) = normalize_indentations(app, ret)
+# %%
+tip = Spherical(5e-6 / h_m)  # Scale tip radius by the length scale we are using
+
+fig, axes = plt.subplots(1, 3, figsize=(10, 3))
+axes[0] = plot_indentation(axes[0], app, marker=".")
+axes[0] = plot_indentation(axes[0], ret, marker=".")
+
+axes[1].plot(app.time, f_app, ".")
+axes[1].plot(ret.time, f_ret, ".")
+
+axes[2].plot(app.depth, f_app, ".")
+axes[2].plot(ret.depth, f_ret, ".")
+# %%
+result = fit_approach(sls, tip, app, f_app)
+# %%
+fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+ax.plot(app.time, f_app, label="Data")
+f_fit = force_approach(result.value, app, tip)
+ax.plot(app.time, f_fit, label="Curve fit")
 # %%

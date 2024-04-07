@@ -63,7 +63,7 @@ def fit_approach(
         approach, tip, f_true = args
         del args
         f_pred = force_approach(constitutive, approach, tip)
-        return f_pred - f_true
+        return (f_pred - f_true) / f_true
 
     result = optx.least_squares(
         residual, solver, constitutive, args, throw=False, **least_squares_kwargs
@@ -78,7 +78,7 @@ indent_app = Indentation(t, h)  # Create an indentation object to store data
 del t, h  # Delete unnecessary parameters to keep the namespace a bit cleaner
 # %%
 tip = Spherical(0.5)  # Normalize tip radius by max indentation
-plr = ModifiedPowerLaw(5.0, 0.5, 1.0)
+plr = ModifiedPowerLaw(5.0, 0.5, 0.1)
 f_app = force_approach(plr, indent_app, tip)
 f_app = jax.lax.stop_gradient(
     f_app
@@ -91,11 +91,15 @@ sls = StandardLinearSolid(2.0, 0.5, 1.5)
 result = fit_approach(sls, tip, indent_app, f_app)
 # %%
 fig, axes = plt.subplots(1, 2, figsize=(5, 3))
-axes[0].plot(indent_app.time, f_app, ".", label="Data")
+axes[0].plot(indent_app.time, f_app, label="Data")
 f_fit = force_approach(result.value, indent_app, tip)
-axes[0].plot(indent_app.time, f_fit, ".", label="Curve fit")
+axes[0].plot(indent_app.time, f_fit, label="Curve fit")
 
-plor
+axes[1] = plot_relaxation_fn(axes[1], plr, indent_app.time, label="Ground truth")
+axes[1] = plot_relaxation_fn(axes[1], result.value, indent_app.time, label="Curve fit")
+for ax in axes:
+    ax.legend()
+
 # %%
-result.stats
+result.value.E_inf
 # %%
