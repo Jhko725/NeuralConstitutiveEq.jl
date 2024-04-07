@@ -128,26 +128,35 @@ def Drelaxation_fn(t_constit: tuple[float, AbstractConstitutiveEqn]):
     return dG_array, tree_def
 
 
-def force_integrand(s, t, constit, app_interp, tip):
-    g = relaxation_fn((t - s, constit))
+def make_force_integrand(constit, app_interp, tip):
     a, b = tip.a(), tip.b()
-    d_hb = b * app_interp.derivative(s) * app_interp.evaluate(s) ** (b - 1)
-    return a * g * d_hb
+
+    def _integrand(s, t):
+        g = relaxation_fn((jnp.clip(t - s, 0.0), constit))
+        dh_b = b * app_interp.derivative(s) * app_interp.evaluate(s) ** (b - 1)
+        return a * g * dh_b
+
+    return _integrand
 
 
-def Dforce_integrand(s, t, constit, app_interp, tip):
-    dG, _ = Drelaxation_fn((t - s, constit))
+def make_dforce_integrand(constit, app_interp, tip):
     a, b = tip.a(), tip.b()
-    d_hb = b * app_interp.derivative(s) * app_interp.evaluate(s) ** (b - 1)
-    return a * dG * d_hb
+
+    def _integrand(s, t):
+        dG, _ = Drelaxation_fn((jnp.clip(t - s, 0.0), constit))
+        dh_b = b * app_interp.derivative(s) * app_interp.evaluate(s) ** (b - 1)
+        return a * dG * dh_b
+
+    return _integrand
 
 
 @eqx.filter_custom_vjp
 def force_approach_(t_constit, app_interp, tip):
     t, constitutive = t_constit
     del t_constit
-    args = (t, constitutive, app_interp, tip)
-    bounds = (0.0, t)
+    force_integrand = make_force_integrand(constitutive, app_interp, tip)
+    args = (t,)
+    bounds = (jnp.zeros_like(t), t)
     return integrate(force_integrand, bounds, args)
 
 
@@ -163,10 +172,12 @@ def force_approach_bwd(residuals, grad_obj, perturbed, t_constit, app_interp, ti
     del residuals, perturbed
     t, constitutive = t_constit
     del t_constit
-    args = (t, constitutive, app_interp, tip)
+    force_integrand = make_force_integrand(constitutive, app_interp, tip)
+    dforce_integrand = make_dforce_integrand(constitutive, app_interp, tip)
+    args = (t,)
     bounds = (jnp.zeros_like(t), t)
-    out = integrate(Dforce_integrand, bounds, args)
-    out = out.at[0].add(force_integrand(t, t, constitutive, app_interp, tip))
+    out = integrate(dforce_integrand, bounds, args)
+    out = out.at[0].add(force_integrand(t, t))
     out = out * grad_obj
     _, tree_def = Drelaxation_fn((t, constitutive))
     return jtu.tree_unflatten(tree_def, out)

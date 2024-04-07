@@ -26,7 +26,7 @@ class AbstractConstitutiveEqn(eqx.Module):
 class PowerLaw(AbstractConstitutiveEqn):
     E0: FloatScalar = floatscalar_field()
     alpha: FloatScalar = floatscalar_field()
-    t0: FloatScalar = floatscalar_field(static=True)
+    t0: float
 
     def relaxation_function(self, t):
         return self.E0 * (t / self.t0) ** (-self.alpha)
@@ -35,7 +35,7 @@ class PowerLaw(AbstractConstitutiveEqn):
 class ModifiedPowerLaw(AbstractConstitutiveEqn):
     E0: FloatScalar = floatscalar_field()
     alpha: FloatScalar = floatscalar_field()
-    t0: FloatScalar = floatscalar_field(static=True)
+    t0: float
 
     def relaxation_function(self, t):
         return self.E0 * (1 + t / self.t0) ** (-self.alpha)
