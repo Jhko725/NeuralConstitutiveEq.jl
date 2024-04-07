@@ -35,7 +35,7 @@ class PowerLaw(AbstractConstitutiveEqn):
 class ModifiedPowerLaw(AbstractConstitutiveEqn):
     E0: FloatScalar = floatscalar_field()
     alpha: FloatScalar = floatscalar_field()
-    t0: float
+    t0: FloatScalar = floatscalar_field()
 
     def relaxation_function(self, t):
         return self.E0 * (1 + t / self.t0) ** (-self.alpha)
