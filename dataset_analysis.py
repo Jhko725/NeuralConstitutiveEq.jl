@@ -21,7 +21,7 @@ from neuralconstitutive.constitutive import (
     KohlrauschWilliamsWatts,
 )
 from neuralconstitutive.tipgeometry import AbstractTipGeometry, Spherical
-from neuralconstitutive.fitting import fit_approach, force_approach
+from neuralconstitutive.fitting import fit_approach, force_approach, force_retract
 from neuralconstitutive.ting import force_ting
 
 jax.config.update("jax_enable_x64", True)
@@ -62,6 +62,7 @@ def import_data(rawdata_file, metadata_file):
     force_app, force_ret = force[: idx_max + 1], force[idx_max:]
 
     approach, retract = smooth_data(approach), smooth_data(retract)
+    force_ret = jnp.clip(force_ret, 0.0)
     return (approach, retract), (force_app, force_ret)
 
 
@@ -119,7 +120,25 @@ def fit_approach_lmfit(
     result = lmfit.minimize(residual, params, args=(approach, force))
     return result
 
+def fit_all_lmfit(
+    constitutive: AbstractConstitutiveEqn,
+    bounds: Sequence[tuple[float, float] | None],
+    tip: AbstractTipGeometry,
+    indentations: tuple[Indentation, Indentation],
+    force: Float[Array, " {len(approach)}"],
+):
+    params = constitutive_to_params(constitutive, bounds)
 
+    def residual(
+        params: lmfit.Parameters, indentations, forces
+    ) -> Float[Array, " N"]:
+        constit = params_to_constitutive(params, constitutive)
+        f_pred_app = force_approach(constit, indentations[0], tip)
+        f_pred_ret = force_retract(constit, indentations, tip)
+        return jnp.concatenate((f_pred_app-forces[0], f_pred_ret-forces[1]))
+
+    result = lmfit.minimize(residual, params, args=(indentations, force), max_nfev=100)
+    return result
 # %%
 datadir = Path("open_data/PAAM hydrogel")
 (app, ret), (f_app, f_ret) = import_data(
@@ -168,35 +187,32 @@ axes[2].plot(app.depth, f_app, ".")
 axes[2].plot(ret.depth, f_ret, ".")
 # %%
 bounds = [(0.0, jnp.inf)] * 3
+sls = StandardLinearSolid(1.0, 1.0, 10.0)
 result = fit_approach_lmfit(sls, bounds, tip, app, f_app)
 
 # %%
 sls_fit = params_to_constitutive(result.params, sls)
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
 ax.plot(app.time, f_app, label="Data")
-f_fit = force_approach(sls_fit, app, tip)
-ax.plot(app.time, f_fit, label="Curve fit")
+f_fit_app = force_approach(sls_fit, app, tip)
+ax.plot(app.time, f_fit_app, label="Curve fit")
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
 plot_relaxation_fn(ax, sls_fit, app.time)
 # %%
-import diffrax
+fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+ax.plot(app.time, f_app, label="Data")
+ax.plot(ret.time, f_ret, label="Data")
+f_fit_ret = force_retract(sls_fit, (app, ret), tip)
+ax.plot(app.time, f_fit_app, label="Curve fit")
+ax.plot(ret.time, f_fit_ret, label="Curve fit")
+#%%
+%%timeit
+f_fit_ret = force_retract(sls_fit, (app, ret), tip)
+# %%
+%%timeit
+result = fit_approach_lmfit(sls, bounds, tip, app, f_app)
 
-# axes[1].plot(app.time, app_interp.derivative(app.time))
 # %%
-
-sls_fit
-# %%
-spl = make_smoothing_spline(app.time, app.depth)
-dspl = spl.derivative()
-# %%
-app_interp2 = diffrax.LinearInterpolation(app.time, spl(app.time))
-fig, ax = plt.subplots(1, 1, figsize=(10, 3))
-ax.plot(app.time, app_interp.derivative(app.time))
-ax.plot(app.time, dspl(app.time))
-ax.plot(app.time, app_interp2.derivative(app.time))
-# %%
-app_interp2 = diffrax.LinearInterpolation(app.time, spl(app.time))
-# %%
-
+result = fit_all_lmfit(sls, bounds, tip, (app, ret), (f_app, f_ret))
 # %%
