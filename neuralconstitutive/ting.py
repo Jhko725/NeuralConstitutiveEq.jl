@@ -90,7 +90,7 @@ def force_ting(
     f_ret = _force_retract(retract, ting)
     return f_app, f_ret
 
-
+@eqx.filter_jit
 def force_approach(
     constitutive: AbstractConstitutiveEqn,
     approach: Indentation,

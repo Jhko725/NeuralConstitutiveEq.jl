@@ -14,6 +14,7 @@ from neuralconstitutive.tipgeometry import AbstractTipGeometry
 from neuralconstitutive.integrate import integrate
 
 
+@eqx.filter_jit
 def force_approach(constitutive, approach, tip):
     return eqx.filter_vmap(force_approach_auto, in_axes=(None, 0, None, None))(
         constitutive, approach.time, tip, approach

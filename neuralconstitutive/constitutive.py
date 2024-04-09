@@ -42,12 +42,16 @@ class ModifiedPowerLaw(AbstractConstitutiveEqn):
 
 
 class StandardLinearSolid(AbstractConstitutiveEqn):
-    E0: FloatScalar = floatscalar_field()
+    E1: FloatScalar = floatscalar_field()
     E_inf: FloatScalar = floatscalar_field()
     tau: FloatScalar = floatscalar_field()
 
+    @property
+    def E0(self) -> FloatScalar:
+        return self.E_inf + self.E1
+
     def relaxation_function(self, t):
-        return self.E_inf + (self.E0 - self.E_inf) * jnp.exp(-t / self.tau)
+        return self.E_inf + self.E1 * jnp.exp(-t / self.tau)
 
 
 class KohlrauschWilliamsWatts(AbstractConstitutiveEqn):
