@@ -1,5 +1,7 @@
 # %%
 # ruff: noqa: F722
+from typing import Callable
+
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
@@ -37,8 +39,106 @@ plr = ModifiedPowerLaw(1.0, 0.5, 1.0)
 tip = Conical(jnp.pi / 18)
 del t, h, t_ret, h_ret
 app_interp = diffrax.LinearInterpolation(app.time, app.depth)
+ret_interp = diffrax.LinearInterpolation(ret.time, ret.depth)
 
 
+# %%
+def make_force_integrand(constitutive, approach, tip):
+
+    a, b = tip.a(), tip.b()
+
+    def dF(s, t):
+        g = constitutive.relaxation_function(jnp.clip(t - s, 0.0))
+        dh_b = b * approach.derivative(s) * approach.evaluate(s) ** (b - 1)
+        return a * g * dh_b
+
+    return dF
+
+
+def force_approach_scalar(
+    t: FloatScalar,
+    constitutive: AbstractConstitutiveEqn,
+    approach: Indentation,
+    tip: AbstractTipGeometry,
+) -> FloatScalar:
+    app_interp = diffrax.LinearInterpolation(approach.time, approach.depth)
+
+    dF = make_force_integrand(constitutive, app_interp, tip)
+    dF = eqx.filter_closure_convert(dF, approach.time[0], approach.time[1])
+
+    return integrate(dF, (0, t), (t,))
+
+
+def make_t1_integrands(constitutive, indentations) -> tuple[Callable, Callable]:
+    app_interp, ret_interp = indentations
+
+    def t1_integrand_lower(s, t):
+        return constitutive.relaxation_function(t - s) * app_interp.derivative(s)
+
+    def t1_integrand_upper(s, t):
+        return constitutive.relaxation_function(t - s) * ret_interp.derivative(s)
+
+    return t1_integrand_lower, t1_integrand_upper
+
+
+def t1_scalar(
+    t: FloatScalar,
+    constitutive: AbstractConstitutiveEqn,
+    indentations: tuple[diffrax.AbstractPath, diffrax.AbstractPath],
+) -> FloatScalar:
+    t1_integrand_lower, t1_integrand_upper = make_t1_integrands(
+        constitutive, indentations
+    )
+    t_m = indentations[0].t1  # Unfortunate mixup of names between my code and diffrax
+    # In diffrax.AbstractPath, t1 attribute returns the final timepoint of the path
+    const = integrate(t1_integrand_upper, (t_m, t), (t,))
+
+    def residual(t1, t):
+        return integrate(t1_integrand_lower, (t1, t_m), (t,)) + const
+
+    solver = optx.Bisection(rtol=1e-3, atol=1e-3, flip=True)
+
+    cond = residual(0.0, t) <= 0
+    t_ = jnp.where(cond, t_m, t)
+    return jnp.where(
+        cond,
+        jnp.zeros_like(t),
+        optx.root_find(
+            residual,
+            solver,
+            t_m,
+            args=t_,
+            options={"lower": 0.0, "upper": t_m},
+            throw=False,
+        ).value,
+    )
+
+
+def force_retract_scalar(
+    t: FloatScalar,
+    constitutive: AbstractConstitutiveEqn,
+    indentations: tuple[diffrax.AbstractPath, diffrax.AbstractPath],
+    tip: AbstractTipGeometry,
+) -> FloatScalar:
+
+    t1 = t1_scalar(t, constitutive, indentations)
+    dF = make_force_integrand(constitutive, indentations[0], tip)
+
+    return integrate(dF, (0, t1), (t,))
+#%%
+@eqx.filter_jit
+def force_approach(constitutive, approach, tip):
+    app_interp = diffrax.LinearInterpolation(approach.time, approach.depth)
+    _force_approach = eqx.filter_vmap(force_approach_scalar, in_axes=(0, None, None, None))
+    return _force_approach(approach.time, constitutive, app_interp, tip)
+
+@eqx.filter_jit
+def force_retract(constitutive, indentations, tip):
+    app, ret = indentations
+    app_interp = diffrax.LinearInterpolation(app.time, app.depth)
+    ret_interp = diffrax.LinearInterpolation(ret.time, ret.depth)
+    _force_retract = eqx.filter_vmap(force_retract_scalar, in_axes=(0, None, None, None))
+    return _force_retract(ret.time, constitutive, (app_interp, ret_interp), tip)
 # %%
 def force_integrand(
     t_constit: tuple[FloatScalar, AbstractConstitutiveEqn],
@@ -52,6 +152,28 @@ def force_integrand(
     G = constit.relaxation_function(jnp.clip(t - s, 0.0))
     dh_b = b * indent_app.derivative(s) * indent_app.evaluate(s) ** (b - 1)
     return a * dh_b * G
+
+
+# %%
+%%timeit
+t1_ret = eqx.filter_vmap(t1_scalar, in_axes=(0, None, None))(
+    ret.time, plr, (app_interp, ret_interp)
+)
+# %%
+fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+ax.plot(
+    ret.time,
+    t1_ret,
+)
+#%%
+%%timeit
+f_ret = force_retract(plr, (app, ret), tip)
+# %%
+fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+ax.plot(
+    ret.time,
+    f_ret,
+)
 
 
 # %%
