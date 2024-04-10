@@ -1,8 +1,6 @@
 # %%
-# ruff: noqa: F722]
-from typing import Sequence, TypeVar
+# ruff: noqa: F722
 from pathlib import Path
-import dataclasses
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -10,19 +8,16 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Float, Array
 from scipy.interpolate import make_smoothing_spline
-import lmfit
 
-from neuralconstitutive.constitutive import AbstractConstitutiveEqn
 from neuralconstitutive.indentation import Indentation
-from neuralconstitutive.plotting import plot_indentation, plot_relaxation_fn
+from neuralconstitutive.plotting import plot_indentation
 from neuralconstitutive.constitutive import (
     StandardLinearSolid,
     ModifiedPowerLaw,
     KohlrauschWilliamsWatts,
 )
-from neuralconstitutive.tipgeometry import AbstractTipGeometry, Spherical
+from neuralconstitutive.tipgeometry import Spherical
 from neuralconstitutive.fitting import fit_approach, force_approach
-from neuralconstitutive.ting import force_ting
 
 jax.config.update("jax_enable_x64", True)
 
@@ -66,61 +61,6 @@ def import_data(rawdata_file, metadata_file):
 
 
 # %%
-
-sls = StandardLinearSolid(1.0, 1.0, 10.0)
-
-
-# %%
-def constitutive_to_params(
-    constit, bounds: Sequence[tuple[float, float] | None]
-) -> lmfit.Parameters:
-    params = lmfit.Parameters()
-
-    constit_dict = dataclasses.asdict(constit)  # Equinox modules are dataclasses
-    assert len(constit_dict) == len(
-        bounds
-    ), "Length of bounds should match the number of parameters in consitt"
-
-    for (k, v), bound in zip(constit_dict.items(), bounds):
-        if bound is None:
-            max_, min_ = None, None
-        else:
-            max_, min_ = bound
-
-        params.add(k, value=float(v), min=min_, max=max_)
-
-    return params
-
-
-ConstitEqn = TypeVar("ConstitEqn", bound=AbstractConstitutiveEqn)
-
-
-def params_to_constitutive(params: lmfit.Parameters, constit: ConstitEqn) -> ConstitEqn:
-    return type(constit)(**params.valuesdict())
-
-
-# %%
-def fit_approach_lmfit(
-    constitutive: AbstractConstitutiveEqn,
-    bounds: Sequence[tuple[float, float] | None],
-    tip: AbstractTipGeometry,
-    approach: Indentation,
-    force: Float[Array, " {len(approach)}"],
-):
-    params = constitutive_to_params(constitutive, bounds)
-
-    def residual(
-        params: lmfit.Parameters, indentation: Indentation, force: Float[Array, " N"]
-    ) -> Float[Array, " N"]:
-        constit = params_to_constitutive(params, constitutive)
-        f_pred = force_approach(constit, indentation, tip)
-        return f_pred - force
-
-    result = lmfit.minimize(residual, params, args=(approach, force))
-    return result
-
-
-# %%
 datadir = Path("open_data/PAAM hydrogel")
 (app, ret), (f_app, f_ret) = import_data(
     datadir / "PAA_speed 5_4nN.tab", datadir / "PAA_speed 5_4nN.tsv"
@@ -136,7 +76,8 @@ axes[1].plot(ret.time, f_ret, ".")
 axes[2].plot(app.depth, f_app, ".")
 axes[2].plot(ret.depth, f_ret, ".")
 # %%
-
+sls = StandardLinearSolid(5.0, 1.0, 1.0)
+plr = ModifiedPowerLaw(1.0, 1.0, 1.0)
 
 def normalize_indentations(approach: Indentation, retract: Indentation):
     t_m, h_m = approach.time[-1], approach.depth[-1]
@@ -167,26 +108,31 @@ axes[1].plot(ret.time, f_ret, ".")
 axes[2].plot(app.depth, f_app, ".")
 axes[2].plot(ret.depth, f_ret, ".")
 # %%
-bounds = [(0.0, jnp.inf)] * 3
-result = fit_approach_lmfit(sls, bounds, tip, app, f_app)
-
+result_sls = fit_approach(sls, tip, app, f_app)
+print(result_sls.value.E0, result_sls.value.E_inf, result_sls.value.tau)
 # %%
-sls_fit = params_to_constitutive(result.params, sls)
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
 ax.plot(app.time, f_app, label="Data")
-f_fit = force_approach(sls_fit, app, tip)
-ax.plot(app.time, f_fit, label="Curve fit")
+f_fit_sls = force_approach(result_sls.value, app, tip)
+ax.plot(app.time, f_fit_sls, label="Curve fit")
+#%%
+result_plr = fit_approach(plr, tip, app, f_app)
+print(result_plr.value.E0, result_plr.value.alpha, result_plr.value.t0)
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-plot_relaxation_fn(ax, sls_fit, app.time)
+ax.plot(app.time, f_app, label="Data")
+f_fit_plr = force_approach(result_plr.value, app, tip)
+ax.plot(app.time, f_fit_plr, label="Curve fit")
 # %%
 import diffrax
 
+app_interp = diffrax.LinearInterpolation(app.time, app.depth)
+fig, ax = plt.subplots(1, 1, figsize=(10, 3))
+ax.plot(app.time, app.depth)
 # axes[1].plot(app.time, app_interp.derivative(app.time))
 # %%
 
-sls_fit
-# %%
+
 spl = make_smoothing_spline(app.time, app.depth)
 dspl = spl.derivative()
 # %%
@@ -197,6 +143,5 @@ ax.plot(app.time, dspl(app.time))
 ax.plot(app.time, app_interp2.derivative(app.time))
 # %%
 app_interp2 = diffrax.LinearInterpolation(app.time, spl(app.time))
-# %%
 
 # %%
