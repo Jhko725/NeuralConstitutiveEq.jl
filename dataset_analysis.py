@@ -68,7 +68,7 @@ def import_data(rawdata_file, metadata_file):
 
 # %%
 
-sls = StandardLinearSolid(1.0, 1.0, 10.0)
+sls = StandardLinearSolid(10.0, 10.0, 10.0)
 
 
 # %%
@@ -137,7 +137,7 @@ def fit_all_lmfit(
         f_pred_ret = force_retract(constit, indentations, tip)
         return jnp.concatenate((f_pred_app-forces[0], f_pred_ret-forces[1]))
 
-    result = lmfit.minimize(residual, params, args=(indentations, force), max_nfev=100)
+    result = lmfit.minimize(residual, params, args=(indentations, force))
     return result
 # %%
 datadir = Path("open_data/PAAM hydrogel")
@@ -155,8 +155,6 @@ axes[1].plot(ret.time, f_ret, ".")
 axes[2].plot(app.depth, f_app, ".")
 axes[2].plot(ret.depth, f_ret, ".")
 # %%
-
-
 def normalize_indentations(approach: Indentation, retract: Indentation):
     t_m, h_m = approach.time[-1], approach.depth[-1]
     t_app, t_ret = approach.time / t_m, retract.time / t_m
@@ -185,17 +183,36 @@ axes[1].plot(ret.time, f_ret, ".")
 
 axes[2].plot(app.depth, f_app, ".")
 axes[2].plot(ret.depth, f_ret, ".")
+#%%
+import diffrax
+fig, ax = plt.subplots(1, 1, figsize = (5, 3))
+interp_app = diffrax.LinearInterpolation(app.time, app.depth)
+ax.plot(app.time, interp_app.derivative(app.time))
+#%%
+fig, ax = plt.subplots(1, 1, figsize = (5, 3))
+interp_app = diffrax.LinearInterpolation(app.time, app.depth)
+v = interp_app.derivative(app.time)
+h = interp_app.evaluate(app.time)
+ax.plot(app.time, v*h**(tip.b()-1), ".")
+ax.set_xlim((0.9, 1.0))
+#app_smooth = smooth_data(app)
+#interp_app2 = diffrax.LinearInterpolation(app.time, app_smooth.depth)
+#ax.plot(app.time, interp_app2.derivative(app.time))
+
+
 # %%
 bounds = [(0.0, jnp.inf)] * 3
-sls = StandardLinearSolid(1.0, 1.0, 10.0)
+sls = StandardLinearSolid(10.0, 10.0, 10.0)
 result = fit_approach_lmfit(sls, bounds, tip, app, f_app)
-
+#%%
+result
 # %%
 sls_fit = params_to_constitutive(result.params, sls)
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-ax.plot(app.time, f_app, label="Data")
+ax.plot(app.time, f_app, label="Data", alpha = 0.7)
 f_fit_app = force_approach(sls_fit, app, tip)
-ax.plot(app.time, f_fit_app, label="Curve fit")
+ax.plot(app.time, f_fit_app, label="Curve fit", alpha = 0.7)
+ax.legend()
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
 plot_relaxation_fn(ax, sls_fit, app.time)
@@ -214,5 +231,36 @@ f_fit_ret = force_retract(sls_fit, (app, ret), tip)
 result = fit_approach_lmfit(sls, bounds, tip, app, f_app)
 
 # %%
+#%%timeit
 result = fit_all_lmfit(sls, bounds, tip, (app, ret), (f_app, f_ret))
+# %%
+sls_fit= params_to_constitutive(result.params, sls)
+fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+ax.plot(app.time, f_app, label="Data")
+ax.plot(ret.time, f_ret, label="Data")
+f_fit_app = force_approach(sls_fit, app, tip)
+f_fit_ret = force_retract(sls_fit, (app, ret), tip)
+ax.plot(app.time, f_fit_app, label="Curve fit")
+ax.plot(ret.time, f_fit_ret, label="Curve fit")
+# %%
+result
+#%%
+fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+plot_relaxation_fn(ax, sls_fit, app.time)
+# %%
+
+fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+sls = StandardLinearSolid(10.0, 10.0, 10.0)
+f_fit_app = force_approach(sls, app, tip)
+f_fit_ret = force_retract(sls, (app, ret), tip)
+ax.plot(app.time, f_fit_app, label="SLS1")
+ax.plot(ret.time, f_fit_ret, label="SLS1")
+
+sls2 = StandardLinearSolid(10.0, 10.0, 9.0)
+f_fit_app2 = force_approach(sls2, app, tip)
+f_fit_ret2 = force_retract(sls2, (app, ret), tip)
+ax.plot(app.time, f_fit_app2, label="SLS2", alpha = 0.7)
+ax.plot(ret.time, f_fit_ret2, label="SLS2", alpha = 0.7)
+# %%
+plt.plot(ret.time, f_fit_ret - f_fit_ret2)
 # %%
