@@ -1,8 +1,8 @@
 # %%
-# ruff: noqa: F722]
-from typing import Sequence, TypeVar
-from pathlib import Path
+# ruff: noqa: F722
+from typing import TypeVar, Sequence
 import dataclasses
+from pathlib import Path
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -12,10 +12,10 @@ from jaxtyping import Float, Array
 from scipy.interpolate import make_smoothing_spline
 import lmfit
 
-from neuralconstitutive.constitutive import AbstractConstitutiveEqn
 from neuralconstitutive.indentation import Indentation
 from neuralconstitutive.plotting import plot_indentation, plot_relaxation_fn
 from neuralconstitutive.constitutive import (
+    AbstractConstitutiveEqn,
     StandardLinearSolid,
     ModifiedPowerLaw,
     KohlrauschWilliamsWatts,
@@ -207,7 +207,6 @@ result = fit_approach_lmfit(sls, bounds, tip, app, f_app)
 #%%
 result
 # %%
-sls_fit = params_to_constitutive(result.params, sls)
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
 ax.plot(app.time, f_app, label="Data", alpha = 0.7)
 f_fit_app = force_approach(sls_fit, app, tip)
@@ -215,7 +214,9 @@ ax.plot(app.time, f_fit_app, label="Curve fit", alpha = 0.7)
 ax.legend()
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-plot_relaxation_fn(ax, sls_fit, app.time)
+ax.plot(app.time, f_app, label="Data")
+f_fit_plr = force_approach(result_plr.value, app, tip)
+ax.plot(app.time, f_fit_plr, label="Curve fit")
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
 ax.plot(app.time, f_app, label="Data")
