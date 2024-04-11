@@ -36,7 +36,8 @@ h_ret = 2.0 - t_ret
 ret = Indentation(t_ret, h_ret)
 # plr = PowerLaw(2.0, 0.5, 1.0)
 # fung = Fung(10.0, 0.1, 10.0, 1.0)
-plr = ModifiedPowerLaw(1.0, 0.5, 1.0)
+#plr = ModifiedPowerLaw(1.0, 0.5, 1.0)
+plr = StandardLinearSolid(1.0, 1.0, 10.0)
 tip = Conical(jnp.pi / 18)
 del t, h, t_ret, h_ret
 app_interp = diffrax.LinearInterpolation(app.time, app.depth)
@@ -200,6 +201,7 @@ fig, ax = plt.subplots(1, 1, figsize = (5, 3))
 ax.plot(ret.time, f_ret, ".", label = "optx")
 ax.plot(ret.time, f_ret2, ".", label = "newton")
 ax.legend()
+
 #%%
 def force_integrand(
     t_constit: tuple[FloatScalar, AbstractConstitutiveEqn],
