@@ -12,7 +12,7 @@ from neuralconstitutive.constitutive import (
 )
 from neuralconstitutive.indentation import Indentation, interpolate_indentation
 from neuralconstitutive.tipgeometry import AbstractTipGeometry
-from neuralconstitutive.ting import _force_approach, force_retract
+from neuralconstitutive.ting import _force_approach, force_retract, force_approach
 
 ConstitEqn = TypeVar("ConstitEqn", bound=AbstractConstitutiveEqn)
 

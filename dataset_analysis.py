@@ -61,8 +61,9 @@ axes[2].plot(ret.depth, f_ret, ".")
 constit = StandardLinearSolid(10.0, 10.0, 10.0)
 bounds = [(0.0, jnp.inf)] * 3
 #%%
-#%%timeit
+%%timeit
 constit_fit, result = fit_approach_lmfit(constit, bounds, tip, app, f_app)
+#%%
 display(result)
 #%%
 fig, axes = plt.subplots(1, 2, figsize=(7, 3))

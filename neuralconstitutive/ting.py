@@ -89,12 +89,13 @@ def force_retract_scalar(
     return integrate(dF, (0, t1), (t,))
 
 
+_force_approach = eqx.filter_vmap(force_approach_scalar, in_axes=(0, None, None, None))
+_force_retract = eqx.filter_vmap(force_retract_scalar, in_axes=(0, None, None, None))
+
+
 @eqx.filter_jit
 def force_approach(constitutive, approach, tip, *, interp_method: str = "cubic"):
     app_interp = interpolate_indentation(approach, method=interp_method)
-    _force_approach = eqx.filter_vmap(
-        force_approach_scalar, in_axes=(0, None, None, None)
-    )
     return _force_approach(approach.time, constitutive, app_interp, tip)
 
 
@@ -103,7 +104,4 @@ def force_retract(constitutive, indentations, tip, *, interp_method: str = "cubi
     app, ret = indentations
     app_interp = interpolate_indentation(app, method=interp_method)
     ret_interp = interpolate_indentation(ret, method=interp_method)
-    _force_retract = eqx.filter_vmap(
-        force_retract_scalar, in_axes=(0, None, None, None)
-    )
     return _force_retract(ret.time, constitutive, (app_interp, ret_interp), tip)
