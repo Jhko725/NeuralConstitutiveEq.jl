@@ -2,15 +2,13 @@
 from typing import Callable
 
 import jax.numpy as jnp
-import jax.tree_util as jtu
-from jaxtyping import Float, Array
 import equinox as eqx
 import diffrax
 
 from neuralconstitutive.custom_types import FloatScalar
 from neuralconstitutive.constitutive import AbstractConstitutiveEqn
 from neuralconstitutive.tipgeometry import AbstractTipGeometry
-from neuralconstitutive.indentation import Indentation, interpolate_indentation
+from neuralconstitutive.indentation import interpolate_indentation
 from neuralconstitutive.integrate import integrate
 
 

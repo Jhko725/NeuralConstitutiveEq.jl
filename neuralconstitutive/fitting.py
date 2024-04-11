@@ -4,14 +4,15 @@ import dataclasses
 
 import jax.numpy as jnp
 from jaxtyping import Float, Array
+import equinox as eqx
 import lmfit
 
 from neuralconstitutive.constitutive import (
     AbstractConstitutiveEqn,
 )
-from neuralconstitutive.indentation import Indentation
+from neuralconstitutive.indentation import Indentation, interpolate_indentation
 from neuralconstitutive.tipgeometry import AbstractTipGeometry
-from neuralconstitutive.ting import force_approach, force_retract
+from neuralconstitutive.ting import _force_approach, force_retract
 
 ConstitEqn = TypeVar("ConstitEqn", bound=AbstractConstitutiveEqn)
 
@@ -49,15 +50,18 @@ def fit_approach_lmfit(
     force: Float[Array, " {len(approach)}"],
 ):
     params = constitutive_to_params(constitutive, bounds)
+    app_interp = interpolate_indentation(approach)
 
-    def residual(
-        params: lmfit.Parameters, indentation: Indentation, force: Float[Array, " N"]
-    ) -> Float[Array, " N"]:
-        constit = params_to_constitutive(params, constitutive)
-        f_pred = force_approach(constit, indentation, tip)
+    @eqx.filter_jit
+    def _residual_jax(constit):
+        f_pred = _force_approach(approach.time, constit, app_interp, tip)
         return f_pred - force
 
-    result = lmfit.minimize(residual, params, args=(approach, force))
+    def residual(params: lmfit.Parameters, args) -> Float[Array, " N"]:
+        constit = params_to_constitutive(params, constitutive)
+        return _residual_jax(constit)
+
+    result = lmfit.minimize(residual, params, args=(None,))
     constit_fit = params_to_constitutive(result.params, constitutive)
     return constit_fit, result
 

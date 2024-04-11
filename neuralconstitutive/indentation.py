@@ -21,7 +21,7 @@ InterpolationMethod = Literal["linear", "cubic"]
 
 
 def interpolate_indentation(
-    indentation: Indentation, *, method: InterpolationMethod
+    indentation: Indentation, *, method: InterpolationMethod = "cubic"
 ) -> diffrax.AbstractPath:
     ts, ys = indentation.time, indentation.depth
     match method:

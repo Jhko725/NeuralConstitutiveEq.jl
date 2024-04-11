@@ -20,7 +20,7 @@ from neuralconstitutive.constitutive import (
     Fung,
 )
 from neuralconstitutive.tipgeometry import AbstractTipGeometry, Conical
-from neuralconstitutive.indentation import Indentation
+from neuralconstitutive.indentation import Indentation, interpolate_indentation
 from neuralconstitutive.integrate import integrate
 
 # from neuralconstitutive.ting import force_ting, force_approach
