@@ -18,5 +18,5 @@ def integrate(fn: Callable, bounds: tuple[float, float], args: tuple):
     return jnp.where(
         cond,
         0.0,
-        quadax.quadgk(fn, (lower, upper_), args, epsabs=1e-4, epsrel=1e-4)[0],
+        quadax.quadgk(fn, (lower, upper_), args)[0],
     )

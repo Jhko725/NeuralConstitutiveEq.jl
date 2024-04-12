@@ -1,5 +1,7 @@
 # %%
 # ruff: noqa: F722
+from typing import Callable
+
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
@@ -13,11 +15,12 @@ from neuralconstitutive.custom_types import FloatScalar
 from neuralconstitutive.constitutive import (
     AbstractConstitutiveEqn,
     ModifiedPowerLaw,
+    StandardLinearSolid,
     PowerLaw,
     Fung,
 )
 from neuralconstitutive.tipgeometry import AbstractTipGeometry, Conical
-from neuralconstitutive.indentation import Indentation
+from neuralconstitutive.indentation import Indentation, interpolate_indentation
 from neuralconstitutive.integrate import integrate
 
 # from neuralconstitutive.ting import force_ting, force_approach
@@ -33,13 +36,173 @@ h_ret = 2.0 - t_ret
 ret = Indentation(t_ret, h_ret)
 # plr = PowerLaw(2.0, 0.5, 1.0)
 # fung = Fung(10.0, 0.1, 10.0, 1.0)
-plr = ModifiedPowerLaw(1.0, 0.5, 1.0)
+#plr = ModifiedPowerLaw(1.0, 0.5, 1.0)
+plr = StandardLinearSolid(1.0, 1.0, 10.0)
 tip = Conical(jnp.pi / 18)
 del t, h, t_ret, h_ret
 app_interp = diffrax.LinearInterpolation(app.time, app.depth)
+ret_interp = diffrax.LinearInterpolation(ret.time, ret.depth)
 
 
 # %%
+def make_force_integrand(constitutive, approach, tip):
+
+    a, b = tip.a(), tip.b()
+
+    def dF(s, t):
+        g = constitutive.relaxation_function(jnp.clip(t - s, 0.0))
+        dh_b = b * approach.derivative(s) * approach.evaluate(s) ** (b - 1)
+        return a * g * dh_b
+
+    return dF
+
+
+def force_approach_scalar(
+    t: FloatScalar,
+    constitutive: AbstractConstitutiveEqn,
+    approach: Indentation,
+    tip: AbstractTipGeometry,
+) -> FloatScalar:
+    app_interp = diffrax.LinearInterpolation(approach.time, approach.depth)
+
+    dF = make_force_integrand(constitutive, app_interp, tip)
+    dF = eqx.filter_closure_convert(dF, approach.time[0], approach.time[1])
+
+    return integrate(dF, (0, t), (t,))
+
+
+def make_t1_integrands(constitutive, indentations) -> tuple[Callable, Callable]:
+    app_interp, ret_interp = indentations
+
+    def t1_integrand_lower(s, t):
+        return constitutive.relaxation_function(t - s) * app_interp.derivative(s)
+
+    def t1_integrand_upper(s, t):
+        return constitutive.relaxation_function(t - s) * ret_interp.derivative(s)
+
+    return t1_integrand_lower, t1_integrand_upper
+
+
+def t1_scalar(
+    t: FloatScalar,
+    constitutive: AbstractConstitutiveEqn,
+    indentations: tuple[diffrax.AbstractPath, diffrax.AbstractPath],
+) -> FloatScalar:
+    t1_integrand_lower, t1_integrand_upper = make_t1_integrands(
+        constitutive, indentations
+    )
+    t_m = indentations[0].t1  # Unfortunate mixup of names between my code and diffrax
+    # In diffrax.AbstractPath, t1 attribute returns the final timepoint of the path
+    const = integrate(t1_integrand_upper, (t_m, t), (t,))
+
+    def residual(t1, t):
+        return integrate(t1_integrand_lower, (t1, t_m), (t,)) + const
+
+    solver = optx.Bisection(rtol=1e-3, atol=1e-3, flip=True)
+
+    cond = residual(0.0, t) <= 0
+    t_ = jnp.where(cond, t_m, t)
+    return jnp.where(
+        cond,
+        jnp.zeros_like(t),
+        optx.root_find(
+            residual,
+            solver,
+            t_m,
+            args=t_,
+            options={"lower": 0.0, "upper": t_m},
+            throw=False,
+        ).value,
+    )
+
+
+def force_retract_scalar(
+    t: FloatScalar,
+    constitutive: AbstractConstitutiveEqn,
+    indentations: tuple[diffrax.AbstractPath, diffrax.AbstractPath],
+    tip: AbstractTipGeometry,
+) -> FloatScalar:
+
+    t1 = t1_scalar(t, constitutive, indentations)
+    dF = make_force_integrand(constitutive, indentations[0], tip)
+
+    return integrate(dF, (0, t1), (t,))
+#%%
+def t1_scalar2(
+    t: FloatScalar,
+    constitutive: AbstractConstitutiveEqn,
+    indentations: tuple[diffrax.AbstractPath, diffrax.AbstractPath],
+    *,
+    newton_iterations: int = 5,
+) -> FloatScalar:
+    t1_integrand_lower, t1_integrand_upper = make_t1_integrands(
+        constitutive, indentations
+    )
+    app_interp = indentations[0]
+    t_m = app_interp.t1  # Unfortunate mixup of names between my code and diffrax
+    # In diffrax.AbstractPath, t1 attribute returns the final timepoint of the path
+    const = integrate(t1_integrand_upper, (t_m, t), (t,))
+
+    def residual(t1, t):
+        return integrate(t1_integrand_lower, (t1, t_m), (t,)) + const
+
+    def Dresidual(t1, t):
+        return -constitutive.relaxation_function(t-t1)*app_interp.derivative(t1)
+
+    t1 = t_m
+    for _ in range(newton_iterations):
+        t1 = jnp.clip(t1-residual(t1, t)/Dresidual(t1, t), 0.0)
+
+    return t1
+
+def force_retract_scalar2(
+    t: FloatScalar,
+    constitutive: AbstractConstitutiveEqn,
+    indentations: tuple[diffrax.AbstractPath, diffrax.AbstractPath],
+    tip: AbstractTipGeometry,
+    *,
+    newton_iterations:int = 5
+) -> FloatScalar:
+
+    t1 = t1_scalar2(t, constitutive, indentations, newton_iterations=newton_iterations)
+    dF = make_force_integrand(constitutive, indentations[0], tip)
+
+    return integrate(dF, (0, t1), (t,))
+#%%
+@eqx.filter_jit
+def force_approach(constitutive, approach, tip):
+    app_interp = diffrax.LinearInterpolation(approach.time, approach.depth)
+    _force_approach = eqx.filter_vmap(force_approach_scalar, in_axes=(0, None, None, None))
+    return _force_approach(approach.time, constitutive, app_interp, tip)
+
+@eqx.filter_jit
+def force_retract(constitutive, indentations, tip):
+    app, ret = indentations
+    app_interp = diffrax.LinearInterpolation(app.time, app.depth)
+    ret_interp = diffrax.LinearInterpolation(ret.time, ret.depth)
+    _force_retract = eqx.filter_vmap(force_retract_scalar, in_axes=(0, None, None, None))
+    return _force_retract(ret.time, constitutive, (app_interp, ret_interp), tip)
+
+@eqx.filter_jit
+def force_retract2(constitutive, indentations, tip):
+    app, ret = indentations
+    app_interp = diffrax.LinearInterpolation(app.time, app.depth)
+    ret_interp = diffrax.LinearInterpolation(ret.time, ret.depth)
+    _force_retract = eqx.filter_vmap(force_retract_scalar2, in_axes=(0, None, None, None))
+    return _force_retract(ret.time, constitutive, (app_interp, ret_interp), tip)
+# %%
+%%timeit
+f_ret = force_retract(plr, (app, ret), tip)
+#%%
+%%timeit
+f_ret2 = force_retract2(plr, (app, ret), tip)
+#%%
+fig, ax = plt.subplots(1, 1, figsize = (5, 3))
+ax.plot(ret.time, f_ret, ".", label = "optx")
+ax.plot(ret.time, f_ret2, ".", label = "newton")
+ax.legend()
+
+#%%
 def force_integrand(
     t_constit: tuple[FloatScalar, AbstractConstitutiveEqn],
     s: FloatScalar,
@@ -52,6 +215,28 @@ def force_integrand(
     G = constit.relaxation_function(jnp.clip(t - s, 0.0))
     dh_b = b * indent_app.derivative(s) * indent_app.evaluate(s) ** (b - 1)
     return a * dh_b * G
+
+
+# %%
+
+t1_ret = eqx.filter_vmap(t1_scalar, in_axes=(0, None, None))(
+    ret.time, plr, (app_interp, ret_interp)
+)
+# %%
+fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+ax.plot(
+    ret.time,
+    t1_ret,
+)
+#%%
+%%timeit
+f_ret = force_retract(plr, (app, ret), tip)
+# %%
+fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+ax.plot(
+    ret.time,
+    f_ret,
+)
 
 
 # %%
@@ -293,6 +478,7 @@ grad_f_manual
 
 
 # %%
+@eqx.filter_jit
 def find_t1_auto(
     constitutive: AbstractConstitutiveEqn,
     t: FloatScalar,
@@ -368,5 +554,84 @@ print(val, dval.E0, dval.alpha, dval.t0)
 val2, dval2 = eqx.filter_value_and_grad(test2)(plr, tip, app, ret)
 print(val2, dval2.E0, dval2.alpha, dval2.t0)
 # %%
-dval.depth
+#@eqx.filter_jit
+def residual(t1, t, constitutive, indentations):
+    app_interp, ret_interp = indentations
+    t_m = app_interp.t1
+    def _t1_integrand_lower(s, t):
+        return constitutive.relaxation_function(t-s)*app_interp.derivative(s)
+    
+    def _t1_integrand_upper(s, t):
+        return constitutive.relaxation_function(t-s)*ret_interp.derivative(s)
+    
+    return integrate(_t1_integrand_lower, (t1, t_m), (t,)) + integrate(_t1_integrand_upper, (t_m, t), (t,))
+#@eqx.filter_jit
+def Dresidual(t1, t, constitutive, indentations):
+    app_interp, _ = indentations
+    return -constitutive.relaxation_function(t-t1)*app_interp.derivative(t1)
+# %%
+t = 1.8
+t1 = 1.0
+#%%
+f_t1 = residual(t1, t, plr, (app_interp, ret_interp))
+Df_t1 = Dresidual(t1, t, plr, (app_interp, ret_interp))
+t1 = jnp.clip(t1-f_t1/Df_t1, 0.0)
+print(t1)
+#%%
+residual_vec = eqx.filter_vmap(residual, in_axes = (0, 0, None, None))
+Dresidual_vec = eqx.filter_vmap(Dresidual, in_axes = (0, 0, None, None))
+residual_vec = eqx.filter_jit(residual_vec)
+Dresidual_vec = eqx.filter_jit(Dresidual_vec)
+# %%
+residual(t1, t, plr, (app_interp, ret_interp))
+# %%
+%%timeit
+find_t1_auto(plr, 1.7, app, ret)
+# %%
+find_t1_vec = eqx.filter_vmap(find_t1_auto, in_axes = (None, 0, None, None))
+find_t1_vec = eqx.filter_jit(find_t1_vec)
+#%%
+%%timeit
+t1_vec_optx = find_t1_vec(plr, ret.time, app, ret)
+#%%
+#%%timeit
+t_vec = ret.time
+t1_vec = jnp.ones_like(ret.time)*ret.time[0]
+for i in range(3):
+    f_t1_vec = residual_vec(t1_vec, ret.time, plr, (app_interp, ret_interp))
+    Df_t1_vec = Dresidual_vec(t1_vec, ret.time, plr, (app_interp, ret_interp))
+    t1_vec = t1_vec-f_t1_vec/Df_t1_vec
+# %%
+fig, axes = plt.subplots(2, 1, figsize = (5, 3), sharex=True)
+axes[0].plot(t_vec, jnp.clip(t1_vec, 0.0))
+axes[0].plot(t_vec, t1_vec_optx)
+axes[1].plot(t_vec, f_t1_vec)
+# %%
+t1_vec
+# %%
+print(f_t1_vec)
+
+# %%
+print(Df_t1_vec)
+# %%
+Dresidual(1.0, 1.0, plr, (app_interp, ret_interp))
+# %%
+def residual2(t1, t, constitutive, indentations):
+    app_interp, ret_interp = indentations
+    t_m = app_interp.t1
+    def _t1_integrand_lower(u, t, t1):
+        s = t1*(1-u)+t_m*u
+        return constitutive.relaxation_function(t-s)*app_interp.derivative(s)
+    
+    def _t1_integrand_upper(u, t):
+        s = t_m*(1-u)+t*u
+        return constitutive.relaxation_function(t-s)*ret_interp.derivative(s)
+    
+    return integrate(_t1_integrand_lower, (0.0, 1.0), (t,t1)) + integrate(_t1_integrand_upper, (0.0, 1.0), (t,))
+# %%
+t = 1.4
+t1 = 0.5
+res = residual(t1, t, plr, (app_interp, ret_interp))
+res2 = residual2(t1, t, plr, (app_interp, ret_interp))
+print(res, res2)
 # %%

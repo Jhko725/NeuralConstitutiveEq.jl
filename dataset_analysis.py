@@ -2,69 +2,34 @@
 # ruff: noqa: F722
 from pathlib import Path
 
-import pandas as pd
+from IPython.display import display
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import jax
 import jax.numpy as jnp
-from jaxtyping import Float, Array
-from scipy.interpolate import make_smoothing_spline
 
-from neuralconstitutive.indentation import Indentation
-from neuralconstitutive.plotting import plot_indentation
+from neuralconstitutive.plotting import plot_indentation, plot_relaxation_fn
 from neuralconstitutive.constitutive import (
     StandardLinearSolid,
-    ModifiedPowerLaw,
-    KohlrauschWilliamsWatts,
 )
 from neuralconstitutive.tipgeometry import Spherical
-from neuralconstitutive.fitting import fit_approach, force_approach
+from neuralconstitutive.ting import force_approach, force_retract
+from neuralconstitutive.io import import_data
+from neuralconstitutive.fitting import fit_approach_lmfit, fit_all_lmfit
+from neuralconstitutive.utils import (
+    smooth_data,
+    normalize_indentations,
+    normalize_forces,
+)
 
 jax.config.update("jax_enable_x64", True)
 
-
-def to_jax_numpy(series: pd.Series) -> Array:
-    return jnp.asarray(series.to_numpy())
-
-
-def smooth_data(indentation: Indentation) -> Indentation:
-    t = indentation.time
-    spl = make_smoothing_spline(t, indentation.depth)
-    return Indentation(t, spl(t))
-
-
-def import_data(rawdata_file, metadata_file):
-    # Read csv files
-    df_raw = pd.read_csv(rawdata_file, sep="\t", skiprows=34)
-    df_meta = pd.read_csv(metadata_file, sep="\t")
-
-    # Extract relevant raw data
-    force = to_jax_numpy(df_raw["force"])
-    time = to_jax_numpy(df_raw["time"])
-    tip_position = -to_jax_numpy(df_raw["tip position"])
-    contact_point = -to_jax_numpy(df_meta["Contact Point [nm]"]) * 1e-9
-
-    # Retain only the indenting part of the data
-    depth = tip_position - contact_point
-    in_contact = depth >= 0
-    force, time, depth = force[in_contact], time[in_contact], depth[in_contact]
-    force = force - force[0]
-    time = time - time[0]
-
-    # Split into approach and retract
-    idx_max = jnp.argmax(depth)
-    approach = Indentation(time[: idx_max + 1], depth[: idx_max + 1])
-    retract = Indentation(time[idx_max:], depth[idx_max:])
-    force_app, force_ret = force[: idx_max + 1], force[idx_max:]
-
-    approach, retract = smooth_data(approach), smooth_data(retract)
-    return (approach, retract), (force_app, force_ret)
-
-
-# %%
 datadir = Path("open_data/PAAM hydrogel")
 (app, ret), (f_app, f_ret) = import_data(
     datadir / "PAA_speed 5_4nN.tab", datadir / "PAA_speed 5_4nN.tsv"
 )
+app, ret = smooth_data(app), smooth_data(ret)
+
 # %%
 fig, axes = plt.subplots(1, 3, figsize=(10, 3))
 axes[0] = plot_indentation(axes[0], app, marker=".")
@@ -76,23 +41,6 @@ axes[1].plot(ret.time, f_ret, ".")
 axes[2].plot(app.depth, f_app, ".")
 axes[2].plot(ret.depth, f_ret, ".")
 # %%
-sls = StandardLinearSolid(5.0, 1.0, 1.0)
-
-
-def normalize_indentations(approach: Indentation, retract: Indentation):
-    t_m, h_m = approach.time[-1], approach.depth[-1]
-    t_app, t_ret = approach.time / t_m, retract.time / t_m
-    h_app, h_ret = approach.depth / h_m, retract.depth / h_m
-    app_norm = Indentation(t_app, h_app)
-    ret_norm = Indentation(t_ret, h_ret)
-    return (app_norm, ret_norm), (t_m, h_m)
-
-
-def normalize_forces(force_app, force_ret):
-    f_m = force_app[-1]
-    return (force_app / f_m, force_ret / f_m), f_m
-
-
 (f_app, f_ret), _ = normalize_forces(f_app, f_ret)
 (app, ret), (_, h_m) = normalize_indentations(app, ret)
 # %%
@@ -107,31 +55,126 @@ axes[1].plot(ret.time, f_ret, ".")
 
 axes[2].plot(app.depth, f_app, ".")
 axes[2].plot(ret.depth, f_ret, ".")
-# %%
-result = fit_approach(sls, tip, app, f_app)
-print(result.value.E0, result.value.E_inf, result.value.tau)
-# %%
-fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-ax.plot(app.time, f_app, label="Data")
-f_fit = force_approach(result.value, app, tip)
-ax.plot(app.time, f_fit, label="Curve fit")
-# %%
-import diffrax
 
-app_interp = diffrax.LinearInterpolation(app.time, app.depth)
-fig, ax = plt.subplots(1, 1, figsize=(10, 3))
-ax.plot(app.time, app.depth)
-# axes[1].plot(app.time, app_interp.derivative(app.time))
 # %%
+## Fit only the approach portion
+constit = StandardLinearSolid(10.0, 10.0, 10.0)
+bounds = [(0.0, jnp.inf)] * 3
+#%%
+%%timeit
+constit_fit, result = fit_approach_lmfit(constit, bounds, tip, app, f_app)
+#%%
+display(result)
+#%%
+fig, axes = plt.subplots(1, 2, figsize=(7, 3))
+axes[0].plot(app.time, f_app, ".", color="royalblue", label="Data", alpha=0.5)
+axes[0].plot(ret.time, f_ret, ".", color="royalblue", label="Data", alpha=0.5)
+
+f_fit_app = force_approach(constit_fit, app, tip)
+f_fit_ret = force_retract(constit_fit, (app, ret), tip)
+
+axes[0].plot(app.time, f_fit_app, color="gray", alpha=0.7)
+axes[0].plot(ret.time, f_fit_ret, color="gray", alpha=0.7)
+
+axes[1] = plot_relaxation_fn(axes[1], constit_fit, app.time, color="gray")
+#%%
+import equinox as eqx
+#%%
+%%timeit
+f_fit_app = eqx.filter_jit(force_approach)(constit_fit, app, tip)
+
+# %%
+import numpy as np
+from scipy.stats import qmc
+
+sampler = qmc.LatinHypercube(d=3, seed=10)
+sample_range = [(1e-3, 1e2), (1e-3, 1e2), (1e-3, 1e2)]
+sample_range = np.asarray(sample_range)
+
+sample_scale = ["log", "log", "log"]
+is_logscale = [s == "log" for s in sample_scale]
+
+sample_range[is_logscale, :] = np.log10(sample_range[is_logscale, :])
+
+samples = sampler.random(20)
+samples = qmc.scale(samples, sample_range[:, 0], sample_range[:, 1])
+samples[:, is_logscale] = 10 ** samples[:, is_logscale]
 
 
-spl = make_smoothing_spline(app.time, app.depth)
-dspl = spl.derivative()
+fig, axes = plt.subplots(1, 3, figsize=(7, 3))
+for i, ax in enumerate(axes):
+
+    if is_logscale[i] is True:
+        ax.hist(np.log10(samples[:, i]))
+    else:
+        ax.hist(samples[:, i])
 # %%
-app_interp2 = diffrax.LinearInterpolation(app.time, spl(app.time))
-fig, ax = plt.subplots(1, 1, figsize=(10, 3))
-ax.plot(app.time, app_interp.derivative(app.time))
-ax.plot(app.time, dspl(app.time))
-ax.plot(app.time, app_interp2.derivative(app.time))
+from tqdm import tqdm
+
+constit_fits, results = [], []
+for i in tqdm(range(samples.shape[0])):
+    sample = samples[i]
+    constit_i = type(constit)(*sample)
+    constit_fit, result = fit_approach_lmfit(constit_i, bounds, tip, app, f_app)
+    constit_fits.append(constit_fit)
+    results.append(result)
 # %%
-app_interp2 = diffrax.LinearInterpolation(app.time, spl(app.time))
+fig, axes = plt.subplots(1, 2, figsize=(7, 3))
+axes[0].plot(app.time, f_app, ".", color="royalblue", label="Data", alpha=0.5)
+axes[0].plot(ret.time, f_ret, ".", color="royalblue", label="Data", alpha=0.5)
+
+for i, (constit_fit, result) in enumerate(zip(constit_fits, tqdm(results))):
+    f_fit_app = force_approach(constit_fit, app, tip)
+    f_fit_ret = force_retract(constit_fit, (app, ret), tip)
+
+    axes[0].plot(app.time, f_fit_app, color="gray", alpha=0.7)
+    axes[0].plot(ret.time, f_fit_ret, color="gray", alpha=0.7)
+
+    axes[1] = plot_relaxation_fn(axes[1], constit_fit, app.time, color="gray")
+# %%
+samples_fit = []
+for r in results:
+    samples_fit.append(list(r.params.valuesdict().values()))
+samples_fit = np.asarray(samples_fit)
+# %%
+fig, axes = plt.subplots(1, 3, figsize=(7, 3))
+for i, ax in enumerate(axes):
+    if is_logscale[i] is True:
+        s_ = samples_fit[:, i]
+        s_[s_ > 0] = np.log10(s_[s_ > 0])
+        ax.hist(s_)
+    else:
+        ax.hist(samples_fit[:, i])
+# %%
+results[0].params.valuesdict()
+# %%
+constit_fit = constit_fits[8]
+fig, axes = plt.subplots(1, 2, figsize=(7, 3))
+f_fit_app = force_approach(constit_fit, app, tip)
+f_fit_ret = force_retract(constit_fit, (app, ret), tip)
+with mpl.rc_context({"lines.markersize": 1.0, "lines.linewidth": 2.0}):
+    axes[0].plot(app.time, f_app, ".", color="black", label="Data", alpha=0.5)
+    axes[0].plot(ret.time, f_ret, ".", color="black", label="Data", alpha=0.5)
+    axes[0].plot(app.time, f_fit_app, label="Curve fit", alpha=0.7)
+    axes[0].plot(ret.time, f_fit_ret, label="Curve fit", alpha=0.7)
+
+    axes[1] = plot_relaxation_fn(axes[1], constit_fit, app.time)
+# %%
+## Fit the entire approach-retract curve
+constit = StandardLinearSolid(10.0, 10.0, 10.0)
+bounds = [(0.0, jnp.inf)] * 3
+constit_fit, result = fit_all_lmfit(constit, bounds, tip, (app, ret), (f_app, f_ret))
+display(result)
+# %%
+fig, axes = plt.subplots(1, 2, figsize=(7, 3))
+f_fit_app = force_approach(constit_fit, app, tip)
+f_fit_ret = force_retract(constit_fit, (app, ret), tip)
+with mpl.rc_context({"lines.markersize": 1.0, "lines.linewidth": 2.0}):
+    axes[0].plot(app.time, f_app, ".", color="black", label="Data", alpha=0.5)
+    axes[0].plot(ret.time, f_ret, ".", color="black", label="Data", alpha=0.5)
+    axes[0].plot(app.time, f_fit_app, label="Curve fit", alpha=0.7)
+    axes[0].plot(ret.time, f_fit_ret, label="Curve fit", alpha=0.7)
+
+    axes[1] = plot_relaxation_fn(axes[1], constit_fit, app.time)
+
+# %%

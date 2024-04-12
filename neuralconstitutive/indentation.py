@@ -1,4 +1,6 @@
 # ruff: noqa: F722
+from typing import Literal
+
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 import equinox as eqx
@@ -15,5 +17,17 @@ class Indentation(eqx.Module):
         return len(self.time)
 
 
-def interpolate_indentation(indentation: Indentation):
-    return diffrax.LinearInterpolation(indentation.time, indentation.depth)
+InterpolationMethod = Literal["linear", "cubic"]
+
+
+def interpolate_indentation(
+    indentation: Indentation, *, method: InterpolationMethod = "cubic"
+) -> diffrax.AbstractPath:
+    ts, ys = indentation.time, indentation.depth
+    match method:
+        case "linear":
+            interp = diffrax.LinearInterpolation(ts, ys)
+        case "cubic":
+            coeffs = diffrax.backward_hermite_coefficients(ts, ys)
+            interp = diffrax.CubicInterpolation(ts, coeffs)
+    return interp
