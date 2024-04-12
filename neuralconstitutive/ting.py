@@ -1,10 +1,11 @@
 # ruff: noqa: F722
+from typing import Callable
+
 import jax.numpy as jnp
 import jax.tree_util as jtu
 from jaxtyping import Float, Array
 import equinox as eqx
 import diffrax
-import optimistix as optx
 
 from neuralconstitutive.custom_types import FloatScalar
 from neuralconstitutive.constitutive import AbstractConstitutiveEqn
@@ -13,212 +14,98 @@ from neuralconstitutive.indentation import Indentation, interpolate_indentation
 from neuralconstitutive.integrate import integrate
 
 
-class _TingIndentationProblem(eqx.Module):
-    constitutive: AbstractConstitutiveEqn
-    tip: AbstractTipGeometry
-    app_interp: diffrax.LinearInterpolation  # Change later
-    ret_interp: diffrax.LinearInterpolation
-    """A helper class containing all the relevant information to calculate Ting's solution for the force."""
+def make_force_integrand(constitutive, approach, tip):
 
-    def __init__(
-        self,
-        constitutive: AbstractConstitutiveEqn,
-        tip: AbstractTipGeometry,
-        approach: Indentation,
-        retract: Indentation,
-    ):
-        self.constitutive = constitutive
-        self.tip = tip
-        self.app_interp = interpolate_indentation(approach)
-        self.ret_interp = interpolate_indentation(retract)
-
-    ## Some convenience functions for improved readability
-    def a(self) -> float:
-        """Tip parameter a"""
-        return self.tip.a()
-
-    def b(self) -> float:
-        """Tip parameter b"""
-        return self.tip.b()
-
-    def h_app(self, s: float) -> float:
-        """Position of the tip during approach"""
-        return self.app_interp.evaluate(s)
-
-    def v_app(self, s: float) -> float:
-        """Velocity of the tip during approach"""
-        return self.app_interp.derivative(s)
-
-    def v_ret(self, s: float) -> float:
-        """Velocity of the tip during retract"""
-        return self.ret_interp.derivative(s)
-
-    def dh_b(self, s: float) -> float:
-        """Calculates dh^b(s)/ds for the approach phase.
-
-        This is used for the calculation of the force."""
-        b = self.b()
-        return b * self.v_app(s) * self.h_app(s) ** (b - 1)
-
-    def relaxation_fn(self, t: float) -> float:
-        return self.constitutive.relaxation_function(t)
-
-    ## Main functions
-    def force_integrand(self, s: float, t: float) -> float:
-        return self.a() * self.relaxation_fn(t - s) * self.dh_b(s)
-
-    def t1_integrand_lower(self, s: float, t: float) -> float:
-        return self.relaxation_fn(t - s) * self.v_app(s)
-
-    def t1_integrand_upper(self, s: float, t: float) -> float:
-        return self.relaxation_fn(t - s) * self.v_ret(s)
-
-
-@eqx.filter_jit
-def force_ting(
-    constitutive: AbstractConstitutiveEqn,
-    tip: AbstractTipGeometry,
-    approach: Indentation,
-    retract: Indentation,
-) -> tuple[Float[Array, " {len(approach)}"], Float[Array, " {len(retract)}"]]:
-    ting = _TingIndentationProblem(constitutive, tip, approach, retract)
-
-    def _force_approach(t: FloatScalar) -> FloatScalar:
-        return integrate(ting.force_integrand, (0.0, t), (t,))
-
-    f_app = eqx.filter_vmap(_force_approach)(approach.time)
-    f_ret = _force_retract(retract, ting)
-    return f_app, f_ret
-
-@eqx.filter_jit
-def force_approach(
-    constitutive: AbstractConstitutiveEqn,
-    approach: Indentation,
-    tip: AbstractTipGeometry,
-) -> Float[Array, " {len(approach)}"]:
-    app_interp = diffrax.LinearInterpolation(approach.time, approach.depth)
-
-    def _force_approach(t, constitutive):
-        return force_approach_((t, constitutive), app_interp, tip)
-
-    return eqx.filter_vmap(_force_approach, in_axes=(0, None), out_axes=0)(
-        approach.time, constitutive
-    )
-
-
-def force_approach_manual(
-    t: FloatScalar,
-    constitutive: AbstractConstitutiveEqn,
-    approach: Indentation,
-    tip: AbstractTipGeometry,
-):
-    app_interp = diffrax.LinearInterpolation(approach.time, approach.depth)
-    return force_approach_((t, constitutive), app_interp, tip)
-
-
-def relaxation_fn(t_constit: tuple[float, AbstractConstitutiveEqn]):
-    t, constitutive = t_constit
-    return constitutive.relaxation_function(t)
-
-
-def Drelaxation_fn(t_constit: tuple[float, AbstractConstitutiveEqn]):
-    dG_pytree = eqx.filter_grad(relaxation_fn)(t_constit)
-    dG_array, tree_def = jtu.tree_flatten(dG_pytree)
-    dG_array = jnp.asarray(dG_array)
-    return dG_array, tree_def
-
-
-def make_force_integrand(constit, app_interp, tip):
     a, b = tip.a(), tip.b()
 
-    def _integrand(s, t):
-        g = relaxation_fn((jnp.clip(t - s, 0.0), constit))
-        dh_b = b * app_interp.derivative(s) * app_interp.evaluate(s) ** (b - 1)
+    def dF(s, t):
+        g = constitutive.relaxation_function(jnp.clip(t - s, 0.0))
+        dh_b = b * approach.derivative(s) * approach.evaluate(s) ** (b - 1)
         return a * g * dh_b
 
-    return _integrand
+    return dF
 
 
-def make_dforce_integrand(constit, app_interp, tip):
-    a, b = tip.a(), tip.b()
+def force_approach_scalar(
+    t: FloatScalar,
+    constitutive: AbstractConstitutiveEqn,
+    approach: diffrax.AbstractPath,
+    tip: AbstractTipGeometry,
+) -> FloatScalar:
 
-    def _integrand(s, t):
-        dG, _ = Drelaxation_fn((jnp.clip(t - s, 0.0), constit))
-        dh_b = b * app_interp.derivative(s) * app_interp.evaluate(s) ** (b - 1)
-        return a * dG * dh_b
+    dF = make_force_integrand(constitutive, approach, tip)
 
-    return _integrand
-
-
-@eqx.filter_custom_vjp
-def force_approach_(t_constit, app_interp, tip):
-    t, constitutive = t_constit
-    del t_constit
-    force_integrand = make_force_integrand(constitutive, app_interp, tip)
-    args = (t,)
-    bounds = (jnp.zeros_like(t), t)
-    return integrate(force_integrand, bounds, args)
+    return integrate(dF, (0, t), (t,))
 
 
-@force_approach_.def_fwd
-def force_approach_fwd(perturbed, t_constit, app_interp, tip):
-    del perturbed
-    f_app = force_approach_(t_constit, app_interp, tip)
-    return f_app, None  # other stuff
+def make_t1_integrands(constitutive, indentations) -> tuple[Callable, Callable]:
+    app_interp, ret_interp = indentations
+
+    def t1_integrand_lower(s, t):
+        return constitutive.relaxation_function(t - s) * app_interp.derivative(s)
+
+    def t1_integrand_upper(s, t):
+        return constitutive.relaxation_function(t - s) * ret_interp.derivative(s)
+
+    return t1_integrand_lower, t1_integrand_upper
 
 
-@force_approach_.def_bwd
-def force_approach_bwd(residuals, grad_obj, perturbed, t_constit, app_interp, tip):
-    del residuals, perturbed
-    t, constitutive = t_constit
-    del t_constit
-    force_integrand = make_force_integrand(constitutive, app_interp, tip)
-    dforce_integrand = make_dforce_integrand(constitutive, app_interp, tip)
-    args = (t,)
-    bounds = (jnp.zeros_like(t), t)
-    out = integrate(dforce_integrand, bounds, args)
-    out = out.at[0].add(force_integrand(t, t))
-    out = out * grad_obj
-    _, tree_def = Drelaxation_fn((t, constitutive))
-    return jtu.tree_unflatten(tree_def, out)
-
-
-def _force_retract(retract: Indentation, problem: _TingIndentationProblem):
-    t1 = _find_t1(retract, problem)
-    t_ret = retract.time
-    return eqx.filter_vmap(integrate, in_axes=(None, None, 0, 0))(
-        problem.force_integrand, 0.0, t1, t_ret
+def t1_scalar(
+    t: FloatScalar,
+    constitutive: AbstractConstitutiveEqn,
+    indentations: tuple[diffrax.AbstractPath, diffrax.AbstractPath],
+    *,
+    newton_iterations: int = 5,
+) -> FloatScalar:
+    t1_integrand_lower, t1_integrand_upper = make_t1_integrands(
+        constitutive, indentations
     )
+    app_interp = indentations[0]
+    t_m = app_interp.t1  # Unfortunate mixup of names between my code and diffrax
+    # In diffrax.AbstractPath, t1 attribute returns the final timepoint of the path
+    const = integrate(t1_integrand_upper, (t_m, t), (t,))
+
+    def residual(t1, t):
+        return integrate(t1_integrand_lower, (t1, t_m), (t,)) + const
+
+    def Dresidual(t1, t):
+        return -constitutive.relaxation_function(t - t1) * app_interp.derivative(t1)
+
+    t1 = t_m
+    for _ in range(newton_iterations):
+        t1 = jnp.clip(t1 - residual(t1, t) / Dresidual(t1, t), 0.0)
+
+    return t1
 
 
-def _find_t1(retract: Indentation, problem: _TingIndentationProblem):
+def force_retract_scalar(
+    t: FloatScalar,
+    constitutive: AbstractConstitutiveEqn,
+    indentations: tuple[diffrax.AbstractPath, diffrax.AbstractPath],
+    tip: AbstractTipGeometry,
+) -> FloatScalar:
 
-    t_m = retract.time[0]
+    t1 = t1_scalar(t, constitutive, indentations)
+    dF = make_force_integrand(constitutive, indentations[0], tip)
 
-    def residual(t1: float, t: float) -> float:
+    return integrate(dF, (0, t1), (t,))
 
-        return integrate(problem.t1_integrand_lower, (t1, t_m), (t,)) + integrate(
-            problem.t1_integrand_upper, (t_m, t), (t,)
-        )
 
-    solver = optx.Bisection(rtol=1e-3, atol=1e-3, flip=True)
+@eqx.filter_jit
+def force_approach(constitutive, approach, tip, *, interp_method: str = "cubic"):
+    app_interp = interpolate_indentation(approach, method=interp_method)
+    _force_approach = eqx.filter_vmap(
+        force_approach_scalar, in_axes=(0, None, None, None)
+    )
+    return _force_approach(approach.time, constitutive, app_interp, tip)
 
-    @eqx.filter_vmap
-    def _find_t1_inner(t: float) -> float:
-        cond = residual(0.0, (t,)) <= 0
-        t_ = jnp.where(cond, t_m, t)
-        return jnp.where(
-            cond,
-            0.0,
-            optx.root_find(
-                residual,
-                solver,
-                t_m,
-                args=t_,
-                options={"lower": 0.0, "upper": t_m},
-                max_steps=30,
-                throw=False,
-            ).value,
-        )
 
-    return _find_t1_inner(retract.time)
+@eqx.filter_jit
+def force_retract(constitutive, indentations, tip, *, interp_method: str = "cubic"):
+    app, ret = indentations
+    app_interp = interpolate_indentation(app, method=interp_method)
+    ret_interp = interpolate_indentation(ret, method=interp_method)
+    _force_retract = eqx.filter_vmap(
+        force_retract_scalar, in_axes=(0, None, None, None)
+    )
+    return _force_retract(ret.time, constitutive, (app_interp, ret_interp), tip)

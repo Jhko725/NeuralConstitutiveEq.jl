@@ -2,10 +2,15 @@
 Contains custom type definitions used throughout the codebase, as well as some utility functions to work with them
 """
 
+import os
+
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array, ArrayLike, Float
 
+FileName = str | bytes | os.PathLike
+
+# Jax-related types
 FloatScalar = Float[Array, ""]
 FloatScalarLike = Float[ArrayLike, ""]
 
