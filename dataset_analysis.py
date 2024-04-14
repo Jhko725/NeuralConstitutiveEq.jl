@@ -143,18 +143,18 @@ for i, ax in enumerate(axes):
     else:
         ax.hist(samples_sls[:, i])
 #%%
-sampler_plr = qmc.LatinHypercube(d=3, seed=10)
-plr_range = [(1e-5, 1e5), (1e-10, 1.0), (1e-5, 1e5)]
-plr_range = np.asarray(plr_range)
+sampler_mplr = qmc.LatinHypercube(d=3, seed=10)
+mplr_range = [(1e-5, 1e5), (1e-10, 1.0), (1e-5, 1e5)]
+mplr_range = np.asarray(mplr_range)
 
 sample_scale = ["log", "log", "log"]
 is_logscale = [s == "log" for s in sample_scale]
 
-plr_range[is_logscale, :] = np.log10(plr_range[is_logscale, :])
+mplr_range[is_logscale, :] = np.log10(mplr_range[is_logscale, :])
 
-samples_plr = sampler_plr.random(20)
-samples_plr = qmc.scale(samples_plr, plr_range[:, 0], plr_range[:, 1])
-samples_plr[:, is_logscale] = 10 ** samples_plr[:, is_logscale]
+samples_mplr = sampler_mplr.random(20)
+samples_mplr = qmc.scale(samples_mplr, mplr_range[:, 0], mplr_range[:, 1])
+samples_mplr[:, is_logscale] = 10 ** samples_mplr[:, is_logscale]
 # %%
 sampler_kww = qmc.LatinHypercube(d=4, seed=10)
 kww_range = [(1e-5, 1e5), (1e-5, 1e5), (1e-5, 1e5), (1e-10, 1e1),]
@@ -170,44 +170,42 @@ samples_kww = qmc.scale(samples_kww, kww_range[:, 0], kww_range[:, 1])
 samples_kww[:, is_logscale] = 10 ** samples_kww[:, is_logscale]
 #%%
 ## 
-sls_fits, results = [], []
-mplr_fits, results = [], []
-kww_fits, results = [], []
+sls_fits, sls_results = [], []
+mplr_fits, mplr_results = [], []
+kww_fits, kww_results = [], []
 
-for i in tqdm(range(samples_plr.shape[0])):
-    sample = samples_plr[i]
+for i in tqdm(range(samples_sls.shape[0])):
+    sample = samples_sls[i]
     constit_i = type(constit_sls)(*sample)
     constit_fit, result = fit_approach_lmfit(constit_i, bounds_sls, tip, app, f_app)
     sls_fits.append(constit_fit)
-    results.append(result)
+    sls_results.append(result)
 
-for i in tqdm(range(samples_plr.shape[0])):
-    sample = samples_plr[i]
+for i in tqdm(range(samples_mplr.shape[0])):
+    sample = samples_mplr[i]
     constit_i = type(constit_mplr)(*sample)
-    constit_fit, result = fit_approach_lmfit(constit_i, bounds_sls, tip, app, f_app)
+    constit_fit, result = fit_approach_lmfit(constit_i, bounds_mplr, tip, app, f_app)
     mplr_fits.append(constit_fit)
-    results.append(result)
+    mplr_results.append(result)
 
-for i in tqdm(range(samples_plr.shape[0])):
-    sample = samples_plr[i]
+for i in tqdm(range(samples_kww.shape[0])):
+    sample = samples_kww[i]
     constit_i = type(constit_kww)(*sample)
-    constit_fit, result = fit_approach_lmfit(constit_i, bounds_sls, tip, app, f_app)
+    constit_fit, result = fit_approach_lmfit(constit_i, bounds_kww, tip, app, f_app)
     kww_fits.append(constit_fit)
-    results.append(result)
-
-
-
+    kww_results.append(result)
 #%%
 
 
 
 
 # %%
+## SLS model
 fig, axes = plt.subplots(1, 2, figsize=(7, 3))
 axes[0].plot(app.time, f_app, ".", color="royalblue", label="Data", alpha=0.5)
-axes[0].plot(ret.time, f_ret, ".", color="royalblue", label="Data", alpha=0.5)
+axes[0].plot(ret.time, f_ret, ".", color="royalblue", alpha=0.5)
 
-for i, (constit_fit, result) in enumerate(zip(sls_fits, tqdm(results))):
+for i, (constit_fit, result) in enumerate(zip(sls_fits, tqdm(sls_results))):
     f_fit_app = force_approach(constit_fit, app, tip)
     f_fit_ret = force_retract(constit_fit, (app, ret), tip)
 
@@ -215,7 +213,53 @@ for i, (constit_fit, result) in enumerate(zip(sls_fits, tqdm(results))):
     axes[0].plot(ret.time, f_fit_ret, color="gray", alpha=0.7)
 
     axes[1] = plot_relaxation_fn(axes[1], constit_fit, app.time, color="gray")
+
+#%%
+## Modified PLR model
+fig, axes = plt.subplots(1, 2, figsize=(7, 3))
+axes[0].plot(app.time, f_app, ".", color="royalblue", label="Data", alpha=0.5)
+axes[0].plot(ret.time, f_ret, ".", color="royalblue", alpha=0.5)
+
+for i, (constit_fit, result) in enumerate(zip(mplr_fits, tqdm(mplr_results))):
+    f_fit_app = force_approach(constit_fit, app, tip)
+    f_fit_ret = force_retract(constit_fit, (app, ret), tip)
+
+    axes[0].plot(app.time, f_fit_app, color="gray", alpha=0.7)
+    axes[0].plot(ret.time, f_fit_ret, color="gray", alpha=0.7)
+
+    axes[1] = plot_relaxation_fn(axes[1], constit_fit, app.time, color="gray")    
+
+#%%
+## KWW model
+fig, axes = plt.subplots(1, 2, figsize=(7, 3))
+axes[0].plot(app.time, f_app, ".", color="royalblue", label="Data", alpha=0.5)
+axes[0].plot(ret.time, f_ret, ".", color="royalblue", alpha=0.5)
+
+for i, (constit_fit, result) in enumerate(zip(kww_fits, tqdm(kww_results))):
+    f_fit_app = force_approach(constit_fit, app, tip)
+    f_fit_ret = force_retract(constit_fit, (app, ret), tip)
+
+    axes[0].plot(app.time, f_fit_app, color="gray", alpha=0.7)
+    axes[0].plot(ret.time, f_fit_ret, color="gray", alpha=0.7)
+
+    axes[1] = plot_relaxation_fn(axes[1], constit_fit, app.time, color="gray")    
 # %%
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#%%
 samples_fit = []
 for r in results:
     samples_fit.append(list(r.params.valuesdict().values()))
