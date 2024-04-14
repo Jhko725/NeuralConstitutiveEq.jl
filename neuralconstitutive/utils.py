@@ -1,14 +1,23 @@
-from numbers import Real
-from typing import Sequence
+from scipy.interpolate import make_smoothing_spline
 
-import torch
-from torch import nn, Tensor
+from neuralconstitutive.indentation import Indentation
 
 
-def beta(a: Tensor, b: Tensor) -> Tensor:
-    # Adapted from https://github.com/rachtsingh/ibp_vae/blob/master/src/lgamma/beta.py#L22
-    return (a.lgamma() + b.lgamma() - (a + b).lgamma()).exp()
+def smooth_data(indentation: Indentation) -> Indentation:
+    t = indentation.time
+    spl = make_smoothing_spline(t, indentation.depth)
+    return Indentation(t, spl(t))
 
 
-def to_parameter(value: Real | Sequence) -> nn.Parameter:
-    return nn.Parameter(torch.tensor(value, dtype=torch.float))
+def normalize_indentations(approach: Indentation, retract: Indentation):
+    t_m, h_m = approach.time[-1], approach.depth[-1]
+    t_app, t_ret = approach.time / t_m, retract.time / t_m
+    h_app, h_ret = approach.depth / h_m, retract.depth / h_m
+    app_norm = Indentation(t_app, h_app)
+    ret_norm = Indentation(t_ret, h_ret)
+    return (app_norm, ret_norm), (t_m, h_m)
+
+
+def normalize_forces(force_app, force_ret):
+    f_m = force_app[-1]
+    return (force_app / f_m, force_ret / f_m), f_m

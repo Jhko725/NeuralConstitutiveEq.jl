@@ -1,212 +1,213 @@
 # %%
-from functools import partial
+from typing import Callable
 
 import jax
 from jax import Array
 import jax.numpy as jnp
-import jaxopt
-
-def SLS(t: jax.Array, E0: float, E_inf: float, tau: float) -> jax.Array:
-    return E_inf+(E0-E_inf)*jnp.exp(-t/tau)
-
-sls = partial(SLS, E0=8.0, E_inf = 2.0, tau = 0.01)
-t_app = jnp.linspace(0, 0.2, 100)
-t_ret = jnp.linspace(0.2, 0.4, 100)
-sls(t_app)
-v_app = 10.0*jnp.ones_like(t_app)
-v_ret = -10.0*jnp.ones_like(t_ret)
-#%%
-@jax.jit
-def integrate_to(y: Array, x: Array, x_upper: float) -> Array:
-    return jax.lax.cond(x_upper>x[0], _integrate_to, lambda *_: jnp.array(0.0), y, x, x_upper)
-    
-def _integrate_to(y: Array, x: Array, x_upper: float) -> Array:
-    ind = jnp.searchsorted(x, x_upper)
-    mask = jnp.arange(x.shape[0]) < ind
-    y_, x_ = jnp.where(mask, y, 0), jnp.where(mask, x, 0)
-    y2, y1 = y[ind], y[ind-1]
-    x2, x1 = x[ind], x[ind-1]
-    y_upper = ((x_upper-x1)*y2+(x2-x_upper)*y1)/(x2-x1)
-    return jnp.trapz(y_, x=x_)+0.5*(y1+y_upper)*(x_upper-x1)
-
-def integrate_from(y: Array, x: Array, x_lower: float) -> Array:
-    ind = jnp.searchsorted(x, x_lower)
-    mask = jnp.arange(x.shape[0]) > ind
-    y_, x_ = jnp.where(mask, y, 0), jnp.where(mask, x, 0)
-    y2, y1 = y[ind], y[ind-1]
-    x2, x1 = x[ind], x[ind-1]
-#%%
-jax.grad(integrate_to, argnums=2)(v_ret, t_ret, 0.19)
-#%%
-def app_integral(t1, t, t_app, phi, v):
-    inds = t_app >= t1
-    t_, v_ = t_app[inds], v[inds]
-    return jnp.trapz(phi(t-t_)*v_, x=t_)
-
-def ret_integral(t, t_ret, phi, v):
-    inds = t_ret <= t
-    t_, v_ = t_ret[inds], v[inds]
-    return jnp.trapz(phi(t-t_)*v_, x=t_)
-
-def calc_t1(t, phi, t_app, t_ret, v_app, v_ret):
-    def objective(t1):
-        return app_integral(t1, t, t_app, phi, v_app) - ret_integral(t, t_ret, phi, v_ret)
-    jax.lax.cond(objective(0.0)<=0, jnp.ones_like)
-print(ret_integral(0.3, t_ret, sls, v_ret))
-print(app_integral(0.0, 0.3, t_app, sls, v_app))
-# %%
-t1_list = []
-for t in t_ret:
-    try:
-        bisect = jaxopt.Bisection(lambda t1: app_integral(t1, t, t_app, sls, v_app)+ret_integral(t, t_ret, sls, v_ret), lower=0.0, upper=0.2, jit=False)
-        t1_list.append(bisect.run().params)
-    except ValueError:
-        t1_list.append(0.0)
-t1_list = jnp.array(t1_list)
-#%%
-t1_list
-#%%
+import equinox as eqx
+import optax
 import matplotlib.pyplot as plt
-plt.plot(t_ret, t1_list)
+import scipy
 
-#%%
-def t1_from_params(t, E0, E_inf, tau, t_app, t_ret, v_app, v_ret):
-    
-    def objective(t1, t, E0, E_inf, tau):
-        sls = partial(SLS, E0=E0, E_inf = E_inf, tau = tau)
-        return app_integral(t1, t, t_app, sls, v_app)+ret_integral(t, t_ret, sls, v_ret)
-    bisect = jaxopt.Bisection(objective, lower=0.0, upper=0.2, jit=False)
-    return bisect.run(t=t, E0=E0, E_inf=E_inf, tau=tau).params
-
-jax.grad(t1_from_params, argnums=2)(0.21, 8.0, 2.0, 0.01, t_app, t_ret, v_app, v_ret)
-
-#%%
-import jax
-import jax.numpy as jnp
-import diffrax
-import matplotlib.pyplot as plt
-from tqdm import tqdm
-
-
-def PLR_relaxation(t, E0, gamma, t0):
-    return E0 * ((t + 1e-7) / t0) ** (-gamma)
-
-
-def indentation(t, v, t_max):
-    return v * (t_max - jnp.abs(t - t_max))
-
-
-# %%
-@jax.jit
-def cumtrapz(y, x):
-    # y, x: 1D arrays
-    dx = jnp.diff(x)
-    y_mid = (y[0:-1] + y[1:]) / 2
-    return jnp.insert(jnp.cumsum(y_mid * dx), 0, 0.0)
-
-
-# Check if our cumtrapz implementation works
-t = jnp.linspace(0, 2 * jnp.pi, 100)
-y = jnp.cos(t)  # jnp.sin(t)
-Y = cumtrapz(y, t)
-Y.shape
-# %%
-fig, ax = plt.subplots(1, 1, figsize=(7, 5))
-ax.plot(t, y, label="original")
-ax.plot(t, Y, label="Trapz")
-ax.legend()
-# %%
-v = 10
-t = jnp.linspace(0.0, 0.2, 100)
-I = v * t
-dI_beta = 2 * v * I  # 2IdI=2vI
-phi = PLR_relaxation(t, 0.572, 0.42, 1.0)
-phi_r = jnp.flip(phi)
-
-
-def F(i):
-    n = len(dI_beta)
-    y = phi_r[n - i - 1 :] * dI_beta[: i + 1]
-    return jnp.trapz(y, x=t[: i + 1])
-
-
-force = [F(i) for i in tqdm(range(len(dI_beta)))]
-# %%
-plt.plot(t, force)
-
-
-# %%
-def d_force(t_, u, args):
-    E0, gamma, t0, v, t_max, t = args
-    phi = PLR_relaxation(t - t_, E0, gamma, t0)
-    df = phi * 2 * v * jnp.sign(t_max - t_) * indentation(t_, v, t_max)
-    return df
-
-
-def force_true(t, args):
-    E0, gamma, t0, v, t_max = args
-    b = 2.0
-    coeff = (
-        E0
-        * t0**gamma
-        * b
-        * v**b
-        * jnp.exp(jax.scipy.special.betaln(b, 1.0 - gamma))
-    )
-    return coeff * t ** (b - gamma)
-
-
-args = (0.572, 0.42, 1.0, 10, 0.2, 0.1)
-d_force(0.19, jnp.array([0.0]), args)
-
-
-# %%
-def force_trapz(t, ts):
-    args = (0.572, 0.42, 1.0, 10, 0.2, t)
-    ts_ = ts[ts <= t]
-    df = d_force(ts_, None, args)
-    return jnp.trapz(df, x=ts_)
-
-
-ts = jnp.linspace(0, 0.199, 100)
-out_trapz = jnp.stack([force_trapz(t, ts) for t in tqdm(ts)], axis=-1)
-out_trapz
-# %%
-out_trapz
-# %%
-solver = diffrax.Midpoint()
-term = diffrax.ODETerm(d_force)
-sol = diffrax.diffeqsolve(term, solver, 0.0, 0.21, 0.1, jnp.array([0.0]), args=args)
-# %%
-sol.ys
-# %%
-ts = jnp.linspace(0, 0.2, 100)
-out = jnp.concatenate(
-    [
-        diffrax.diffeqsolve(
-            term,
-            solver,
-            0.0,
-            t,
-            0.01,
-            jnp.array([0.0]),
-            args=(0.572, 0.42, 1.0, 10, 0.2, t),
-        ).ys
-        for t in ts
-    ],
-    axis=-1,
+from neuralconstitutive.constitutive import StandardLinearSolid
+from neuralconstitutive.jax.ting import (
+    force_approach,
+    force_retract,
 )
+from neuralconstitutive.jax.tipgeometry import Spherical, AbstractTipGeometry
+from neuralconstitutive.trajectory import make_triangular, Trajectory
+from neuralconstitutive.nn import FullyConnectedNetwork
+from neuralconstitutive.models import BernsteinNN
+from neuralconstitutive.training import loss_total, train_model
+
+jax.config.update("jax_enable_x64", True)
+
 # %%
-out
+sls = StandardLinearSolid(E0=8, E_inf=2, tau=0.2)
+tip = Spherical(1.0)
+app, ret = make_triangular(0.5, 5e-3, 1.0)
+
+
 # %%
-out_true = force_true(ts, (0.572, 0.42, 1.0, 10, 0.2))
+def simulate_data(
+    app: Trajectory,
+    ret: Trajectory,
+    relaxation: Callable[[Array], Array],
+    tip: AbstractTipGeometry,
+    noise_strength: float,
+    random_seed: int,
+) -> tuple[Array, Array]:
+    key = jax.random.PRNGKey(random_seed)
+    f_app = force_approach(app, relaxation, tip)
+    f_ret = force_retract(app, ret, relaxation, tip)
+    noise_scale = jnp.max(f_app)
+    noise_app = jax.random.normal(key, f_app.shape) * noise_strength * noise_scale
+    noise_ret = (
+        jax.random.normal(jax.random.split(key, num=1), f_ret.shape)
+        * noise_strength
+        * noise_scale
+    )
+    return f_app + noise_app, f_ret + noise_ret
+
+
 # %%
-out_true.shape
-# %%
-fig, ax = plt.subplots(1, 1, figsize=(7, 5))
-ax.plot(ts, out[0], label="ODESolve", alpha=0.5)
-ax.plot(ts, force, label="trapz", alpha=0.5)
-ax.plot(ts, out_true, label="analytical", alpha=0.5)
+f_app, f_ret = simulate_data(
+    app, ret, sls.relaxation_function, tip, noise_strength=0.0, random_seed=0
+)
+fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+ax.plot(app.t, f_app, ".", label="approach")
+ax.plot(ret.t, f_ret, ".", label="retract")
 ax.legend()
+fig
 # %%
+plt.plot(app.t, sls.relaxation_function(app.t))
+
+
+# %%
+class BernsteinNN2(eqx.Module):
+    net: eqx.Module
+    scale: Array
+    bias: Array
+    nodes: Array
+    weights: Array
+
+    def __init__(self, net: Callable, num_quadrature: int = 100):
+        super().__init__()
+        self.net = net
+        self.scale = jnp.asarray(0.1)
+        self.bias = jnp.asarray(0.5)
+        nodes, weights = scipy.special.roots_laguerre(num_quadrature)
+        self.nodes = jnp.asarray(nodes)
+        self.weights = jnp.asarray(weights)
+
+    def __call__(self, t: Array) -> Array:
+        nodes = jax.lax.stop_gradient(self.nodes)
+        weights = jax.lax.stop_gradient(self.weights)
+        t_ = t + 5e-2
+        h = jax.vmap(self.net)(nodes / t_)
+        return jax.nn.relu(self.scale) * jnp.dot(weights, h) / t_ + jax.nn.relu(
+            self.bias
+        )
+
+
+class PronyNN(eqx.Module):
+    weights: Array
+    scales: Array
+    bias: Array
+    # N: int
+    # random_seed: int
+
+    def __init__(self, tau_min: float, tau_max: float, N: int = 50, seed: int = 10):
+        super().__init__()
+        # self.N = N
+        # self.random_seed = seed
+        key = jax.random.PRNGKey(seed)
+        self.weights = jnp.ones(N) / N
+        self.scales = 10 ** -jax.random.uniform(
+            key, shape=(N,), minval=jnp.log10(tau_min), maxval=jnp.log10(tau_max)
+        )
+        self.bias = jnp.asarray(0.0)
+
+    def __call__(self, t: Array) -> Array:
+        scales = jax.lax.stop_gradient(self.scales)
+        return jnp.dot(
+            jax.nn.relu(self.weights), jnp.exp(-jax.nn.relu(scales) * t)
+        ) + jax.nn.relu(self.bias)
+
+
+# %%
+phi_nn = FullyConnectedNetwork(
+    ["scalar", 20, 20, 20, 20, "scalar"],
+    activation=jax.nn.tanh,
+    final_activation=jax.nn.softplus,
+)
+phi_bern = BernsteinNN(phi_nn, 100)
+
+# %%
+fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+ax.plot(app.t, phi_bern(app.t))
+
+# %%
+fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+F_app_pred = force_approach(app, phi_bern, tip)
+F_ret_pred = force_retract(app, ret, phi_bern, tip)
+ax.plot(app.t, f_app, label="approach")
+ax.plot(ret.t, f_ret, label="retract")
+ax.plot(app.t, F_app_pred, label="approach (nn)")
+ax.plot(ret.t, F_ret_pred, label="retract (nn)")
+ax.legend()
+fig
+
+
+# %%
+trained_model, loss_history = train_model(
+    phi_bern,
+    (app, ret),
+    (f_app, f_ret),
+    tip,
+    loss_total,
+    optimizer=optax.rmsprop(1e-3),
+    max_epochs=3000,
+)
+
+# %%
+fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+F_app = force_approach(app, trained_model, tip)
+F_ret = force_retract(app, ret, trained_model, tip)
+
+plot_kwargs = {"markersize": 3.0, "alpha": 0.8}
+fig, axes = plt.subplots(2, 1, figsize=(5, 5))
+
+axes[0].plot(app.t, f_app, ".", color="k", label="Simulated data", **plot_kwargs)
+axes[0].plot(ret.t, f_ret, ".", color="k", **plot_kwargs)
+# axes[0].plot(t_app, F_app, "-", color="royalblue", label="Prediction", **plot_kwargs)
+# axes[0].plot(t_ret, F_ret, "-", color="royalblue", **plot_kwargs)
+axes[0].plot(app.t, F_app, "-", color="red", label="Initial prediction", **plot_kwargs)
+axes[0].plot(ret.t, F_ret, "-", color="red", **plot_kwargs)
+axes[0].set_ylabel("Force $F(t)$ (a.u.)")
+
+axes[1].plot(
+    app.t,
+    sls.relaxation_function(app.t),
+    ".",
+    color="k",
+    label="Ground truth",
+    **plot_kwargs,
+)
+axes[1].set_ylabel("Relaxation function $G(t)$ (a.u.)")
+# axes[1].plot(
+#     t_app,
+#     jax.vmap(model)(t_app),
+#     "-",
+#     color="royalblue",
+#     label="Extracted",
+#     **plot_kwargs,
+# )
+axes[1].plot(
+    app.t,
+    trained_model(app.t),
+    "-",
+    color="red",
+    label="Initial prediction",
+    **plot_kwargs,
+)
+
+
+for ax in axes:
+    ax.grid(color="lightgray", linestyle="--")
+    ax.spines.right.set_visible(False)
+    ax.spines.top.set_visible(False)
+    ax.legend()
+axes[-1].set_xlabel("Time $t$ (a.u.)")
+# %%
+fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+ax.plot(loss_history, color="orangered", linewidth=1.0)
+ax.set_xlabel("Training epochs")
+ax.set_ylabel("Mean squared loss")
+ax.set_yscale("log")
+ax.grid(color="lightgray", linestyle="--")
+ax.spines.right.set_visible(False)
+ax.spines.top.set_visible(False)
+
+
 # %%

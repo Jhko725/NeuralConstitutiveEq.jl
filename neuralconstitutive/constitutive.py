@@ -1,43 +1,113 @@
 import abc
-import torch
-from torch import nn, Tensor
-from .utils import to_parameter
+from functools import partial
+
+from jax import Array
+import jax.numpy as jnp
+from jax.scipy.special import exp1
+import equinox as eqx
+
+from neuralconstitutive.custom_types import FloatScalar, as_floatscalar
+from neuralconstitutive.relaxation_spectrum import AbstractLogDiscreteSpectrum
+
+floatscalar_field = partial(eqx.field, converter=as_floatscalar)
 
 
-class ConstitutiveEqn(nn.Module):
-    def __init__(self):
-        super().__init__()
+class AbstractConstitutiveEqn(eqx.Module):
+    """Abstract base class for all constitutive equations"""
 
     @abc.abstractmethod
-    def stress_relaxation(self, t: Tensor) -> Tensor:
+    def relaxation_function(self, t: Array) -> Array:
         pass
 
-    def forward(self, t: Tensor) -> Tensor:
-        return self.stress_relaxation(t)
+    def relaxation_spectrum(self, t: Array) -> Array | None:
+        return None
 
 
-class PowerLawRheology(ConstitutiveEqn):
-    def __init__(
-        self, E0: float, gamma: float, E_inf: float = 0.0, t_offset: float = 1e-3
-    ):
-        super().__init__()
-        self.E0 = to_parameter(E0)
-        self.gamma = to_parameter(gamma)
-        self.E_inf = to_parameter(E_inf)
-        self.t_offset = to_parameter(t_offset)
+class PowerLaw(AbstractConstitutiveEqn):
+    E0: FloatScalar = floatscalar_field()
+    alpha: FloatScalar = floatscalar_field()
+    t0: float
 
-    def stress_relaxation(self, t: Tensor) -> Tensor:
-        return self.E_inf + (self.E0 - self.E_inf) * (1 + t / self.t_offset) ** (
-            -self.gamma
+    def relaxation_function(self, t):
+        return self.E0 * (t / self.t0) ** (-self.alpha)
+
+
+class ModifiedPowerLaw(AbstractConstitutiveEqn):
+    E0: FloatScalar = floatscalar_field()
+    alpha: FloatScalar = floatscalar_field()
+    t0: FloatScalar = floatscalar_field()
+
+    def relaxation_function(self, t):
+        return self.E0 * (1 + t / self.t0) ** (-self.alpha)
+
+
+class StandardLinearSolid(AbstractConstitutiveEqn):
+    E1: FloatScalar = floatscalar_field()
+    E_inf: FloatScalar = floatscalar_field()
+    tau: FloatScalar = floatscalar_field()
+
+    @property
+    def E0(self) -> FloatScalar:
+        return self.E_inf + self.E1
+
+    def relaxation_function(self, t):
+        return self.E_inf + self.E1 * jnp.exp(-t / self.tau)
+
+
+class KohlrauschWilliamsWatts(AbstractConstitutiveEqn):
+    E0: FloatScalar = floatscalar_field()
+    E_inf: FloatScalar = floatscalar_field()
+    tau: FloatScalar = floatscalar_field()
+    beta: FloatScalar = floatscalar_field()
+
+    def relaxation_function(self, t):
+        exponent = (t / self.tau) ** self.beta
+        return self.E_inf + (self.E0 - self.E_inf) * jnp.exp(-exponent)
+
+
+class Fung(AbstractConstitutiveEqn):
+    E0: FloatScalar = floatscalar_field()
+    tau1: FloatScalar = floatscalar_field()
+    tau2: FloatScalar = floatscalar_field()
+    C: FloatScalar = floatscalar_field()
+
+    def relaxation_function(self, t):
+        def _exp1_diff(t_i: float) -> float:
+            return exp1(t_i / self.tau2) - exp1(t_i / self.tau1)
+
+        # A workaround for https://github.com/google/jax/issues/13543
+        # Note that the use of jax.lax.map causes the time complexity of this function
+        # to scale with the length of array t
+        # Tested on an array of length 100, this is 25 times (~550ms vs 13.5s)
+        # faster than the commented out vectorized version
+
+        numerator = 1 + self.C * _exp1_diff(t)
+        # numerator = 1 + self.C * (exp1(t / self.tau2) - exp1(t / self.tau1))
+        denominator = 1 + self.C * jnp.log(self.tau2 / self.tau1)
+        return self.E0 * numerator / denominator
+
+
+class FromLogDiscreteSpectrum(AbstractConstitutiveEqn):
+    """
+    Assume that log_t_grid is equispaced
+    """
+
+    log10_t_grid: Array
+    h_grid: Array
+
+    def __init__(self, relaxation_spectrum: AbstractLogDiscreteSpectrum):
+        self.log10_t_grid, self.h_grid = relaxation_spectrum.discrete_spectrum()
+
+    def relaxation_function(self, t: Array) -> Array:
+        h0 = jnp.log(self.t_grid[1]) - jnp.log(self.t_grid[0])
+        return jnp.matmul(
+            jnp.exp(-jnp.expand_dims(t, -1) / self.t_grid), self.h_grid * h0
         )
 
+    @property
+    def t_grid(self) -> Array:
+        return 10**self.log10_t_grid
 
-class StandardLinearSolid(ConstitutiveEqn):
-    def __init__(self, E0: float, tau: float, E_inf: float = 0):
-        super().__init__()
-        self.E0 = to_parameter(E0)
-        self.tau = to_parameter(tau)
-        self.E_inf = to_parameter(E_inf)
-
-    def stress_relaxation(self, t: Tensor) -> Tensor:
-        return self.E_inf + (self.E0 - self.E_inf) * torch.exp(-t / self.tau)
+    @property
+    def discrete_spectrum(self) -> tuple[Array, Array]:
+        return self.t_grid, self.h_grid

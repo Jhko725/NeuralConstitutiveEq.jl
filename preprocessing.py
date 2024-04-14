@@ -4,7 +4,7 @@ from configparser import ConfigParser
 import numpy as np
 from numpy import ndarray
 import xarray as xr
-import kneed
+# import kneed
 from numpy.polynomial.polynomial import Polynomial
 import matplotlib.pyplot as plt
 from jhelabtoolkit.io.nanosurf import nanosurf
@@ -12,7 +12,7 @@ from jhelabtoolkit.utils.plotting import configure_matplotlib_defaults
 
 configure_matplotlib_defaults()
 
-filepath = "Hydrogel AFM data/SD-Sphere-CONT-L/Highly Entangled Hydrogel(10nN, 1s, liquid).nid"
+filepath = "data/230602_highlyentangled_preliminary/Hydrogel(liquid, 10nN, 10s)-2.nid"
 config, data = nanosurf.read_nid(filepath)
 # %%
 def get_sampling_rate(nid_config: ConfigParser) -> float:
@@ -25,9 +25,8 @@ def get_sampling_rate(nid_config: ConfigParser) -> float:
 get_sampling_rate(config)
 # %%
 forward, backward = data["spec forward"], data["spec backward"]
-
-forward
-
+forward_pause, backward_pause = data["spec fwd pause"]
+#%%
 
 # %%
 def get_z_and_defl(spectroscopy_data: xr.DataArray) -> tuple[ndarray, ndarray]:
@@ -106,8 +105,8 @@ rov_bwd = find_contact_point1(defl_bwd, N)[0]
 idx_bwd = find_contact_point1(defl_bwd, N)[1]
 rov_bwd_max = find_contact_point1(defl_bwd, N)[2]
 # %%
-fig, ax = plt.subplots(1, 1, figsize = (7, 5))
-ax.plot(dist_fwd[N:np.size(dist_fwd)-N], find_contact_point1(defl_fwd, N)[0])
+fig, ax = plt.subplots(1, 1, figsize=(7, 5))
+ax.plot(dist_fwd[N : np.size(dist_fwd) - N], find_contact_point1(defl_fwd, N)[0])
 ax.set_xlabel("Distance(forward)")
 ax.set_ylabel("ROV")
 # %%
