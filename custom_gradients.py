@@ -378,14 +378,15 @@ def f_ret_grad2(t, constit, indentations, tip):
 
 # %%
 args = ((app_interp, ret_interp), tip)
-dF_ret = f_ret_grad(1.6, plr, app_interp, tip)
+dF_ret = f_ret_grad(1.6, plr, *args)
 print(dF_ret[0], dF_ret[1].E1, dF_ret[1].E_inf, dF_ret[1].tau)
 # %%
 eps = 1e-3
 plr1 = StandardLinearSolid(1.0, 1.0, 10.0 + 0.5 * eps)
 plr2 = StandardLinearSolid(1.0, 1.0, 10.0 - 0.5 * eps)
-args = (app_interp, tip)
+(force_retract_scalar(1.6, plr1, *args) - force_retract_scalar(1.6, plr2, *args)) / eps
 
-(
-    force_approach_scalar2(0.3, plr1, *args) - force_approach_scalar2(0.3, plr2, *args)
-) / eps
+# %%
+dF_ret2 = f_ret_grad2(1.6, plr, *args)
+print(dF_ret2[0], dF_ret2[1].E1, dF_ret2[1].E_inf, dF_ret2[1].tau)
+# %%
