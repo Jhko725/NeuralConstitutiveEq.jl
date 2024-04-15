@@ -244,17 +244,37 @@ def t1_scalar2(
 def t1_scalar_jvp(primals, tangents, *, newton_iterations: int = 5):
     # Take into account when t1=0
     t, constit, indentations = primals
-    app, ret = indentations
-    t_m = app.t1
-    t1 = t1_scalar2(t, constit, indentations, newton_iterations=newton_iterations)
-    tangents_out = integrate(Dt1_integrand, (t1, t_m), (t, constit, app))
-    tangents_out = tangents_out + integrate(Dt1_integrand, (t_m, t), (t, constit, ret))
-    tangents_out = tangents_out.at[0].add(t1_integrand(t, t, constit, ret))
-    tangents_out = tangents_out / constit.relaxation_function(t - t1)
 
-    t_dot, constit_dot, _ = tangents
-    t_constit_dot = jnp.asarray(jtu.tree_flatten((t_dot, constit_dot))[0])
-    return t1, jnp.dot(tangents_out, t_constit_dot)
+    t1 = t1_scalar2(t, constit, indentations, newton_iterations=newton_iterations)
+
+    def _tangents_nonzero(t1, t, constit, indentations, tangents):
+        app, ret = indentations
+        t_m = app.t1
+        tangents_out = integrate(Dt1_integrand, (t1, t_m), (t, constit, app))
+        tangents_out = tangents_out + integrate(
+            Dt1_integrand, (t_m, t), (t, constit, ret)
+        )
+        tangents_out = tangents_out.at[0].add(t1_integrand(t, t, constit, ret))
+        tangents_out = tangents_out / constit.relaxation_function(t - t1)
+
+        t_dot, constit_dot, _ = tangents
+        t_constit_dot = jnp.asarray(jtu.tree_flatten((t_dot, constit_dot))[0])
+        return jnp.dot(tangents_out, t_constit_dot)
+
+    def _tangents_zero(t1, *_):
+        return jnp.zeros_like(t1)
+
+    tangents_out = jax.lax.cond(
+        t1 > 0,
+        _tangents_nonzero,
+        _tangents_zero,
+        t1,
+        t,
+        constit,
+        indentations,
+        tangents,
+    )
+    return t1, tangents_out
 
 
 @eqx.filter_jit
@@ -269,17 +289,103 @@ def t1_grad2(t, constit, indentations):
 
 
 # %%
-dt1 = t1_grad(1.2, plr, (app_interp, ret_interp))
+dt1 = t1_grad(1.99, plr, (app_interp, ret_interp))
 print(dt1[0], dt1[1].E1, dt1[1].E_inf, dt1[1].tau)
 # %%
+t_test = 1.99
 eps = 1e-3
 plr1 = StandardLinearSolid(1.0 + 0.5 * eps, 1.0, 10.0)
 plr2 = StandardLinearSolid(1.0 - 0.5 * eps, 1.0, 10.0)
 args = (app_interp, ret_interp)
 
-(t1_scalar(1.2, plr1, args) - t1_scalar(1.2, plr2, args)) / eps
+(t1_scalar(t_test, plr1, args) - t1_scalar(t_test, plr2, args)) / eps
 
 # %%
-dt12 = t1_grad2(1.2, plr, (app_interp, ret_interp))
+dt12 = t1_grad2(1.99, plr, (app_interp, ret_interp))
 print(dt12[0], dt12[1].E1, dt12[1].E_inf, dt12[1].tau)
+
+
 # %%
+def force_retract_scalar(
+    t: FloatScalar,
+    constitutive: AbstractConstitutiveEqn,
+    indentations: tuple[diffrax.AbstractPath, diffrax.AbstractPath],
+    tip: AbstractTipGeometry,
+) -> FloatScalar:
+
+    t1 = t1_scalar(t, constitutive, indentations)
+    dF = make_force_integrand(constitutive, indentations[0], tip)
+
+    return integrate(dF, (0, t1), (t,))
+
+
+def force_retract_scalar2(
+    t: FloatScalar,
+    constitutive: AbstractConstitutiveEqn,
+    indentations: tuple[diffrax.AbstractPath, diffrax.AbstractPath],
+    tip: AbstractTipGeometry,
+) -> FloatScalar:
+    t1 = t1_scalar2(t, constitutive, indentations)
+    return _force_retract_scalar2(t1, t, constitutive, indentations, tip)
+
+
+@eqx.filter_custom_jvp
+def _force_retract_scalar2(
+    t1: FloatScalar,
+    t: FloatScalar,
+    constitutive: AbstractConstitutiveEqn,
+    indentations: tuple[diffrax.AbstractPath, diffrax.AbstractPath],
+    tip: AbstractTipGeometry,
+) -> FloatScalar:
+    args = (t, constitutive, indentations[0], tip)
+    return integrate(force_integrand, (0, t1), args)
+
+
+@_force_retract_scalar2.def_jvp
+def force_ret_jvp(primals, tangents):
+    t1, t, constit, indentations, tip = primals
+    app = indentations[0]
+    t1_dot, t_dot, constit_dot, _, _ = tangents
+    primal_out = _force_retract_scalar2(t1, t, constit, indentations, tip)
+    tangents_t_constit = integrate(Dforce_integrand, (0, t1), (t, constit, app, tip))
+    t_constit_dot = jnp.asarray(jtu.tree_flatten((t_dot, constit_dot))[0])
+    tangents_t1 = force_integrand(t1, t, constit, app, tip)
+    tangents_out = jnp.dot(tangents_t_constit, t_constit_dot) + tangents_t1 * t1_dot
+    return primal_out, tangents_out
+
+
+@eqx.filter_jit
+def f_ret_grad(t, constit, indentations, tip):
+    t = jnp.asarray(t)
+
+    @eqx.filter_grad
+    def _f_ret_grad(inputs):
+        return force_retract_scalar(*inputs)
+
+    return _f_ret_grad((t, constit, indentations, tip))
+
+
+@eqx.filter_jit
+def f_ret_grad2(t, constit, indentations, tip):
+    t = jnp.asarray(t)
+
+    @eqx.filter_grad
+    def _f_ret_grad2(inputs):
+        return force_retract_scalar2(*inputs)
+
+    return _f_ret_grad2((t, constit, indentations, tip))
+
+
+# %%
+args = ((app_interp, ret_interp), tip)
+dF_ret = f_ret_grad(1.6, plr, app_interp, tip)
+print(dF_ret[0], dF_ret[1].E1, dF_ret[1].E_inf, dF_ret[1].tau)
+# %%
+eps = 1e-3
+plr1 = StandardLinearSolid(1.0, 1.0, 10.0 + 0.5 * eps)
+plr2 = StandardLinearSolid(1.0, 1.0, 10.0 - 0.5 * eps)
+args = (app_interp, tip)
+
+(
+    force_approach_scalar2(0.3, plr1, *args) - force_approach_scalar2(0.3, plr2, *args)
+) / eps
