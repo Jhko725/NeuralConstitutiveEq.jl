@@ -4,6 +4,7 @@ from typing import Callable
 
 import jax
 import jax.numpy as jnp
+import jax.tree_util as jtu
 import equinox as eqx
 import diffrax
 
@@ -109,7 +110,6 @@ def f_app_grad2(t, constit, approach, tip):
 
 
 # %%
-import jax.tree_util as jtu
 
 
 def force_integrand(s, t, constit, app, tip):
@@ -130,6 +130,21 @@ def Dforce_integrand(s, t, constit, app, tip):
     return jnp.asarray(jtu.tree_flatten(grad_t_constit)[0])
 
 
+def t1_integrand(s, t, constit, indent):
+    return constit.relaxation_function(t - s) * indent.derivative(s)
+
+
+def Dt1_integrand(s, t, constit, indent):
+    s, t = jnp.asarray(s), jnp.asarray(t)
+
+    @eqx.filter_grad
+    def _Dt1_integrand(inputs, s, indent):
+        return t1_integrand(s, *inputs, indent)
+
+    grad_t_constit = _Dt1_integrand((t, constit), s, indent)
+    return jnp.asarray(jtu.tree_flatten(grad_t_constit)[0])
+
+
 # %%
 Dforce_integrand(0.2, 0.5, plr, app_interp, tip)
 # %%
@@ -144,4 +159,127 @@ args = (app_interp, tip)
 (
     force_approach_scalar2(0.3, plr1, *args) - force_approach_scalar2(0.3, plr2, *args)
 ) / eps
+
+
+# %%
+def make_t1_integrands(constitutive, indentations) -> tuple[Callable, Callable]:
+    app_interp, ret_interp = indentations
+
+    def t1_integrand_lower(s, t):
+        return constitutive.relaxation_function(t - s) * app_interp.derivative(s)
+
+    def t1_integrand_upper(s, t):
+        return constitutive.relaxation_function(t - s) * ret_interp.derivative(s)
+
+    return t1_integrand_lower, t1_integrand_upper
+
+
+def t1_scalar(
+    t: FloatScalar,
+    constitutive: AbstractConstitutiveEqn,
+    indentations: tuple[diffrax.AbstractPath, diffrax.AbstractPath],
+    *,
+    newton_iterations: int = 5,
+) -> FloatScalar:
+    t1_integrand_lower, t1_integrand_upper = make_t1_integrands(
+        constitutive, indentations
+    )
+    app_interp = indentations[0]
+    t_m = app_interp.t1  # Unfortunate mixup of names between my code and diffrax
+    # In diffrax.AbstractPath, t1 attribute returns the final timepoint of the path
+    const = integrate(t1_integrand_upper, (t_m, t), (t,))
+
+    def residual(t1, t):
+        return integrate(t1_integrand_lower, (t1, t_m), (t,)) + const
+
+    def Dresidual(t1, t):
+        return -constitutive.relaxation_function(t - t1) * app_interp.derivative(t1)
+
+    t1 = t_m
+    for _ in range(newton_iterations):
+        t1 = jnp.clip(t1 - residual(t1, t) / Dresidual(t1, t), 0.0)
+
+    return t1
+
+
+@eqx.filter_jit
+def t1_grad(t, constit, indentations):
+    t = jnp.asarray(t)
+
+    @eqx.filter_grad
+    def _t1_grad(inputs):
+        return t1_scalar(*inputs)
+
+    return _t1_grad((t, constit, indentations))
+
+
+@eqx.filter_custom_jvp
+def t1_scalar2(
+    t: FloatScalar,
+    constitutive: AbstractConstitutiveEqn,
+    indentations: tuple[diffrax.AbstractPath, diffrax.AbstractPath],
+    *,
+    newton_iterations: int = 5,
+) -> FloatScalar:
+
+    app_interp, ret_interp = indentations
+    t_m = app_interp.t1  # Unfortunate mixup of names between my code and diffrax
+    # In diffrax.AbstractPath, t1 attribute returns the final timepoint of the path
+    const = integrate(t1_integrand, (t_m, t), (t, constitutive, ret_interp))
+
+    def residual(t1, t):
+        return integrate(t1_integrand, (t1, t_m), (t, constitutive, app_interp)) + const
+
+    def Dresidual(t1, t):
+        return -t1_integrand(t1, t, constitutive, app_interp)
+
+    t1 = t_m
+    for _ in range(newton_iterations):
+        t1 = jnp.clip(t1 - residual(t1, t) / Dresidual(t1, t), 0.0)
+
+    return t1
+
+
+@t1_scalar2.def_jvp
+def t1_scalar_jvp(primals, tangents, *, newton_iterations: int = 5):
+    # Take into account when t1=0
+    t, constit, indentations = primals
+    app, ret = indentations
+    t_m = app.t1
+    t1 = t1_scalar2(t, constit, indentations, newton_iterations=newton_iterations)
+    tangents_out = integrate(Dt1_integrand, (t1, t_m), (t, constit, app))
+    tangents_out = tangents_out + integrate(Dt1_integrand, (t_m, t), (t, constit, ret))
+    tangents_out = tangents_out.at[0].add(t1_integrand(t, t, constit, ret))
+    tangents_out = tangents_out / constit.relaxation_function(t - t1)
+
+    t_dot, constit_dot, _ = tangents
+    t_constit_dot = jnp.asarray(jtu.tree_flatten((t_dot, constit_dot))[0])
+    return t1, jnp.dot(tangents_out, t_constit_dot)
+
+
+@eqx.filter_jit
+def t1_grad2(t, constit, indentations):
+    t = jnp.asarray(t)
+
+    @eqx.filter_grad
+    def _t1_grad2(inputs):
+        return t1_scalar2(*inputs)
+
+    return _t1_grad2((t, constit, indentations))
+
+
+# %%
+dt1 = t1_grad(1.2, plr, (app_interp, ret_interp))
+print(dt1[0], dt1[1].E1, dt1[1].E_inf, dt1[1].tau)
+# %%
+eps = 1e-3
+plr1 = StandardLinearSolid(1.0 + 0.5 * eps, 1.0, 10.0)
+plr2 = StandardLinearSolid(1.0 - 0.5 * eps, 1.0, 10.0)
+args = (app_interp, ret_interp)
+
+(t1_scalar(1.2, plr1, args) - t1_scalar(1.2, plr2, args)) / eps
+
+# %%
+dt12 = t1_grad2(1.2, plr, (app_interp, ret_interp))
+print(dt12[0], dt12[1].E1, dt12[1].E_inf, dt12[1].tau)
 # %%
