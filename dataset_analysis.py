@@ -26,7 +26,9 @@ from neuralconstitutive.utils import (
     normalize_indentations,
     normalize_forces,
 )
+import time 
 
+t_start = time.time()
 # %%
 jax.config.update("jax_enable_x64", True)
 
@@ -124,9 +126,9 @@ f_kww_fit_app = eqx.filter_jit(force_approach)(kww_fit, app, tip)
 # %%
 ## Latinhypercube sampling & draw histogram for parameter space(example)
 
-num = 3
+num = 20
 
-sampler = qmc.LatinHypercube(d=3, seed=5)
+sampler = qmc.LatinHypercube(d=3, seed=10)
 sls_range = [(1e-5, 1e5), (1e-5, 1e5), (1e-5, 1e5)]
 sls_range = np.asarray(sls_range)
 
@@ -635,3 +637,4 @@ display(sls_tot_results[0])
 # %%
 sls_tot_results[0].aborted
 # %%
+print(f'operation time : {time.time()-t_start}')
