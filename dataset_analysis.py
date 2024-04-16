@@ -15,7 +15,7 @@ from neuralconstitutive.plotting import plot_indentation, plot_relaxation_fn
 from neuralconstitutive.constitutive import (
     StandardLinearSolid,
     ModifiedPowerLaw,
-    KohlrauschWilliamsWatts
+    KohlrauschWilliamsWatts,
 )
 from neuralconstitutive.tipgeometry import Spherical
 from neuralconstitutive.ting import force_approach, force_retract
@@ -26,7 +26,8 @@ from neuralconstitutive.utils import (
     normalize_indentations,
     normalize_forces,
 )
-#%%
+
+# %%
 jax.config.update("jax_enable_x64", True)
 
 datadir = Path("open_data/PAAM hydrogel/speed 5")
@@ -63,7 +64,7 @@ axes[2].plot(ret.depth, f_ret, ".")
 # %%
 ## Fit only the approach portion
 
-dt = app.time[1]-app.time[0]
+dt = app.time[1] - app.time[0]
 
 constit_sls = StandardLinearSolid(10.0, 10.0, 10.0)
 bounds_sls = [(1e-7, 1e7)] * 3
@@ -78,11 +79,11 @@ bounds_kww = [(1e-7, 1e7)] * 3 + [(0.0, 1.0)]
 sls_fit, result_sls = fit_approach_lmfit(constit_sls, bounds_sls, tip, app, f_app)
 mplr_fit, result_mplr = fit_approach_lmfit(constit_mplr, bounds_mplr, tip, app, f_app)
 kww_fit, result_kww = fit_approach_lmfit(constit_kww, bounds_kww, tip, app, f_app)
-#%%
+# %%
 display(result_sls)
 display(result_mplr)
 display(result_kww)
-#%%
+# %%
 ## Calculation of approach & retraction curve for approach params
 f_sls_fit_app = force_approach(sls_fit, app, tip)
 f_sls_fit_ret = force_retract(sls_fit, (app, ret), tip)
@@ -92,7 +93,7 @@ f_mplr_fit_ret = force_retract(mplr_fit, (app, ret), tip)
 
 f_kww_fit_app = force_approach(kww_fit, app, tip)
 f_kww_fit_ret = force_retract(kww_fit, (app, ret), tip)
-#%%
+# %%
 ## Graph of 3 different viscoelastic model for approach params
 fig, axes = plt.subplots(1, 2, figsize=(13, 5))
 axes[0].plot(app.time, f_app, ".", color="black", label="Data", alpha=0.5)
@@ -115,12 +116,12 @@ axes[1] = plot_relaxation_fn(axes[1], mplr_fit, app.time, color="blue", label="M
 axes[1] = plot_relaxation_fn(axes[1], kww_fit, app.time, color="green", label="KWW")
 
 axes[1].legend(loc="upper right")
-#%%
+# %%
 # %%timeit
 f_sls_fit_app = eqx.filter_jit(force_approach)(sls_fit, app, tip)
 f_mplr_fit_app = eqx.filter_jit(force_approach)(mplr_fit, app, tip)
 f_kww_fit_app = eqx.filter_jit(force_approach)(kww_fit, app, tip)
-#%%
+# %%
 ## Latinhypercube sampling & draw histogram for parameter space(example)
 
 num = 3
@@ -131,7 +132,6 @@ sls_range = np.asarray(sls_range)
 
 sample_scale = ["log", "log", "log"]
 is_logscale = [s == "log" for s in sample_scale]
-
 sls_range[is_logscale, :] = np.log10(sls_range[is_logscale, :])
 
 samples_sls = sampler.random(num)
@@ -145,7 +145,7 @@ for i, ax in enumerate(axes):
         ax.hist(np.log10(samples_sls[:, i]))
     else:
         ax.hist(samples_sls[:, i])
-#%%
+# %%
 sampler_mplr = qmc.LatinHypercube(d=3, seed=10)
 mplr_range = [(1e-5, 1e5), (1e-10, 1.0), (1e-5, 1e5)]
 mplr_range = np.asarray(mplr_range)
@@ -171,8 +171,8 @@ kww_range[is_logscale, :] = np.log10(kww_range[is_logscale, :])
 samples_kww = sampler_kww.random(num)
 samples_kww = qmc.scale(samples_kww, kww_range[:, 0], kww_range[:, 1])
 samples_kww[:, is_logscale] = 10 ** samples_kww[:, is_logscale]
-#%%
-## 
+# %%
+##
 sls_fits, sls_results = [], []
 mplr_fits, mplr_results = [], []
 kww_fits, kww_results = [], []
@@ -212,7 +212,7 @@ for i, (constit_fit, result) in enumerate(zip(sls_fits, tqdm(sls_results))):
 
     axes[1] = plot_relaxation_fn(axes[1], constit_fit, app.time, color="gray")
 
-#%%
+# %%
 ## Modified PLR model
 fig, axes = plt.subplots(1, 2, figsize=(7, 3))
 axes[0].plot(app.time, f_app, ".", color="royalblue", label="Data", alpha=0.5)
@@ -226,7 +226,7 @@ for i, (constit_fit, result) in enumerate(zip(mplr_fits, tqdm(mplr_results))):
     axes[0].plot(ret.time, f_fit_ret, color="gray", alpha=0.7)
 
     axes[1] = plot_relaxation_fn(axes[1], constit_fit, app.time, color="gray")
-#%%
+# %%
 ## KWW model
 fig, axes = plt.subplots(1, 2, figsize=(7, 3))
 axes[0].plot(app.time, f_app, ".", color="royalblue", label="Data", alpha=0.5)
@@ -240,7 +240,7 @@ for i, (constit_fit, result) in enumerate(zip(kww_fits, tqdm(kww_results))):
     axes[0].plot(ret.time, f_fit_ret, color="gray", alpha=0.7)
 
     axes[1] = plot_relaxation_fn(axes[1], constit_fit, app.time, color="gray")
-#%%
+# %%
 sls_samples_fit = []
 for r in sls_results:
     sls_samples_fit.append(list(r.params.valuesdict().values()))
@@ -256,12 +256,12 @@ for i, ax in enumerate(axes):
         ax.hist(sls_samples_fit[:, i])
 # %%
 sls_results[0].params.valuesdict()
-#%%
+# %%
 mplr_samples_fit = []
 for r in mplr_results:
     mplr_samples_fit.append(list(r.params.valuesdict().values()))
 mplr_samples_fit = np.asarray(mplr_samples_fit)
-#%%
+# %%
 fig, axes = plt.subplots(1, 3, figsize=(7, 3))
 for i, ax in enumerate(axes):
     if is_logscale[i] is True:
@@ -272,12 +272,12 @@ for i, ax in enumerate(axes):
         ax.hist(mplr_samples_fit[:, i])
 # %%
 mplr_results[0].params.valuesdict()
-#%%
+# %%
 kww_samples_fit = []
 for r in kww_results:
     kww_samples_fit.append(list(r.params.valuesdict().values()))
 kww_samples_fit = np.asarray(kww_samples_fit)
-#%%
+# %%
 fig, axes = plt.subplots(1, 4, figsize=(7, 3))
 for i, ax in enumerate(axes):
     if is_logscale[i] is True:
@@ -359,7 +359,9 @@ plt.show()
 #######################################################################################################################
 # %%
 ## Fit the entire approach-retract curve for SLS
-sls_fit, result = fit_all_lmfit(constit_sls, bounds_sls, tip, (app, ret), (f_app, f_ret))
+sls_fit, result = fit_all_lmfit(
+    constit_sls, bounds_sls, tip, (app, ret), (f_app, f_ret)
+)
 display(result)
 # %%
 fig, axes = plt.subplots(1, 2, figsize=(7, 3))
@@ -375,7 +377,9 @@ with mpl.rc_context({"lines.markersize": 1.0, "lines.linewidth": 2.0}):
 
 # %%
 ## Fit the entire approach-retract curve for SLS
-mplr_fit, result = fit_all_lmfit(constit_mplr, bounds_mplr, tip, (app, ret), (f_app, f_ret))
+mplr_fit, result = fit_all_lmfit(
+    constit_mplr, bounds_mplr, tip, (app, ret), (f_app, f_ret)
+)
 display(result)
 # %%
 fig, axes = plt.subplots(1, 2, figsize=(7, 3))

@@ -6,14 +6,6 @@ from functools import partial
 import matplotlib.pyplot as plt
 import numpy as np
 from numpy import ndarray
-<<<<<<< HEAD
-import xarray as xr
-from numpy.polynomial.polynomial import Polynomial
-from scipy.interpolate import interp1d
-from scipy.integrate import quad
-import matplotlib.pyplot as plt
-=======
->>>>>>> f4985aa3771ce0af10f604a773379e1a33517b6e
 from jhelabtoolkit.io.nanosurf import nanosurf
 from jhelabtoolkit.utils.plotting import configure_matplotlib_defaults
 from scipy.interpolate import interp1d
@@ -54,74 +46,11 @@ def read_spectroscopy_point(filepath: Path) -> tuple[Trajectory, Trajectory]:
 # %%
 forward, backward = data["spec forward"], data["spec backward"]
 
-<<<<<<< HEAD
-forward
-# %%
-def get_z_and_defl(spectroscopy_data: xr.DataArray) -> tuple[ndarray, ndarray]:
-    piezo_z = spectroscopy_data["z-axis sensor"].to_numpy()
-    defl = spectroscopy_data["deflection"].to_numpy()
-    return piezo_z.squeeze(), defl.squeeze()
-
-
-def calc_tip_distance(piezo_z_pos: ndarray, deflection: ndarray) -> ndarray:
-    return piezo_z_pos - deflection
-
-def find_contact_point(deflection: ndarray, N: int) -> ndarray:
-    # Ratio of Variance
-    rov = np.array([])
-    length = np.arange(np.size(deflection))
-    rov = np.array(
-        [
-            np.append(
-                rov,
-                np.array(
-                    [
-                        np.var(deflection[i + 1 : i + N])
-                        / np.var(deflection[i - N : i - 1])
-                    ]
-                ),
-            )
-            for i in length
-        ]
-    ).flatten()
-    rov = rov[N : np.size(rov) - N]
-    idx = np.argmax(rov)
-    return rov, idx, rov[idx]
-
-
-def fit_baseline_polynomial(
-    distance: ndarray, deflection: ndarray, contact_point: float = 0.0, degree: int = 1
-) -> Polynomial:
-    pre_contact = distance < contact_point
-    domain = (np.amin(distance), np.amax(distance))
-    return Polynomial.fit(
-        distance[pre_contact], deflection[pre_contact], deg=degree, domain=domain
-    )
-
-
-# %%
-=======
 # %% 
->>>>>>> f4985aa3771ce0af10f604a773379e1a33517b6e
 z_fwd, defl_fwd = get_z_and_defl(forward)
 z_bwd, defl_bwd = get_z_and_defl(backward)
 dist_fwd = calc_tip_distance(z_fwd, defl_fwd)
 dist_bwd = calc_tip_distance(z_bwd, defl_bwd)
-<<<<<<< HEAD
-# %%
-# ROV method
-N = 10
-rov_fwd = find_contact_point(defl_fwd, N)[0]
-idx_fwd = find_contact_point(defl_fwd, N)[1]
-rov_fwd_max = find_contact_point(defl_fwd, N)[2]
-
-rov_bwd = find_contact_point(defl_bwd, N)[0]
-idx_bwd = find_contact_point(defl_bwd, N)[1]
-rov_bwd_max = find_contact_point(defl_bwd, N)[2]
-# %%
-fig, ax = plt.subplots(1, 1, figsize = (5, 3))
-ax.plot(dist_fwd[N:np.size(dist_fwd)-N], find_contact_point(defl_fwd, N)[0])
-=======
 #%%
 fig, ax = plt.subplots(1, 1, figsize = (5, 3))
 defl = np.concatenate([defl_fwd, defl_bwd[::-1]])
@@ -141,7 +70,6 @@ rov_bwd, idx_bwd = ratio_of_variances(defl_bwd, N)
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
 ax.plot(dist_fwd, rov_fwd)
->>>>>>> f4985aa3771ce0af10f604a773379e1a33517b6e
 ax.set_xlabel("Distance(forward)")
 ax.set_ylabel("ROV")
 plt.axvline(
