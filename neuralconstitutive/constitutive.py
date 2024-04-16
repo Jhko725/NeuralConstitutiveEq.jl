@@ -22,6 +22,11 @@ class AbstractConstitutiveEqn(eqx.Module):
     def relaxation_spectrum(self, t: Array) -> Array | None:
         return None
 
+class Hertzian(AbstractConstitutiveEqn):
+    E0: FloatScalar = floatscalar_field()
+
+    def relaxation_function(self, _: Array) -> Array:
+        return self.E0
 
 class PowerLaw(AbstractConstitutiveEqn):
     E0: FloatScalar = floatscalar_field()
@@ -55,14 +60,18 @@ class StandardLinearSolid(AbstractConstitutiveEqn):
 
 
 class KohlrauschWilliamsWatts(AbstractConstitutiveEqn):
-    E0: FloatScalar = floatscalar_field()
+    E1: FloatScalar = floatscalar_field()
     E_inf: FloatScalar = floatscalar_field()
     tau: FloatScalar = floatscalar_field()
     beta: FloatScalar = floatscalar_field()
 
+    @property
+    def E0(self) -> FloatScalar:
+        return self.E_inf + self.E1
+
     def relaxation_function(self, t):
         exponent = (t / self.tau) ** self.beta
-        return self.E_inf + (self.E0 - self.E_inf) * jnp.exp(-exponent)
+        return self.E_inf + self.E1 * jnp.exp(-exponent)
 
 
 class Fung(AbstractConstitutiveEqn):
