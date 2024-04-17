@@ -1,18 +1,18 @@
 # ruff: noqa: F722
-from typing import TypeVar, Sequence
 import dataclasses
+from typing import Sequence, TypeVar
 
-import jax.numpy as jnp
-from jaxtyping import Float, Array
 import equinox as eqx
+import jax.numpy as jnp
 import lmfit
+from jaxtyping import Array, Float
 
 from neuralconstitutive.constitutive import (
     AbstractConstitutiveEqn,
 )
 from neuralconstitutive.indentation import Indentation, interpolate_indentation
+from neuralconstitutive.ting import _force_approach, force_approach, force_retract
 from neuralconstitutive.tipgeometry import AbstractTipGeometry
-from neuralconstitutive.ting import _force_approach, force_retract, force_approach
 
 ConstitEqn = TypeVar("ConstitEqn", bound=AbstractConstitutiveEqn)
 

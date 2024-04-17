@@ -1,8 +1,8 @@
-import jax
-from jax import Array
-import jax.numpy as jnp
 import equinox as eqx
+import jax
+import jax.numpy as jnp
 import scipy
+from jax import Array
 
 
 class BernsteinNN(eqx.Module):

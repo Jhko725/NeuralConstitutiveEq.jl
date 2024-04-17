@@ -1,5 +1,5 @@
-import pandas as pd
 import jax.numpy as jnp
+import pandas as pd
 from jaxtyping import Array
 
 from neuralconstitutive.custom_types import FileName

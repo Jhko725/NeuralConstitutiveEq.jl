@@ -1,8 +1,8 @@
-from typing import Sequence, Literal, Callable
+from typing import Callable, Literal, Sequence
 
+import equinox as eqx
 import jax
 from jax import Array
-import equinox as eqx
 from more_itertools import pairwise
 
 

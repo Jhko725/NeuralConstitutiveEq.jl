@@ -1,16 +1,16 @@
 # ruff: noqa: F722
 
+import diffrax
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
-import equinox as eqx
-import diffrax
 
-from neuralconstitutive.custom_types import FloatScalar
 from neuralconstitutive.constitutive import AbstractConstitutiveEqn
-from neuralconstitutive.tipgeometry import AbstractTipGeometry
+from neuralconstitutive.custom_types import FloatScalar
 from neuralconstitutive.indentation import interpolate_indentation
 from neuralconstitutive.integrate import integrate
+from neuralconstitutive.tipgeometry import AbstractTipGeometry
 
 
 def force_integrand(
