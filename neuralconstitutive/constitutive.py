@@ -25,8 +25,8 @@ class AbstractConstitutiveEqn(eqx.Module):
 class Hertzian(AbstractConstitutiveEqn):
     E0: FloatScalar = floatscalar_field()
 
-    def relaxation_function(self, _: Array) -> Array:
-        return self.E0
+    def relaxation_function(self, t):
+        return self.E0 * jnp.ones_like(t)
 
 class PowerLaw(AbstractConstitutiveEqn):
     E0: FloatScalar = floatscalar_field()
