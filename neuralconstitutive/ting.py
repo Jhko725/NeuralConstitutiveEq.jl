@@ -107,7 +107,8 @@ def t1_scalar(
 
     t1 = t_m
     for _ in range(newton_iterations):
-        t1 = jnp.clip(t1 - residual(t1, t) / Dresidual(t1, t), 0.0)
+        f_t1, Df_t1 = residual(t1, t), Dresidual(t1, t)
+        t1 = jnp.clip(t1 - f_t1 / Df_t1, 0.0)
 
     return t1
 
