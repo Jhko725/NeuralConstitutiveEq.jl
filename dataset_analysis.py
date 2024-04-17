@@ -244,20 +244,22 @@ mplr_bic = np.array([mplr_results[i].bic for i in np.arange(num)])
 kww_bic = np.array([kww_results[i].bic for i in np.arange(num)])
 htz_bic = np.array([htz_results[i].bic for i in np.arange(num)])
 
-sls_fits = np.array(sls_fits)[np.where(sls_bic<0)]
-mplr_fits = np.array(mplr_fits)[np.where(mplr_bic<0)]
-kww_fits = np.array(kww_fits)[np.where(kww_bic<0)]
-htz_fits = np.array(htz_fits)[np.where(htz_bic<0)]
+threshold = 2000
 
-sls_results = np.array(sls_results)[np.where(sls_bic<0)]
-mplr_results = np.array(mplr_results)[np.where(mplr_bic<0)]
-kww_results = np.array(kww_results)[np.where(kww_bic<0)]
-htz_results = np.array(htz_results)[np.where(htz_bic<0)]
+sls_fits = np.array(sls_fits)[np.where(sls_bic<np.min(sls_bic)+threshold)]
+mplr_fits = np.array(mplr_fits)[np.where(mplr_bic<np.min(mplr_bic)+threshold)]
+kww_fits = np.array(kww_fits)[np.where(kww_bic<np.min(kww_bic)+threshold)]
+htz_fits = np.array(htz_fits)[np.where(htz_bic<np.min(htz_bic)+threshold)]
 
-print(f"SLS = {len(np.where(sls_bic>0))} truncation")
-print(f"MPLR = {len(np.where(mplr_bic>0))} truncation")
-print(f"KWW = {len(np.where(kww_bic>0))} truncation")
-print(f"HTZ = {len(np.where(htz_bic>0))} truncation")
+sls_results = np.array(sls_results)[np.where(sls_bic<np.min(sls_bic)+threshold)]
+mplr_results = np.array(mplr_results)[np.where(mplr_bic<np.min(mplr_bic)+threshold)]
+kww_results = np.array(kww_results)[np.where(kww_bic<np.min(kww_bic)+threshold)]
+htz_results = np.array(htz_results)[np.where(htz_bic<np.min(htz_bic)+threshold)]
+
+print(f"SLS = {len(np.where(sls_bic>np.min(sls_bic)+threshold))} truncation")
+print(f"MPLR = {len(np.where(mplr_bic>np.min(mplr_bic)+threshold))} truncation")
+print(f"KWW = {len(np.where(kww_bic>np.min(kww_bic)+threshold))} truncation")
+print(f"HTZ = {len(np.where(htz_bic>np.min(htz_bic)+threshold))} truncation")
 # %%
 ## SLS model
 fig, axes = plt.subplots(1, 2, figsize=(7, 3))
@@ -446,7 +448,7 @@ with mpl.rc_context({"lines.markersize": 1.0, "lines.linewidth": 2.0}):
     axes[1] = plot_relaxation_fn(axes[1], htz_fit, app.time)
 #%%
 ## check parameter
-for i in range(num):
+for i in range(len(kww_results)):
     print(kww_results[i].params.valuesdict())
 #%%
 ## Parameter space 
@@ -472,13 +474,8 @@ ax.set_ylabel(params[1])
 ax.set_zlabel(params[2])
 
 plt.show()
-
-#%%
-
-
-
-
-  
+#######################################################################################################################
+#######################################################################################################################
 #######################################################################################################################
 # %%
 ## Fit the entire approach-retract curve for SLS
@@ -589,20 +586,20 @@ mplr_tot_bic = np.array([mplr_tot_results[i].bic for i in np.arange(num)])
 kww_tot_bic = np.array([kww_tot_results[i].bic for i in np.arange(num)])
 htz_tot_bic = np.array([htz_tot_results[i].bic for i in np.arange(num)])
 
-sls_tot_fits = np.array(sls_tot_fits)[np.where(sls_tot_bic<0)]
-mplr_tot_fits = np.array(mplr_tot_fits)[np.where(mplr_tot_bic<0)]
-kww_tot_fits = np.array(kww_tot_fits)[np.where(kww_tot_bic<0)]
-htz_tot_fits = np.array(htz_tot_fits)[np.where(htz_tot_bic<0)]
+sls_tot_fits = np.array(sls_tot_fits)[np.where(sls_tot_bic<np.min(sls_tot_bic)+threshold)]
+mplr_tot_fits = np.array(mplr_tot_fits)[np.where(mplr_tot_bic<np.min(mplr_tot_bic)+threshold)]
+kww_tot_fits = np.array(kww_tot_fits)[np.where(kww_tot_bic<np.min(kww_tot_bic)+threshold)]
+htz_tot_fits = np.array(htz_tot_fits)[np.where(htz_tot_bic<np.min(htz_tot_bic)+threshold)]
 
-sls_tot_results = np.array(sls_tot_results)[np.where(sls_tot_bic<0)]
-mplr_tot_results = np.array(mplr_tot_results)[np.where(mplr_tot_bic<0)]
-kww_tot_results = np.array(kww_tot_results)[np.where(kww_tot_bic<0)]
-htz_tot_results = np.array(htz_tot_results)[np.where(htz_tot_bic<0)]
+sls_tot_results = np.array(sls_tot_results)[np.where(sls_tot_bic<np.min(sls_tot_bic)+threshold)]
+mplr_tot_results = np.array(mplr_tot_results)[np.where(mplr_tot_bic<np.min(mplr_tot_bic)+threshold)]
+kww_tot_results = np.array(kww_tot_results)[np.where(kww_tot_bic<np.min(kww_tot_bic)+threshold)]
+htz_tot_results = np.array(htz_tot_results)[np.where(htz_tot_bic<np.min(htz_tot_bic)+threshold)]
 
-print(f"SLS = {len(np.where(sls_tot_bic>0))} truncation")
-print(f"MPLR = {len(np.where(mplr_tot_bic>0))} truncation")
-print(f"KWW = {len(np.where(kww_tot_bic>0))} truncation")
-print(f"HTZ = {len(np.where(htz_tot_bic>0))} truncation")
+print(f"SLS = {len(np.where(sls_tot_bic>np.min(sls_tot_bic)+threshold))} truncation")
+print(f"MPLR = {len(np.where(mplr_tot_bic>np.min(mplr_tot_bic)+threshold))} truncation")
+print(f"KWW = {len(np.where(kww_tot_bic>np.min(kww_tot_bic)+threshold))} truncation")
+print(f"HTZ = {len(np.where(htz_tot_bic>np.min(htz_tot_bic)+threshold))} truncation")
 #%%
 ## SLS model
 fig, axes = plt.subplots(1, 2, figsize=(7, 3))
