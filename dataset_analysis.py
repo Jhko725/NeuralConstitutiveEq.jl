@@ -105,7 +105,7 @@ f_kww_fit_ret = force_retract(kww_fit, (app, ret), tip)
 f_htz_fit_app = force_approach(htz_fit, app, tip)
 f_htz_fit_ret = force_retract(htz_fit, (app, ret), tip)
 # %%
-## Graph of 3 different viscoelastic model for approach params
+## Graph of 4 different viscoelastic model for approach params
 fig, axes = plt.subplots(1, 2, figsize=(13, 5))
 axes[0].plot(app.time, f_app, ".", color="black", label="Data", alpha=0.5)
 axes[0].plot(ret.time, f_ret, ".", color="black", alpha=0.5)
@@ -141,7 +141,7 @@ f_htz_fit_app = eqx.filter_jit(force_approach)(htz_fit, app, tip)
 ## Latinhypercube sampling & draw histogram for parameter space(example)
 
 num = 1
-seed = 10
+seed = 20
 
 sampler = qmc.LatinHypercube(d=3, seed=seed)
 sls_range = [(1e-5, 1e5), (1e-5, 1e5), (1e-5, 1e5)]
@@ -162,6 +162,8 @@ for i, ax in enumerate(axes):
         ax.hist(np.log10(samples_sls[:, i]))
     else:
         ax.hist(samples_sls[:, i])
+
+sls_is_logscale = is_logscale
 # %%
 sampler_mplr = qmc.LatinHypercube(d=3, seed=seed)
 mplr_range = [(1e-5, 1e5), (1e-10, 1.0), (1e-5, 1e5)]
@@ -175,6 +177,8 @@ mplr_range[is_logscale, :] = np.log10(mplr_range[is_logscale, :])
 samples_mplr = sampler_mplr.random(num)
 samples_mplr = qmc.scale(samples_mplr, mplr_range[:, 0], mplr_range[:, 1])
 samples_mplr[:, is_logscale] = 10 ** samples_mplr[:, is_logscale]
+
+mplr_is_logscale = is_logscale
 # %%
 sampler_kww = qmc.LatinHypercube(d=4, seed=seed)
 kww_range = [(1e-5, 1e5), (1e-5, 1e5), (1e-7, 1e7), (1e-10, 1e1),]
@@ -188,6 +192,8 @@ kww_range[is_logscale, :] = np.log10(kww_range[is_logscale, :])
 samples_kww = sampler_kww.random(num)
 samples_kww = qmc.scale(samples_kww, kww_range[:, 0], kww_range[:, 1])
 samples_kww[:, is_logscale] = 10 ** samples_kww[:, is_logscale]
+
+kww_is_logscale = is_logscale
 #%%
 sampler_htz = qmc.LatinHypercube(d=1, seed=seed)
 htz_range = [(1e-5, 1e5)]
@@ -201,6 +207,8 @@ htz_range[is_logscale, :] = np.log10(htz_range[is_logscale, :])
 samples_htz = sampler_htz.random(num)
 samples_htz = qmc.scale(samples_htz, htz_range[:, 0], htz_range[:, 1])
 samples_htz[:, is_logscale] = 10 ** samples_htz[:, is_logscale]
+
+htz_is_logscale = is_logscale
 # %%
 ## 
 
@@ -328,8 +336,7 @@ sls_samples_fit = np.asarray(sls_samples_fit)
 # %%
 fig, axes = plt.subplots(1, 3, figsize=(7, 3))
 for i, ax in enumerate(axes):
-    if is_logscale[i] is True:
-        print(i)
+    if sls_is_logscale[i] is True:
         s_ = sls_samples_fit[:, i]
         s_[s_ > 0] = np.log10(s_[s_ > 0])
         ax.hist(s_)
@@ -346,7 +353,7 @@ mplr_samples_fit = np.asarray(mplr_samples_fit)
 # %%
 fig, axes = plt.subplots(1, 3, figsize=(7, 3))
 for i, ax in enumerate(axes):
-    if is_logscale[i] is True:
+    if mplr_is_logscale[i] is True:
         s_ = mplr_samples_fit[:, i]
         s_[s_ > 0] = np.log10(s_[s_ > 0])
         ax.hist(s_)
@@ -363,13 +370,13 @@ kww_samples_fit = np.asarray(kww_samples_fit)
 # %%
 fig, axes = plt.subplots(1, 4, figsize=(7, 3))
 for i, ax in enumerate(axes):
-    if is_logscale[i] is True:
+    if kww_is_logscale[i] is True:
         s_ = kww_samples_fit[:, i]
         s_[s_ > 0] = np.log10(s_[s_ > 0])
         ax.hist(s_)
     else:
         ax.hist(kww_samples_fit[:, i])
-# %%
+#%%
 kww_results[0]
 #%%
 ## For Hertz
@@ -378,19 +385,19 @@ for r in htz_results:
     htz_samples_fit.append(list(r.params.valuesdict().values()))
 htz_samples_fit = np.asarray(htz_samples_fit)
 # %%
-fig, axes = plt.subplots(1, 1, figsize=(7, 3))
-for i, ax in enumerate(axes):
-    if is_logscale[i] is True:
-        s_ = htz_samples_fit[:, i]
-        s_[s_ > 0] = np.log10(s_[s_ > 0])
-        ax.hist(s_)
-    else:
-        ax.hist(htz_samples_fit[:, i])
+fig, ax = plt.subplots(1, 1, figsize=(7, 3))
+
+i=0
+if htz_is_logscale[i] is True:
+    s_ = htz_samples_fit[:, i]
+    s_[s_ > 0] = np.log10(s_[s_ > 0])
+    ax.hist(s_)
+else:
+    ax.hist(htz_samples_fit[:, i])
 # %%
 htz_results[0]
 # %%
 ## Test fitting results
-
 sls_fit = sls_fits[0]
 fig, axes = plt.subplots(1, 2, figsize=(7, 3))
 f_fit_app = force_approach(sls_fit, app, tip)
@@ -471,7 +478,7 @@ plt.show()
 #######################################################################################################################
 # %%
 ## Fit the entire approach-retract curve for SLS
-sls_fit, result = fit_all_lmfit(constit_sls, bounds_sls, tip, (app, ret), (f_app, f_ret))
+sls_tot_fit, tot_result_sls = fit_all_lmfit(constit_sls, bounds_sls, tip, (app, ret), (f_app, f_ret))
 display(result)
 # %%
 fig, axes = plt.subplots(1, 2, figsize=(7, 3))
@@ -487,7 +494,7 @@ with mpl.rc_context({"lines.markersize": 1.0, "lines.linewidth": 2.0}):
 
 # %%
 ## Fit the entire approach-retract curve for MPLR
-mplr_fit, result = fit_all_lmfit(constit_mplr, bounds_mplr, tip, (app, ret), (f_app, f_ret))
+mplr_tot_fit, tot_result_mplr = fit_all_lmfit(constit_mplr, bounds_mplr, tip, (app, ret), (f_app, f_ret))
 display(result)
 # %%
 fig, axes = plt.subplots(1, 2, figsize=(7, 3))
@@ -503,7 +510,7 @@ with mpl.rc_context({"lines.markersize": 1.0, "lines.linewidth": 2.0}):
 # %%
 ## Fit the entire approach-retract curve for KWW
 # range(1e-5, 1e5)
-kww_fit, result = fit_all_lmfit(constit_kww, bounds_kww, tip, (app, ret), (f_app, f_ret))
+kww_tot_fit, tot_result_kww = fit_all_lmfit(constit_kww, bounds_kww, tip, (app, ret), (f_app, f_ret))
 display(result)
 # %%
 fig, axes = plt.subplots(1, 2, figsize=(7, 3))
@@ -518,7 +525,7 @@ with mpl.rc_context({"lines.markersize": 1.0, "lines.linewidth": 2.0}):
     axes[1] = plot_relaxation_fn(axes[1], kww_fit, app.time)
 # %%
 ## Fit the entire approach-retract curve for Hertz
-htz_fit, result = fit_all_lmfit(constit_htz, bounds_htz, tip, (app, ret), (f_app, f_ret))
+htz_tot_fit, tot_result_htz = fit_all_lmfit(constit_htz, bounds_htz, tip, (app, ret), (f_app, f_ret))
 display(result)
 # %%
 fig, axes = plt.subplots(1, 2, figsize=(7, 3))
@@ -532,9 +539,44 @@ with mpl.rc_context({"lines.markersize": 1.0, "lines.linewidth": 2.0}):
 
     axes[1] = plot_relaxation_fn(axes[1], htz_fit, app.time)
 #%%
+f_sls_fit_app = force_approach(sls_tot_fit, app, tip)
+f_sls_fit_ret = force_retract(sls_tot_fit, (app, ret), tip)
 
+f_mplr_fit_app = force_approach(mplr_tot_fit, app, tip)
+f_mplr_fit_ret = force_retract(mplr_tot_fit, (app, ret), tip)
 
+f_kww_fit_app = force_approach(kww_tot_fit, app, tip)
+f_kww_fit_ret = force_retract(kww_tot_fit, (app, ret), tip)
 
+f_htz_fit_app = force_approach(htz_tot_fit, app, tip)
+f_htz_fit_ret = force_retract(htz_tot_fit, (app, ret), tip)
+#%%
+## Graph of 4 different viscoelastic model for approach params
+fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+axes[0].plot(app.time, f_app, ".", color="black", label="Data", alpha=0.5)
+axes[0].plot(ret.time, f_ret, ".", color="black", alpha=0.5)
+
+# Graph for parameters of SLS model fitting (approach portion)
+axes[0].plot(app.time, f_sls_fit_app, color="red", alpha=0.7, label="SLS")
+axes[0].plot(ret.time, f_sls_fit_ret, color="red", alpha=0.7)
+# Graph for parameters of Modified PLR model fitting (approach portion)
+axes[0].plot(app.time, f_mplr_fit_app, color="green", alpha=0.7, label="Modified PLR")
+axes[0].plot(ret.time, f_mplr_fit_ret, color="green", alpha=0.7)
+# Graph for parameters of KWW model fitting (approach portion)
+axes[0].plot(app.time, f_kww_fit_app, color="blue", alpha=0.7, label="KWW")
+axes[0].plot(ret.time, f_kww_fit_ret, color="blue", alpha=0.7)
+
+axes[0].plot(app.time, f_htz_fit_app, color="yellow", alpha=0.7, label="Hertzian")
+axes[0].plot(ret.time, f_htz_fit_ret, color="yellow", alpha=0.7)
+
+axes[0].legend(loc="upper right")
+
+axes[1] = plot_relaxation_fn(axes[1], sls_fit, app.time, color="red", label="SLS")
+axes[1] = plot_relaxation_fn(axes[1], mplr_fit, app.time, color="blue", label="Modified PLR")
+axes[1] = plot_relaxation_fn(axes[1], kww_fit, app.time, color="green", label="KWW")
+axes[1] = plot_relaxation_fn(axes[1], htz_fit, app.time, color="yellow", label="Hertzian")
+
+axes[1].legend(loc="upper right")
 #%%
 ## Latinhypercube sampling
 
@@ -588,10 +630,11 @@ mplr_tot_results = np.array(mplr_tot_results)[valid_inds(mplr_tot_bic, threshold
 kww_tot_results = np.array(kww_tot_results)[valid_inds(kww_tot_bic, threshold)]
 htz_tot_results = np.array(htz_tot_results)[valid_inds(htz_tot_bic, threshold)]
 
-print(f"SLS = {valid_inds(sls_tot_bic, threshold)==False} truncation")
-print(f"MPLR = {valid_inds(mplr_tot_bic, threshold)==False} truncation")
-print(f"KWW = {valid_inds(kww_tot_bic, threshold)==False} truncation")
-print(f"HTZ = {valid_inds(htz_tot_bic, threshold)==False} truncation")
+print(f"SLS = {np.sum(valid_inds(sls_tot_bic, threshold)==False)} truncation")
+print(f"MPLR = {np.sum(valid_inds(mplr_tot_bic, threshold)==False)} truncation")
+print(f"KWW = {np.sum(valid_inds(kww_tot_bic, threshold)==False)} truncation")
+print(f"HTZ = {np.sum(valid_inds(htz_tot_bic, threshold)==False)} truncation")
+
 #%%
 ## SLS model
 fig, axes = plt.subplots(1, 2, figsize=(7, 3))
@@ -656,7 +699,7 @@ sls_samples_tot_fit = np.asarray(sls_samples_tot_fit)
 # %%
 fig, axes = plt.subplots(1, 3, figsize=(7, 3))
 for i, ax in enumerate(axes):
-    if is_logscale[i] is True:
+    if sls_is_logscale[i] is True:
         s_ = sls_samples_tot_fit[:, i]
         s_[s_ > 0] = np.log10(s_[s_ > 0])
         ax.hist(s_)
@@ -672,7 +715,7 @@ mplr_samples_tot_fit = np.asarray(mplr_samples_tot_fit)
 #%%
 fig, axes = plt.subplots(1, 3, figsize=(7, 3))
 for i, ax in enumerate(axes):
-    if is_logscale[i] is True:
+    if mplr_is_logscale[i] is True:
         s_ = mplr_samples_tot_fit[:, i]
         s_[s_ > 0] = np.log10(s_[s_ > 0])
         ax.hist(s_)
@@ -688,7 +731,7 @@ kww_samples_tot_fit = np.asarray(kww_samples_tot_fit)
 #%%
 fig, axes = plt.subplots(1, 4, figsize=(7, 3))
 for i, ax in enumerate(axes):
-    if is_logscale[i] is True:
+    if kww_is_logscale[i] is True:
         s_ = kww_samples_tot_fit[:, i]
         s_[s_ > 0] = np.log10(s_[s_ > 0])
         ax.hist(s_)
@@ -702,14 +745,14 @@ for r in htz_tot_results:
     htz_samples_tot_fit.append(list(r.params.valuesdict().values()))
 htz_samples_tot_fit = np.asarray(htz_samples_tot_fit)
 #%%
-fig, axes = plt.subplots(1, 4, figsize=(7, 3))
-for i, ax in enumerate(axes):
-    if is_logscale[i] is True:
-        s_ = htz_samples_tot_fit[:, i]
-        s_[s_ > 0] = np.log10(s_[s_ > 0])
-        ax.hist(s_)
-    else:
-        ax.hist(htz_samples_tot_fit[:, i])
+fig, ax = plt.subplots(1, 1, figsize=(7, 3))
+i=0
+if htz_is_logscale[i] is True:
+    s_ = htz_samples_tot_fit[:, i]
+    s_[s_ > 0] = np.log10(s_[s_ > 0])
+    ax.hist(s_)
+else:
+    ax.hist(htz_samples_tot_fit[:, i])
 # %%
 htz_tot_results[0].params.valuesdict()
 #%%
@@ -802,26 +845,56 @@ mplr_tot_bic = np.min(mplr_tot_bic)
 kww_tot_bic = np.min(kww_tot_bic)
 htz_tot_bic = np.min(htz_tot_bic)
 # %%
-fig, ax = plt.subplots(1, 1, figsize=(10,5))
+# fig, ax = plt.subplots(1, 1, figsize=(10,5))
 
-x=np.arange(2)
+# x=np.arange(2)
 
-ax.bar(x, height=sls_bic, width=0.25, label = 'SLS')
-ax.bar(x+0.25, height=mplr_bic, width=0.25, label='MPLR')
-ax.bar(x+0.5, height=kww_bic, width=0.25, label='MPLR')
-ax.bar(x+0.75, height=htz_bic, width=0.25, label='Hertz')
+# ax.bar(x[0], height=sls_bic, width=0.25, label = 'SLS')
+# ax.bar(x[0]+0.25, height=mplr_bic, width=0.25, label='MPLR')
+# ax.bar(x[0]+0.5, height=kww_bic, width=0.25, label='KWW')
+# ax.bar(x[0]+0.75, height=htz_bic, width=0.25, label='Hertz')
 
-ax.bar(x, height=sls_tot_bic, width=0.25, label = 'SLS')
-ax.bar(x+0.25, height=mplr_tot_bic, width=0.25, label='MPLR')
-ax.bar(x+0.5, height=kww_tot_bic, width=0.25, label='KWW')
-ax.bar(x+0.75, height=htz_tot_bic, width=0.25, label='Hertz')
-ax.set_ylabel("BIC")
-ax.legend()
+# ax.bar(x[1]+0.25, height=sls_tot_bic, width=0.25, label = 'SLS')
+# ax.bar(x[1]+0.5, height=mplr_tot_bic, width=0.25, label='MPLR')
+# ax.bar(x[1]+0.75, height=kww_tot_bic, width=0.25, label='KWW')
+# ax.bar(x[1]+1.0, height=htz_tot_bic, width=0.25, label='Hertz')
+# ax.set_ylabel("BIC")
 
+# ax.set_xticks(x[0] + 0.25, 'Approach')
+# ax.set_xticks(x[1] + 0.25, 'Total')
+# ax.legend()
 # %%
 display(sls_tot_results[0])
 # %%
 sls_tot_results[0].aborted
 # %%
 print(f'operation time : {time.time()-t_start}')
+# %%
+section = ("Approach","Total")
+model_bic = {
+    'SLS': (sls_bic, sls_tot_bic),
+    'MPLR': (mplr_bic, mplr_tot_bic),
+    'KWW': (kww_bic, kww_tot_bic),
+    'Hertz' : (htz_bic, htz_tot_bic)
+}
+
+x = np.arange(len(section))  # the label locations
+width = 0.2  # the width of the bars
+multiplier = 0
+
+fig, ax = plt.subplots(layout='constrained')
+
+for attribute, measurement in model_bic.items():
+    offset = width * multiplier
+    rects = ax.bar(x + offset, measurement, width, label=attribute)
+    ax.bar_label(rects, padding=2)
+    multiplier += 1
+
+# Add some text for labels, title and custom x-axis tick labels, etc.
+ax.set_ylabel('BIC')
+ax.set_title('4 different model by section')
+ax.set_xticks(x + width*1.5, section)
+ax.legend(loc="lower left", ncols=2)
+
+plt.show()
 #%%
