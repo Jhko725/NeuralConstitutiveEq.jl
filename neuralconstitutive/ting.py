@@ -1,5 +1,4 @@
 # ruff: noqa: F722
-from typing import Callable
 
 import jax
 import jax.numpy as jnp
@@ -10,7 +9,7 @@ import diffrax
 from neuralconstitutive.custom_types import FloatScalar
 from neuralconstitutive.constitutive import AbstractConstitutiveEqn
 from neuralconstitutive.tipgeometry import AbstractTipGeometry
-from neuralconstitutive.indentation import interpolate_indentation, Indentation
+from neuralconstitutive.indentation import interpolate_indentation
 from neuralconstitutive.integrate import integrate
 
 
