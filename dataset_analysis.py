@@ -140,7 +140,7 @@ f_htz_fit_app = eqx.filter_jit(force_approach)(htz_fit, app, tip)
 # %%
 ## Latinhypercube sampling & draw histogram for parameter space(example)
 
-num = 5
+num = 1
 seed = 10
 
 sampler = qmc.LatinHypercube(d=3, seed=seed)
@@ -246,20 +246,23 @@ htz_bic = np.array([htz_results[i].bic for i in np.arange(num)])
 
 threshold = 2000
 
-sls_fits = np.array(sls_fits)[np.where(sls_bic<np.min(sls_bic)+threshold)]
-mplr_fits = np.array(mplr_fits)[np.where(mplr_bic<np.min(mplr_bic)+threshold)]
-kww_fits = np.array(kww_fits)[np.where(kww_bic<np.min(kww_bic)+threshold)]
-htz_fits = np.array(htz_fits)[np.where(htz_bic<np.min(htz_bic)+threshold)]
+def valid_inds(model_bic, threshold):
+    return model_bic<np.min(model_bic)+threshold
 
-sls_results = np.array(sls_results)[np.where(sls_bic<np.min(sls_bic)+threshold)]
-mplr_results = np.array(mplr_results)[np.where(mplr_bic<np.min(mplr_bic)+threshold)]
-kww_results = np.array(kww_results)[np.where(kww_bic<np.min(kww_bic)+threshold)]
-htz_results = np.array(htz_results)[np.where(htz_bic<np.min(htz_bic)+threshold)]
+sls_fits = np.array(sls_fits)[valid_inds(sls_bic, threshold)]
+mplr_fits = np.array(mplr_fits)[valid_inds(mplr_bic, threshold)]
+kww_fits = np.array(kww_fits)[valid_inds(kww_bic, threshold)]
+htz_fits = np.array(htz_fits)[valid_inds(htz_bic, threshold)]
 
-print(f"SLS = {len(np.where(sls_bic>np.min(sls_bic)+threshold))} truncation")
-print(f"MPLR = {len(np.where(mplr_bic>np.min(mplr_bic)+threshold))} truncation")
-print(f"KWW = {len(np.where(kww_bic>np.min(kww_bic)+threshold))} truncation")
-print(f"HTZ = {len(np.where(htz_bic>np.min(htz_bic)+threshold))} truncation")
+sls_results = np.array(sls_results)[valid_inds(sls_bic, threshold)]
+mplr_results = np.array(mplr_results)[valid_inds(mplr_bic, threshold)]
+kww_results = np.array(kww_results)[valid_inds(kww_bic, threshold)]
+htz_results = np.array(htz_results)[valid_inds(htz_bic, threshold)]
+
+print(f"SLS = {np.sum(valid_inds(sls_bic, threshold)==False)} truncation")
+print(f"MPLR = {np.sum(valid_inds(mplr_bic, threshold)==False)} truncation")
+print(f"KWW = {np.sum(valid_inds(kww_bic, threshold)==False)} truncation")
+print(f"HTZ = {np.sum(valid_inds(htz_bic, threshold)==False)} truncation")
 # %%
 ## SLS model
 fig, axes = plt.subplots(1, 2, figsize=(7, 3))
@@ -274,7 +277,6 @@ for i, (constit_fit, result) in enumerate(zip(sls_fits, tqdm(sls_results))):
     axes[0].plot(ret.time, f_fit_ret, color="gray", alpha=0.7)
 
     axes[1] = plot_relaxation_fn(axes[1], constit_fit, app.time, color="gray")
-
 # %%
 ## Modified PLR model
 fig, axes = plt.subplots(1, 2, figsize=(7, 3))
@@ -324,15 +326,15 @@ for r in sls_results:
     sls_samples_fit.append(list(r.params.valuesdict().values()))
 sls_samples_fit = np.asarray(sls_samples_fit)
 # %%
-# fig, axes = plt.subplots(1, 3, figsize=(7, 3))
-# for i, ax in enumerate(axes):
-#     if is_logscale[i] is True:
-#         print(i)
-#         s_ = sls_samples_fit[:, i]
-#         s_[s_ > 0] = np.log10(s_[s_ > 0])
-#         ax.hist(s_)
-#     else:
-#         ax.hist(sls_samples_fit[:, i])
+fig, axes = plt.subplots(1, 3, figsize=(7, 3))
+for i, ax in enumerate(axes):
+    if is_logscale[i] is True:
+        print(i)
+        s_ = sls_samples_fit[:, i]
+        s_[s_ > 0] = np.log10(s_[s_ > 0])
+        ax.hist(s_)
+    else:
+        ax.hist(sls_samples_fit[:, i])
 # %%
 sls_results[0].params.valuesdict()
 # %%
@@ -342,14 +344,14 @@ for r in mplr_results:
     mplr_samples_fit.append(list(r.params.valuesdict().values()))
 mplr_samples_fit = np.asarray(mplr_samples_fit)
 # %%
-# fig, axes = plt.subplots(1, 3, figsize=(7, 3))
-# for i, ax in enumerate(axes):
-#     if is_logscale[i] is True:
-#         s_ = mplr_samples_fit[:, i]
-#         s_[s_ > 0] = np.log10(s_[s_ > 0])
-#         ax.hist(s_)
-#     else:
-#         ax.hist(mplr_samples_fit[:, i])
+fig, axes = plt.subplots(1, 3, figsize=(7, 3))
+for i, ax in enumerate(axes):
+    if is_logscale[i] is True:
+        s_ = mplr_samples_fit[:, i]
+        s_[s_ > 0] = np.log10(s_[s_ > 0])
+        ax.hist(s_)
+    else:
+        ax.hist(mplr_samples_fit[:, i])
 # %%
 mplr_results[0].params.valuesdict()
 # %%
@@ -359,14 +361,14 @@ for r in kww_results:
     kww_samples_fit.append(list(r.params.valuesdict().values()))
 kww_samples_fit = np.asarray(kww_samples_fit)
 # %%
-# fig, axes = plt.subplots(1, 4, figsize=(7, 3))
-# for i, ax in enumerate(axes):
-#     if is_logscale[i] is True:
-#         s_ = kww_samples_fit[:, i]
-#         s_[s_ > 0] = np.log10(s_[s_ > 0])
-#         ax.hist(s_)
-#     else:
-#         ax.hist(kww_samples_fit[:, i])
+fig, axes = plt.subplots(1, 4, figsize=(7, 3))
+for i, ax in enumerate(axes):
+    if is_logscale[i] is True:
+        s_ = kww_samples_fit[:, i]
+        s_[s_ > 0] = np.log10(s_[s_ > 0])
+        ax.hist(s_)
+    else:
+        ax.hist(kww_samples_fit[:, i])
 # %%
 kww_results[0]
 #%%
@@ -376,26 +378,16 @@ for r in htz_results:
     htz_samples_fit.append(list(r.params.valuesdict().values()))
 htz_samples_fit = np.asarray(htz_samples_fit)
 # %%
-# fig, axes = plt.subplots(1, 1, figsize=(7, 3))
-# for i, ax in enumerate(axes):
-#     if is_logscale[i] is True:
-#         s_ = htz_samples_fit[:, i]
-#         s_[s_ > 0] = np.log10(s_[s_ > 0])
-#         ax.hist(s_)
-#     else:
-#         ax.hist(htz_samples_fit[:, i])
+fig, axes = plt.subplots(1, 1, figsize=(7, 3))
+for i, ax in enumerate(axes):
+    if is_logscale[i] is True:
+        s_ = htz_samples_fit[:, i]
+        s_[s_ > 0] = np.log10(s_[s_ > 0])
+        ax.hist(s_)
+    else:
+        ax.hist(htz_samples_fit[:, i])
 # %%
 htz_results[0]
-#%%
-
-
-
-
-
-
-
-
-
 # %%
 ## Test fitting results
 
@@ -586,20 +578,20 @@ mplr_tot_bic = np.array([mplr_tot_results[i].bic for i in np.arange(num)])
 kww_tot_bic = np.array([kww_tot_results[i].bic for i in np.arange(num)])
 htz_tot_bic = np.array([htz_tot_results[i].bic for i in np.arange(num)])
 
-sls_tot_fits = np.array(sls_tot_fits)[np.where(sls_tot_bic<np.min(sls_tot_bic)+threshold)]
-mplr_tot_fits = np.array(mplr_tot_fits)[np.where(mplr_tot_bic<np.min(mplr_tot_bic)+threshold)]
-kww_tot_fits = np.array(kww_tot_fits)[np.where(kww_tot_bic<np.min(kww_tot_bic)+threshold)]
-htz_tot_fits = np.array(htz_tot_fits)[np.where(htz_tot_bic<np.min(htz_tot_bic)+threshold)]
+sls_tot_fits = np.array(sls_tot_fits)[valid_inds(sls_tot_bic, threshold)]
+mplr_tot_fits = np.array(mplr_tot_fits)[valid_inds(mplr_tot_bic, threshold)]
+kww_tot_fits = np.array(kww_tot_fits)[valid_inds(kww_tot_bic, threshold)]
+htz_tot_fits = np.array(htz_tot_fits)[valid_inds(htz_tot_bic, threshold)]
 
-sls_tot_results = np.array(sls_tot_results)[np.where(sls_tot_bic<np.min(sls_tot_bic)+threshold)]
-mplr_tot_results = np.array(mplr_tot_results)[np.where(mplr_tot_bic<np.min(mplr_tot_bic)+threshold)]
-kww_tot_results = np.array(kww_tot_results)[np.where(kww_tot_bic<np.min(kww_tot_bic)+threshold)]
-htz_tot_results = np.array(htz_tot_results)[np.where(htz_tot_bic<np.min(htz_tot_bic)+threshold)]
+sls_tot_results = np.array(sls_tot_results)[valid_inds(sls_tot_bic, threshold)]
+mplr_tot_results = np.array(mplr_tot_results)[valid_inds(mplr_tot_bic, threshold)]
+kww_tot_results = np.array(kww_tot_results)[valid_inds(kww_tot_bic, threshold)]
+htz_tot_results = np.array(htz_tot_results)[valid_inds(htz_tot_bic, threshold)]
 
-print(f"SLS = {len(np.where(sls_tot_bic>np.min(sls_tot_bic)+threshold))} truncation")
-print(f"MPLR = {len(np.where(mplr_tot_bic>np.min(mplr_tot_bic)+threshold))} truncation")
-print(f"KWW = {len(np.where(kww_tot_bic>np.min(kww_tot_bic)+threshold))} truncation")
-print(f"HTZ = {len(np.where(htz_tot_bic>np.min(htz_tot_bic)+threshold))} truncation")
+print(f"SLS = {valid_inds(sls_tot_bic, threshold)==False} truncation")
+print(f"MPLR = {valid_inds(mplr_tot_bic, threshold)==False} truncation")
+print(f"KWW = {valid_inds(kww_tot_bic, threshold)==False} truncation")
+print(f"HTZ = {valid_inds(htz_tot_bic, threshold)==False} truncation")
 #%%
 ## SLS model
 fig, axes = plt.subplots(1, 2, figsize=(7, 3))
@@ -774,28 +766,25 @@ sls_tot_results[0].params.valuesdict()
 #%%
 ## Parameter space 
 sls_params = ['E1', 'E_inf', 'tau']
-mplr_params = ['E0', 't0', 'alpha']
-kww_params = ['E1', 'E_inf', 'tau']
 
-fig = plt.figure()
+fig = plt.figure(figsize=(15,10))
 ax = fig.add_subplot(projection='3d')
 
-for i in np.arange(len(sls_tot_results)):
+for i in np.arange(len(sls_results)):
     params = sls_params
     xs = sls_results[i].params.valuesdict()[params[0]]
     ys = sls_results[i].params.valuesdict()[params[1]]
     zs = sls_results[i].params.valuesdict()[params[2]]
 
+    ax.scatter(xs, ys, zs, marker='^', alpha=0.7)
+
+for i in np.arange(len(sls_tot_results)):
     xs_tot = sls_tot_results[i].params.valuesdict()[params[0]]
     ys_tot = sls_tot_results[i].params.valuesdict()[params[1]]
     zs_tot = sls_tot_results[i].params.valuesdict()[params[2]]
 
+    ax.scatter(xs_tot, ys_tot, zs_tot, marker='*', alpha=0.7)
 
-    ax.scatter(xs, ys, zs, '^')
-    ax.scatter(xs_tot, ys_tot, zs_tot, 'o')
-# ax.set_xscale('log')
-# ax.set_yscale('log')
-# ax.set_zscale('log')
 ax.set_xlabel(params[0])
 ax.set_ylabel(params[1])
 ax.set_zlabel(params[2])
@@ -835,3 +824,4 @@ display(sls_tot_results[0])
 sls_tot_results[0].aborted
 # %%
 print(f'operation time : {time.time()-t_start}')
+#%%

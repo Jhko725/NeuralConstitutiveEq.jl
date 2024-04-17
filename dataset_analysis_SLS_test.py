@@ -95,7 +95,7 @@ f_sls_fit_app = eqx.filter_jit(force_approach)(sls_fit, app, tip)
 # %%
 ## Latinhypercube sampling & draw histogram for parameter space(example)
 
-num = 1
+num = 30
 
 sampler = qmc.LatinHypercube(d=3, seed=10)
 sls_range = [(1e-5, 1e5), (1e-5, 1e5), (1e-5, 1e5)]
@@ -126,6 +126,17 @@ for i in tqdm(range(samples_sls.shape[0])):
     constit_fit, result = fit_approach_lmfit(constit_i, bounds_sls, tip, app, f_app)
     sls_fits.append(constit_fit)
     sls_results.append(result)
+#%%
+threshold = 2000
+
+def valid_inds(model_bic, threshold):
+    return model_bic<np.min(model_bic)+threshold
+
+sls_bic = np.array([sls_results[i].bic for i in np.arange(num)])
+sls_fits = np.array(sls_fits)[valid_inds(sls_bic, threshold)]
+sls_results = np.array(sls_results)[valid_inds(sls_bic, threshold)]
+print(f"SLS = {np.sum(valid_inds(sls_bic, threshold)==False)} truncation")
+#%%
 # %%
 ## SLS model
 fig, axes = plt.subplots(1, 2, figsize=(7, 3))
@@ -172,7 +183,7 @@ with mpl.rc_context({"lines.markersize": 1.0, "lines.linewidth": 2.0}):
 
 #%%
 ## check parameter
-for i in range(num):
+for i in range(len(sls_results)):
     print(sls_results[i].params.valuesdict())
 #%%
 ## Parameter space 
@@ -221,6 +232,13 @@ for i in tqdm(range(samples_sls.shape[0])):
     constit_fit, result = fit_all_lmfit(constit_i, bounds_sls, tip, (app, ret), (f_app, f_ret))
     sls_tot_fits.append(constit_fit)
     sls_tot_results.append(result)
+#%%
+
+#%%
+sls_tot_bic = np.array([sls_tot_results[i].bic for i in np.arange(num)])
+sls_tot_fits = np.array(sls_tot_fits)[valid_inds(sls_tot_bic, threshold)]
+sls_tot_results = np.array(sls_tot_results)[valid_inds(sls_tot_bic, threshold)]
+print(f"SLS = {np.sum(valid_inds(sls_tot_bic, threshold)==False)} truncation")
 # %%
 ## SLS model
 fig, axes = plt.subplots(1, 2, figsize=(7, 3))
@@ -270,22 +288,23 @@ sls_tot_results[0].params.valuesdict()
 ## Parameter space 
 sls_params = ['E1', 'E_inf', 'tau']
 
-fig = plt.figure()
+fig = plt.figure(figsize=(15,10))
 ax = fig.add_subplot(projection='3d')
 
-for i in np.arange(len(sls_tot_results)):
+for i in np.arange(len(sls_results)):
     params = sls_params
     xs = sls_results[i].params.valuesdict()[params[0]]
     ys = sls_results[i].params.valuesdict()[params[1]]
     zs = sls_results[i].params.valuesdict()[params[2]]
 
+    ax.scatter(xs, ys, zs, marker='^', alpha=0.7)
+
+for i in np.arange(len(sls_tot_results)):
     xs_tot = sls_tot_results[i].params.valuesdict()[params[0]]
     ys_tot = sls_tot_results[i].params.valuesdict()[params[1]]
     zs_tot = sls_tot_results[i].params.valuesdict()[params[2]]
 
-
-    ax.scatter(xs, ys, zs, '^')
-    ax.scatter(xs_tot, ys_tot, zs_tot, 'o')
+    ax.scatter(xs_tot, ys_tot, zs_tot, marker='*', alpha=0.7)
 
 ax.set_xlabel(params[0])
 ax.set_ylabel(params[1])
@@ -293,18 +312,14 @@ ax.set_zlabel(params[2])
 
 plt.show()
 # %%
-sls_bic = [sls_results[i].bic for i in np.arange(num)]
-sls_tot_bic = [sls_tot_results[i].bic for i in np.arange(num)]
-# %%
 fig, ax = plt.subplots(1, 1, figsize=(10,5))
 
 x=np.arange(1)
 
-ax.bar(x, height=np.min(sls_bic), width=0.25, label = 'SLS')
-ax.bar(x+0.25, height=np.min(sls_tot_bic), width=0.25, label = 'SLS')
+ax.bar(x, height=np.min(sls_bic), width=0.25, label = 'Approach Curve')
+ax.bar(x+0.25, height=np.min(sls_tot_bic), width=0.25, label = 'Total Curve')
 ax.set_ylabel("BIC")
 ax.legend()
-
 # %%
 display(sls_tot_results[0])
 # %%
