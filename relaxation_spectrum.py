@@ -7,12 +7,17 @@ from neuralconstitutive.constitutive import (
     FromLogDiscreteSpectrum,
     StandardLinearSolid,
     ModifiedPowerLaw,
+    AbstractConstitutiveEqn,
 )
 from neuralconstitutive.relaxation_spectrum import HonerkampWeeseBimodal
 from neuralconstitutive.indentation import Indentation
 from neuralconstitutive.tipgeometry import Spherical
 from neuralconstitutive.ting import force_approach, force_retract
+from neuralconstitutive.integrate import integrate
 from neuralconstitutive.fitting import fit_approach_lmfit, fit_all_lmfit
+from neuralconstitutive.nn import FullyConnectedNetwork
+from neuralconstitutive.custom_types import FloatScalar
+from neuralconstitutive.plotting import plot_relaxation_fn
 
 jax.config.update("jax_enable_x64", True)
 
@@ -81,7 +86,7 @@ ax.legend()
 fig
 
 # %%
-from neuralconstitutive.plotting import plot_relaxation_fn
+
 
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
 ax = plot_relaxation_fn(
@@ -115,4 +120,5 @@ ax = plot_relaxation_fn(
 ax = plot_relaxation_fn(
     ax, sls_fit, app.time, marker=".", color="orangered", alpha=0.8, label="Data"
 )
+
 # %%
