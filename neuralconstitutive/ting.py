@@ -11,6 +11,7 @@ from neuralconstitutive.custom_types import FloatScalar
 from neuralconstitutive.indentation import interpolate_indentation
 from neuralconstitutive.integrate import integrate
 from neuralconstitutive.tipgeometry import AbstractTipGeometry
+from neuralconstitutive.tree import tree_to_array1d
 
 
 def force_integrand(
@@ -40,7 +41,7 @@ def Dforce_integrand(
         return force_integrand(s, *inputs, app, tip)
 
     grad_t_constit = _Dforce_integrand((t, constit), s, app, tip)
-    return jnp.asarray(jtu.tree_flatten(grad_t_constit)[0])
+    return tree_to_array1d(grad_t_constit)
 
 
 def t1_integrand(
@@ -60,7 +61,7 @@ def Dt1_integrand(s, t, constit, indent):
         return t1_integrand(s, *inputs, indent)
 
     grad_t_constit = _Dt1_integrand((t, constit), s, indent)
-    return jnp.asarray(jtu.tree_flatten(grad_t_constit)[0])
+    return tree_to_array1d(grad_t_constit)
 
 
 @eqx.filter_custom_jvp
@@ -81,7 +82,7 @@ def _force_approach_scalar_jvp(primals, tangents):
     primal_out = force_approach_scalar(t, constit, app, tip)
     tangents_out = integrate(Dforce_integrand, (0, t), primals)
     tangents_out = tangents_out.at[0].add(force_integrand(t, *primals))
-    t_constit_dot = jnp.asarray(jtu.tree_flatten((t_dot, constit_dot))[0])
+    t_constit_dot = tree_to_array1d((t_dot, constit_dot))
     return primal_out, jnp.dot(tangents_out, t_constit_dot)
 
 
@@ -131,7 +132,7 @@ def _t1_scalar_jvp(primals, tangents, *, newton_iterations: int = 5):
         tangents_out = tangents_out / constit.relaxation_function(t - t1)
 
         t_dot, constit_dot, _ = tangents
-        t_constit_dot = jnp.asarray(jtu.tree_flatten((t_dot, constit_dot))[0])
+        t_constit_dot = tree_to_array1d(t_dot, constit_dot)
         return jnp.dot(tangents_out, t_constit_dot)
 
     def _tangents_zero(t1, *_):
@@ -179,7 +180,7 @@ def _force_retract_jvp(primals, tangents):
     t1_dot, t_dot, constit_dot, _, _ = tangents
     primal_out = _force_retract_scalar(t1, t, constit, indentations, tip)
     tangents_t_constit = integrate(Dforce_integrand, (0, t1), (t, constit, app, tip))
-    t_constit_dot = jnp.asarray(jtu.tree_flatten((t_dot, constit_dot))[0])
+    t_constit_dot = tree_to_array1d(t_dot, constit_dot)
     tangents_t1 = force_integrand(t1, t, constit, app, tip)
     tangents_out = jnp.dot(tangents_t_constit, t_constit_dot) + tangents_t1 * t1_dot
     return primal_out, tangents_out

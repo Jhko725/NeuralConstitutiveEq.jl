@@ -10,7 +10,7 @@ from neuralconstitutive.constitutive import (
     AbstractConstitutiveEqn,
 )
 from neuralconstitutive.relaxation_spectrum import HonerkampWeeseBimodal
-from neuralconstitutive.indentation import Indentation
+from neuralconstitutive.indentation import Indentation, interpolate_indentation
 from neuralconstitutive.tipgeometry import Spherical
 from neuralconstitutive.ting import force_approach, force_retract
 from neuralconstitutive.integrate import integrate
@@ -76,25 +76,41 @@ sls_fit, result = fit_approach_lmfit(sls, bounds, tip, app, f_app)
 f_fit_app = force_approach(sls_fit, app, tip)
 f_fit_ret = force_retract(sls_fit, (app, ret), tip)
 # %%
-fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-ax.plot(app.time, f_app, ".", color="black", alpha=0.5, label="Data")
-ax.plot(ret.time, f_ret, ".", color="black", alpha=0.5, label="Data")
+fig, axes = plt.subplots(1, 2, figsize=(7, 3), constrained_layout=True)
+axes[0].plot(app.time, f_app, ".", color="black", alpha=0.5, label="Data")
+axes[0].plot(ret.time, f_ret, ".", color="black", alpha=0.5)
 
-ax.plot(app.time, f_fit_app, ".", color="orangered", alpha=0.8, label="SLS")
-ax.plot(ret.time, f_fit_ret, ".", color="orangered", alpha=0.8, label="SLS")
-ax.legend()
-fig
+axes[0].plot(app.time, f_fit_app, "-", color="orangered", alpha=0.8, label="SLS")
+axes[0].plot(ret.time, f_fit_ret, "-", color="orangered", alpha=0.8)
 
+
+axes[0].set_xlabel("Normalized time")
+axes[0].set_ylabel("Normalized force")
+
+axes[1] = plot_relaxation_fn(
+    axes[1],
+    bimodal,
+    app.time,
+    marker=".",
+    color="black",
+    alpha=0.5,
+    label="Ground truth",
+)
+axes[1] = plot_relaxation_fn(
+    axes[1], sls_fit, app.time, color="orangered", alpha=0.8, label="SLS model"
+)
+
+axes[1].set_xlabel("Normalized time")
+axes[1].set_ylabel("Normalized relaxation function")
+axes[1].legend()
+
+for ax in axes:
+    ax.grid(ls="--", color="lightgray")
+
+fig.suptitle("Fitting only on the approach curve")
 # %%
 
 
-fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-ax = plot_relaxation_fn(
-    ax, bimodal, app.time, marker=".", color="black", alpha=0.5, label="Data"
-)
-ax = plot_relaxation_fn(
-    ax, sls_fit, app.time, marker=".", color="orangered", alpha=0.8, label="Data"
-)
 # %%
 ## Fit all
 sls_fit, result = fit_all_lmfit(sls, bounds, tip, (app, ret), (f_app, f_ret))
@@ -104,21 +120,117 @@ result
 f_fit_app = force_approach(sls_fit, app, tip)
 f_fit_ret = force_retract(sls_fit, (app, ret), tip)
 # %%
+fig, axes = plt.subplots(1, 2, figsize=(7, 3), constrained_layout=True)
+axes[0].plot(app.time, f_app, ".", color="black", alpha=0.5, label="Data")
+axes[0].plot(ret.time, f_ret, ".", color="black", alpha=0.5)
+
+axes[0].plot(app.time, f_fit_app, "-", color="orangered", alpha=0.8, label="SLS")
+axes[0].plot(ret.time, f_fit_ret, "-", color="orangered", alpha=0.8)
+
+
+axes[0].set_xlabel("Normalized time")
+axes[0].set_ylabel("Normalized force")
+
+axes[1] = plot_relaxation_fn(
+    axes[1],
+    bimodal,
+    app.time,
+    marker=".",
+    color="black",
+    alpha=0.5,
+    label="Ground truth",
+)
+axes[1] = plot_relaxation_fn(
+    axes[1], sls_fit, app.time, color="orangered", alpha=0.8, label="SLS model"
+)
+
+axes[1].set_xlabel("Normalized time")
+axes[1].set_ylabel("Normalized relaxation function")
+axes[1].legend()
+
+for ax in axes:
+    ax.grid(ls="--", color="lightgray")
+
+fig.suptitle("Fitting on the approach+retract curve")
+
+# %%
+
+
+# %%
+from functools import partial
+import equinox as eqx
+
+
+class NeuralConstitutive(AbstractConstitutiveEqn):
+    nn: FullyConnectedNetwork
+
+    def relaxation_function(self, t: FloatScalar) -> FloatScalar:
+        @partial(eqx.filter_vmap, in_axes=(0, None))
+        def integrand(k: FloatScalar, t: FloatScalar) -> FloatScalar:
+            t = jnp.asarray(t)
+            return self.nn(k) * jnp.exp(-t * jnp.exp(-k))
+
+        dk = 0.01
+        k_grid = jnp.arange(-5, 5, dk)
+        return jnp.sum(integrand(k_grid, t)) * dk
+
+
+# %%
+nn = FullyConnectedNetwork(["scalar", 20, 20, "scalar"])
+constit = NeuralConstitutive(nn)
+
+# %%
+f_nn_app = force_approach(constit, app, tip)
+# %%
+f_nn_ret = force_retract(constit, (app, ret), tip)
+# %%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
 ax.plot(app.time, f_app, ".", color="black", alpha=0.5, label="Data")
 ax.plot(ret.time, f_ret, ".", color="black", alpha=0.5, label="Data")
-
-ax.plot(app.time, f_fit_app, ".", color="orangered", alpha=0.8, label="SLS")
-ax.plot(ret.time, f_fit_ret, ".", color="orangered", alpha=0.8, label="SLS")
+ax.plot(app.time, f_nn_app, ".", color="orangered", alpha=0.8, label="NN")
+ax.plot(ret.time, f_nn_ret, ".", color="orangered", alpha=0.8, label="NN")
 ax.legend()
 fig
+# %%
+from jaxtyping import Array
 
-fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-ax = plot_relaxation_fn(
-    ax, bimodal, app.time, marker=".", color="black", alpha=0.5, label="Data"
+
+def l2_loss(x: Array, x_pred: Array) -> float:
+    return jnp.mean((x - x_pred) ** 2)
+
+
+def loss_total(
+    model: AbstractConstitutiveEqn,
+    trajectories,
+    forces: tuple[Array, Array],
+    tip,
+) -> float:
+    app, ret = trajectories
+    f_app, f_ret = forces
+
+    f_app_pred = force_approach(model, app, tip)
+    f_ret_pred = force_retract(model, (app, ret), tip)
+    return l2_loss(f_app, f_app_pred) + l2_loss(f_ret, f_ret_pred)
+
+
+# %%
+loss_total(constit, (app, ret), (f_app, f_ret), tip)
+# %%
+eqx.filter_grad(loss_total)(constit, (app, ret), (f_app, f_ret), tip)
+# %%
+from neuralconstitutive.ting import force_approach_scalar, force_integrand
+
+# %%
+app_interp = interpolate_indentation(app)
+force_approach_scalar(jnp.asarray(0.4), constit, app_interp, tip)
+# %%
+constit
+# %%
+force_integrand(jnp.asarray(0.3), jnp.asarray(0.8), constit, app_interp, tip)
+# %%
+integrate(
+    force_integrand, (0, jnp.asarray(0.8)), (jnp.asarray(0.8), constit, app_interp, tip)
 )
-ax = plot_relaxation_fn(
-    ax, sls_fit, app.time, marker=".", color="orangered", alpha=0.8, label="Data"
-)
+# %%
 
 # %%

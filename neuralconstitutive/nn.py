@@ -8,15 +8,15 @@ from more_itertools import pairwise
 
 class FullyConnectedNetwork(eqx.Module):
     layers: list[eqx.Module]
-    activation: Callable[[Array], Array]
-    final_activation: Callable[[Array], Array] | None
+    # activation: Callable[[Array], Array]
+    # final_activation: Callable[[Array], Array] | None
     random_seed: int
 
     def __init__(
         self,
         nodes: Sequence[int | Literal["scalar"]],
-        activation: Callable[[Array], Array] = jax.nn.tanh,
-        final_activation: Callable[[Array], Array] | None = jax.nn.softplus,
+        # activation: Callable[[Array], Array] = jax.nn.tanh,
+        # final_activation: Callable[[Array], Array] | None = jax.nn.softplus,
         random_seed: int = 0,
     ):
         super().__init__()
@@ -25,14 +25,15 @@ class FullyConnectedNetwork(eqx.Module):
         self.layers = [
             eqx.nn.Linear(*feats, key=k) for (feats, k) in zip(pairwise(nodes), keys)
         ]
-        self.activation = activation
-        self.final_activation = (
-            eqx.nn.Identity() if final_activation is None else final_activation
-        )
+        # self.activation = activation
+        # self.final_activation = (
+        #     eqx.nn.Identity() if final_activation is None else final_activation
+        # )
 
     def __call__(self, t: Array) -> Array:
         for layer in self.layers:
-            t = self.activation(layer(t))
-            # t = jax.nn.tanh(layer(t))
-        return self.final_activation(t)
-        # return jax.nn.softplus(t)
+            # t = self.activation(layer(t))
+            t = jax.nn.tanh(layer(t))
+
+        # return self.final_activation(t)
+        return jax.nn.softplus(t)
