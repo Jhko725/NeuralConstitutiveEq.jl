@@ -25,7 +25,7 @@ from neuralconstitutive.utils import (
 
 jax.config.update("jax_enable_x64", True)
 
-datadir = Path("open_data/PAAM hydrogel")
+datadir = Path("open_data/PAAM hydrogel/speed 5")
 (app, ret), (f_app, f_ret) = import_data(
     datadir / "PAA_speed 5_4nN.tab", datadir / "PAA_speed 5_4nN.tsv"
 )
@@ -120,13 +120,19 @@ f_app2 = eqx.filter_jit(
 )(app.time, constit, app_interp, tip)
 f_vec = eqx.filter_jit(force_approach_vec)(app.time, constit, app_interp, tip)
 # %%
+with jax.profiler.trace("/tmp/tensorboard"):
+    f_app = eqx.filter_vmap(force_approach_scalar, in_axes=(0, None, None, None))(app.time, constit, app_interp, tip)
+    f_app.block_until_ready()
+#%%
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
 ax.plot(app.time, f_app, ".", label="Original")
 ax.plot(app.time, f_app2, ".", label="Rescaled")
 ax.plot(app.time, f_vec, ".", label="Vectorized")
 ax.legend()
-
-
+#%%
+eqx.filter_make_jaxpr(eqx.filter_vmap(force_approach_scalar, in_axes=(0, None, None, None)))(app.time, constit, app_interp, tip)[0]
+#%%
+eqx.filter_make_jaxpr(force_approach_vec)(app.time, constit, app_interp, tip)[0]
 # %%
 def make_t1_integrands(constitutive, indentations) -> tuple[Callable, Callable]:
     app_interp, ret_interp = indentations

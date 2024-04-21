@@ -36,12 +36,12 @@ ax.set_ylabel("Relaxation Spectrum H(τ)[Pa]")
 # %%
 # "Experimental" time points and indentation
 # Set it so that Dt and max(t_exp) more or less span the interesting parts of the spectrum
-t = jnp.arange(0.0, 1.0 + 1e-3, 1e-3)
+t = jnp.arange(0.0, 1.0 + 1e-2, 1e-2)
 h = 1.0 * t
 len(t)
 # %%
 app = Indentation(t, h)
-t_ret = jnp.arange(1.0, 2.0 + 1e-3, 1e-3)
+t_ret = jnp.arange(1.0, 2.0 + 1e-2, 1e-2)
 h_ret = 2.0 - t_ret
 ret = Indentation(t_ret, h_ret)
 
@@ -209,20 +209,25 @@ def loss_total(
     f_app, f_ret = forces
 
     f_app_pred = force_approach(model, app, tip)
-    f_ret_pred = force_retract(model, (app, ret), tip)
-    return l2_loss(f_app, f_app_pred) + l2_loss(f_ret, f_ret_pred)
+    # f_ret_pred = force_retract(model, (app, ret), tip)
+    return l2_loss(f_app, f_app_pred)  # + l2_loss(f_ret, f_ret_pred)
 
 
 # %%
-loss_total(constit, (app, ret), (f_app, f_ret), tip)
+out = loss_total(constit, (app, ret), (f_app, f_ret), tip)
 # %%
-eqx.filter_grad(loss_total)(constit, (app, ret), (f_app, f_ret), tip)
+out
+# %%
+with jax.profiler.trace("/tmp/tensorboard"):
+    loss_grad = eqx.filter_grad(loss_total)(constit, (app, ret), (f_app, f_ret), tip)
+    loss_grad.block_until_ready()
+# %%
+eqx.filter_make_jaxpr(force_approach)(constit, app, tip)[0]
 # %%
 from neuralconstitutive.ting import force_approach_scalar, force_integrand
 
-# %%
 app_interp = interpolate_indentation(app)
-force_approach_scalar(jnp.asarray(0.4), constit, app_interp, tip)
+eqx.filter_grad(force_approach_scalar)(jnp.asarray(0.4), constit, app_interp, tip)
 # %%
 constit
 # %%
