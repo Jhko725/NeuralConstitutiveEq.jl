@@ -219,8 +219,10 @@ out = loss_total(constit, (app, ret), (f_app, f_ret), tip)
 out
 # %%
 with jax.profiler.trace("/tmp/tensorboard"):
-    loss_grad = eqx.filter_grad(loss_total)(constit, (app, ret), (f_app, f_ret), tip)
-    loss_grad.block_until_ready()
+    loss_grad = eqx.filter_jit(eqx.filter_grad(loss_total))(
+        constit, (app, ret), (f_app, f_ret), tip
+    )
+    # loss_grad.block_until_ready()
 # %%
 eqx.filter_make_jaxpr(force_approach)(constit, app, tip)[0]
 # %%
