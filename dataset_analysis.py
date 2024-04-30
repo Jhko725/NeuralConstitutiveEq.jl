@@ -140,7 +140,7 @@ f_htz_fit_app = eqx.filter_jit(force_approach)(htz_fit, app, tip)
 # %%
 ## Latinhypercube sampling & draw histogram for parameter space(example)
 
-num = 1
+num = 10
 seed = 10
 
 sampler = qmc.LatinHypercube(d=3, seed=seed)
@@ -814,17 +814,17 @@ mplr_params = ['E0', 'alpha', 't0']
 fig = plt.figure(figsize=(8,7))
 ax = fig.add_subplot(projection='3d')
 
-results = mplr_results
+results = sls_results
+params = sls_params
 
 for i in np.arange(len(results)):
-    params = mplr_params
     xs = results[i].params.valuesdict()[params[0]]
     ys = results[i].params.valuesdict()[params[1]]
     zs = results[i].params.valuesdict()[params[2]]
 
     ax.scatter(xs, ys, zs, marker='^', alpha=0.7, color="red")
 
-tot_results = mplr_tot_results
+tot_results = sls_tot_results
 
 for i in np.arange(len(tot_results)):
     xs_tot = tot_results[i].params.valuesdict()[params[0]]
@@ -886,6 +886,15 @@ ax.legend(loc="lower left", ncols=2)
 
 plt.show()
 #%%
+print("SLS parameter")
+for i in range(len(sls_tot_results)):
+    print(sls_tot_results[i].params.valuesdict())
+
+print("MPLR parameter")
 for i in range(len(mplr_tot_results)):
     print(mplr_tot_results[i].params.valuesdict())
-# %%
+
+print("KWW parameter")
+for i in range(len(kww_tot_results)):
+    print(kww_tot_results[i].params.valuesdict())
+#%%
