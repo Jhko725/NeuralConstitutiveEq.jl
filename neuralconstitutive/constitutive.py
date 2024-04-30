@@ -1,10 +1,10 @@
 import abc
 from functools import partial
 
-from jax import Array
-import jax.numpy as jnp
-from jax.scipy.special import exp1
 import equinox as eqx
+import jax.numpy as jnp
+from jax import Array
+from jax.scipy.special import exp1
 
 from neuralconstitutive.custom_types import FloatScalar, as_floatscalar
 from neuralconstitutive.relaxation_spectrum import AbstractLogDiscreteSpectrum
@@ -22,11 +22,13 @@ class AbstractConstitutiveEqn(eqx.Module):
     def relaxation_spectrum(self, t: Array) -> Array | None:
         return None
 
+
 class Hertzian(AbstractConstitutiveEqn):
     E0: FloatScalar = floatscalar_field()
 
     def relaxation_function(self, t):
         return self.E0 * jnp.ones_like(t)
+
 
 class PowerLaw(AbstractConstitutiveEqn):
     E0: FloatScalar = floatscalar_field()

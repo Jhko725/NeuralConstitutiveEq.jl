@@ -1,17 +1,19 @@
 # ruff: noqa: F722
-from typing import Callable
+from typing import Any
 
+import diffrax
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
-import equinox as eqx
-import diffrax
+from jaxtyping import Array
 
-from neuralconstitutive.custom_types import FloatScalar
 from neuralconstitutive.constitutive import AbstractConstitutiveEqn
-from neuralconstitutive.tipgeometry import AbstractTipGeometry
-from neuralconstitutive.indentation import interpolate_indentation, Indentation
+from neuralconstitutive.custom_types import FloatScalar
+from neuralconstitutive.indentation import interpolate_indentation
 from neuralconstitutive.integrate import integrate
+from neuralconstitutive.tipgeometry import AbstractTipGeometry
+from neuralconstitutive.tree import tree_to_array1d
 
 
 def force_integrand(
@@ -27,23 +29,6 @@ def force_integrand(
     return a * g * dh_b
 
 
-def Dforce_integrand(
-    s: FloatScalar,
-    t: FloatScalar,
-    constit: AbstractConstitutiveEqn,
-    app: diffrax.AbstractPath,
-    tip: AbstractTipGeometry,
-) -> FloatScalar:
-    s, t = jnp.asarray(s), jnp.asarray(t)
-
-    @eqx.filter_grad
-    def _Dforce_integrand(inputs, s, app, tip):
-        return force_integrand(s, *inputs, app, tip)
-
-    grad_t_constit = _Dforce_integrand((t, constit), s, app, tip)
-    return jnp.asarray(jtu.tree_flatten(grad_t_constit)[0])
-
-
 def t1_integrand(
     s: FloatScalar,
     t: FloatScalar,
@@ -51,17 +36,6 @@ def t1_integrand(
     indent: diffrax.AbstractPath,
 ) -> FloatScalar:
     return constit.relaxation_function(t - s) * indent.derivative(s)
-
-
-def Dt1_integrand(s, t, constit, indent):
-    s, t = jnp.asarray(s), jnp.asarray(t)
-
-    @eqx.filter_grad
-    def _Dt1_integrand(inputs, s, indent):
-        return t1_integrand(s, *inputs, indent)
-
-    grad_t_constit = _Dt1_integrand((t, constit), s, indent)
-    return jnp.asarray(jtu.tree_flatten(grad_t_constit)[0])
 
 
 @eqx.filter_custom_jvp
@@ -75,15 +49,42 @@ def force_approach_scalar(
     return integrate(force_integrand, (0, t), args)
 
 
+def _is_none(x: Any) -> bool:
+    return x is None
+
+
+def _zeros_like_arg1(x: Array, *_) -> Array:
+    return jnp.zeros_like(x)
+
+
 @force_approach_scalar.def_jvp
 def _force_approach_scalar_jvp(primals, tangents):
     t, constit, app, tip = primals
     t_dot, constit_dot, _, _ = tangents
+    t_constit, t_constit_dot = (t, constit), (t_dot, constit_dot)
+
     primal_out = force_approach_scalar(t, constit, app, tip)
-    tangents_out = integrate(Dforce_integrand, (0, t), primals)
-    tangents_out = tangents_out.at[0].add(force_integrand(t, *primals))
-    t_constit_dot = jnp.asarray(jtu.tree_flatten((t_dot, constit_dot))[0])
-    return primal_out, jnp.dot(tangents_out, t_constit_dot)
+
+    is_nondiff = jtu.tree_map(_is_none, t_constit_dot, is_leaf=_is_none)
+    t_constit_nondiff, t_constit_diff = eqx.partition(
+        t_constit, is_nondiff, is_leaf=_is_none
+    )
+
+    @eqx.filter_grad
+    def _Dforce_integrand(_t_constit_diff, s):
+        _t_constit = eqx.combine(_t_constit_diff, t_constit_nondiff)
+        return force_integrand(s, *_t_constit, app, tip)
+
+    def Dforce_integrand(s, _t_constit_diff):
+        return tree_to_array1d(_Dforce_integrand(_t_constit_diff, s))
+
+    Df = integrate(Dforce_integrand, (0, t), (t_constit_diff,))
+    Df_boundary = jax.lax.cond(
+        t_dot is None, _zeros_like_arg1, force_integrand, t, *primals
+    )
+    Df = Df.at[0].add(Df_boundary)
+    tangents_out = jnp.dot(Df, tree_to_array1d(t_constit_dot))
+    return primal_out, tangents_out
 
 
 @eqx.filter_custom_jvp
@@ -108,7 +109,8 @@ def t1_scalar(
 
     t1 = t_m
     for _ in range(newton_iterations):
-        t1 = jnp.clip(t1 - residual(t1, t) / Dresidual(t1, t), 0.0)
+        f_t1, Df_t1 = residual(t1, t), Dresidual(t1, t)
+        t1 = jnp.clip(t1 - f_t1 / Df_t1, 0.0)
 
     return t1
 
@@ -117,35 +119,45 @@ def t1_scalar(
 def _t1_scalar_jvp(primals, tangents, *, newton_iterations: int = 5):
     # Take into account when t1=0
     t, constit, indentations = primals
+    t_dot, constit_dot, _ = tangents
+    t_constit, t_constit_dot = (t, constit), (t_dot, constit_dot)
 
     t1 = t1_scalar(t, constit, indentations, newton_iterations=newton_iterations)
 
-    def _tangents_nonzero(t1, t, constit, indentations, tangents):
+    is_nondiff = jtu.tree_map(_is_none, t_constit_dot, is_leaf=_is_none)
+    t_constit_nondiff, t_constit_diff = eqx.partition(
+        t_constit, is_nondiff, is_leaf=_is_none
+    )
+
+    @eqx.filter_grad
+    def _Dt1_integrand(_t_constit_diff, s, indent):
+        _t_constit = eqx.combine(_t_constit_diff, t_constit_nondiff)
+        return t1_integrand(s, *_t_constit, indent)
+
+    def Dt1_integrand(s, _t_constit_diff, indent):
+        return tree_to_array1d(_Dt1_integrand(_t_constit_diff, s, indent))
+
+    def _tangents_nonzero(t1, _t_constit_diff, indentations):
         app, ret = indentations
         t_m = app.t1
-        tangents_out = integrate(Dt1_integrand, (t1, t_m), (t, constit, app))
-        tangents_out = tangents_out + integrate(
-            Dt1_integrand, (t_m, t), (t, constit, ret)
+        t, constit = eqx.combine(_t_constit_diff, t_constit_nondiff)
+
+        Dt1 = integrate(Dt1_integrand, (t1, t_m), (_t_constit_diff, app))
+        Dt1 = Dt1 + integrate(Dt1_integrand, (t_m, t), (_t_constit_diff, ret))
+        Dt1_boundary = jax.lax.cond(
+            t_dot is None, _zeros_like_arg1, t1_integrand, t, t, constit, ret
         )
-        tangents_out = tangents_out.at[0].add(t1_integrand(t, t, constit, ret))
-        tangents_out = tangents_out / constit.relaxation_function(t - t1)
-
-        t_dot, constit_dot, _ = tangents
-        t_constit_dot = jnp.asarray(jtu.tree_flatten((t_dot, constit_dot))[0])
-        return jnp.dot(tangents_out, t_constit_dot)
-
-    def _tangents_zero(t1, *_):
-        return jnp.zeros_like(t1)
+        Dt1 = Dt1.at[0].add(Dt1_boundary)
+        Dt1 = Dt1 / constit.relaxation_function(t - t1)
+        return jnp.dot(Dt1, tree_to_array1d(t_constit_dot))
 
     tangents_out = jax.lax.cond(
-        t1 > 0,
+        t1 <= 0.0,
+        _zeros_like_arg1,
         _tangents_nonzero,
-        _tangents_zero,
         t1,
-        t,
-        constit,
+        t_constit_diff,
         indentations,
-        tangents,
     )
     return t1, tangents_out
 
@@ -178,10 +190,32 @@ def _force_retract_jvp(primals, tangents):
     app = indentations[0]
     t1_dot, t_dot, constit_dot, _, _ = tangents
     primal_out = _force_retract_scalar(t1, t, constit, indentations, tip)
-    tangents_t_constit = integrate(Dforce_integrand, (0, t1), (t, constit, app, tip))
-    t_constit_dot = jnp.asarray(jtu.tree_flatten((t_dot, constit_dot))[0])
-    tangents_t1 = force_integrand(t1, t, constit, app, tip)
-    tangents_out = jnp.dot(tangents_t_constit, t_constit_dot) + tangents_t1 * t1_dot
+
+    t_constit, t_constit_dot = (t, constit), (t_dot, constit_dot)
+    is_nondiff = jtu.tree_map(_is_none, t_constit_dot, is_leaf=_is_none)
+    t_constit_nondiff, t_constit_diff = eqx.partition(
+        t_constit, is_nondiff, is_leaf=_is_none
+    )
+
+    @eqx.filter_grad
+    def _Dforce_integrand(_t_constit_diff, s):
+        _t_constit = eqx.combine(_t_constit_diff, t_constit_nondiff)
+        return force_integrand(s, *_t_constit, app, tip)
+
+    def Dforce_integrand(s, _t_constit_diff):
+        return tree_to_array1d(_Dforce_integrand(_t_constit_diff, s))
+
+    Df = integrate(Dforce_integrand, (0, t1), (t_constit_diff,))
+    tangents_out = jnp.dot(Df, tree_to_array1d(t_constit_dot))
+
+    def tangents_out_t1(t1, t1_dot, constit, app, tip):
+        Dt1 = force_integrand(t1, t, constit, app, tip)
+        return t1_dot * Dt1
+
+    tangents_out = tangents_out + jax.lax.cond(
+        t1_dot is None, _zeros_like_arg1, tangents_out_t1, t1, t1_dot, constit, app, tip
+    )
+
     return primal_out, tangents_out
 
 

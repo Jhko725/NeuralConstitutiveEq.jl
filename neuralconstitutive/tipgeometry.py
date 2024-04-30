@@ -1,7 +1,7 @@
 import abc
 
-import jax.numpy as jnp
 import equinox as eqx
+import jax.numpy as jnp
 
 
 class AbstractTipGeometry(eqx.Module):

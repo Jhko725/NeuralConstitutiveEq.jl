@@ -1,10 +1,10 @@
 # ruff: noqa: F722
 from typing import Literal
 
+import diffrax
+import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
-import equinox as eqx
-import diffrax
 
 
 class Indentation(eqx.Module):

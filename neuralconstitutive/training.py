@@ -1,14 +1,14 @@
-from typing import Callable, Any
+from typing import Any, Callable
 
-from jax import Array
-import jax.numpy as jnp
 import equinox as eqx
-import optax
+import jax.numpy as jnp
 import numpy as np
+import optax
+from jax import Array
 
-from neuralconstitutive.trajectory import Trajectory
-from neuralconstitutive.jax.tipgeometry import AbstractTipGeometry
 from neuralconstitutive.jax.ting import force_approach, force_retract
+from neuralconstitutive.jax.tipgeometry import AbstractTipGeometry
+from neuralconstitutive.trajectory import Trajectory
 
 
 def train_model(

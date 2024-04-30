@@ -1,12 +1,11 @@
-from typing import Literal, TypeAlias
 import logging
+from typing import Literal, TypeAlias
 
 import numpy as np
 from scipy.interpolate import interp1d
 
 from ._pyRespect.common import get_kernel_matrix
-from ._pyRespect.continuous import initialize_H, build_L_curve, get_H
-
+from ._pyRespect.continuous import build_L_curve, get_H, initialize_H
 
 SpectrumWindowMode: TypeAlias = Literal["lenient", "normal", "strict"]
 
