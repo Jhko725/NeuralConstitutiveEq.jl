@@ -1,25 +1,36 @@
 # %%
 # ruff: noqa: F722
-from typing import Callable, Any
+from typing import Any, Callable
 
+import diffrax
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 from jaxtyping import Array
-import equinox as eqx
-import diffrax
+import matplotlib.pyplot as plt
 
-from neuralconstitutive.custom_types import FloatScalar
+from integrax.integrate import integrate as integratex
+from integrax.solvers import AdaptiveTrapezoid
 from neuralconstitutive.constitutive import AbstractConstitutiveEqn, StandardLinearSolid
-from neuralconstitutive.tipgeometry import AbstractTipGeometry, Conical
-from neuralconstitutive.indentation import interpolate_indentation, Indentation
+from neuralconstitutive.custom_types import FloatScalar
+from neuralconstitutive.indentation import Indentation, interpolate_indentation
 from neuralconstitutive.integrate import integrate
+from neuralconstitutive.tipgeometry import AbstractTipGeometry, Conical
 from neuralconstitutive.tree import tree_to_array1d
 
 jax.config.update("jax_enable_x64", True)
 
 
 def force_integrand(s, t, constit, app, tip):
+    a, b = tip.a(), tip.b()
+    g = constit.relaxation_function(jnp.clip(t - s, 0.0))
+    dh_b = b * app.derivative(s) * app.evaluate(s) ** (b - 1)
+    return a * g * dh_b
+
+
+def force_integrandx(s, args):
+    t, constit, app, tip = args
     a, b = tip.a(), tip.b()
     g = constit.relaxation_function(jnp.clip(t - s, 0.0))
     dh_b = b * app.derivative(s) * app.evaluate(s) ** (b - 1)
@@ -36,6 +47,17 @@ def force_approach_scalar(
     return integrate(force_integrand, (0, t), args)
 
 
+def force_approach_scalarx(
+    t: FloatScalar,
+    constitutive: AbstractConstitutiveEqn,
+    approach: diffrax.AbstractPath,
+    tip: AbstractTipGeometry,
+) -> FloatScalar:
+    method = AdaptiveTrapezoid(1e-4, 1e-4)
+    args = (t, constitutive, approach, tip)
+    return integratex(force_integrandx, method, 0, t, args)
+
+
 @eqx.filter_jit
 def f_app_grad(t, constit, approach, tip):
     t = jnp.asarray(t)
@@ -47,56 +69,15 @@ def f_app_grad(t, constit, approach, tip):
     return _f_app_grad((t, constit, approach, tip))
 
 
-force_approach_scalar2 = eqx.filter_custom_jvp(force_approach_scalar)
-
-
-def _is_none(x: Any) -> bool:
-    return x is None
-
-
-def _zeros_like_arg1(x: Array, *_) -> Array:
-    return jnp.zeros_like(x)
-
-
-@force_approach_scalar2.def_jvp
-def force_app_jvp(primals, tangents):
-    t, constit, app, tip = primals
-    t_dot, constit_dot, _, _ = tangents
-    t_constit, t_constit_dot = (t, constit), (t_dot, constit_dot)
-
-    primal_out = force_approach_scalar2(t, constit, app, tip)
-
-    is_nondiff = jtu.tree_map(_is_none, t_constit_dot, is_leaf=_is_none)
-    t_constit_nondiff, t_constit_diff = eqx.partition(
-        t_constit, is_nondiff, is_leaf=_is_none
-    )
-
-    @eqx.filter_grad
-    def _Dforce_integrand(_t_constit_diff, s):
-        _t_constit = eqx.combine(_t_constit_diff, t_constit_nondiff)
-        return force_integrand(s, *_t_constit, app, tip)
-
-    def Dforce_integrand(s, _t_constit_diff):
-        return tree_to_array1d(_Dforce_integrand(_t_constit_diff, s))
-
-    Df = integrate(Dforce_integrand, (0, t), (t_constit_diff,))
-    Df_boundary = jax.lax.cond(
-        t_dot is None, _zeros_like_arg1, force_integrand, t, *primals
-    )
-    Df = Df.at[0].add(Df_boundary)
-    tangents_out = jnp.dot(Df, tree_to_array1d(t_constit_dot))
-    return primal_out, tangents_out
-
-
 @eqx.filter_jit
-def f_app_grad2(t, constit, approach, tip):
+def f_app_gradx(t, constit, approach, tip):
     t = jnp.asarray(t)
 
     @eqx.filter_grad
-    def _f_app_grad2(inputs):
-        return force_approach_scalar2(*inputs)
+    def _f_app_gradx(inputs):
+        return force_approach_scalarx(*inputs)
 
-    return _f_app_grad2((t, constit, approach, tip))
+    return _f_app_gradx((t, constit, approach, tip))
 
 
 # %%
@@ -118,25 +99,32 @@ del t, h, t_ret, h_ret
 app_interp = interpolate_indentation(app)
 ret_interp = interpolate_indentation(ret)
 # %%
+f_app = eqx.filter_vmap(force_approach_scalar, in_axes=(0, None, None, None))(
+    app.time, plr, app_interp, tip
+)
+f_appx = eqx.filter_vmap(force_approach_scalarx, in_axes=(0, None, None, None))(
+    app.time, plr, app_interp, tip
+)
+
+fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+ax.plot(app.time, f_app, label="quadax")
+ax.plot(app.time, f_appx, label="integrax")
+ax.legend()
+# %%
 dF_app = f_app_grad(0.3, plr, app_interp, tip)
 print(dF_app[0], dF_app[1].E1, dF_app[1].E_inf, dF_app[1].tau)
+# %%
+dF_appx = f_app_gradx(0.3, plr, app_interp, tip)
+print(dF_appx[0], dF_appx[1].E1, dF_appx[1].E_inf, dF_appx[1].tau)
 
 # %%
-dF_app2 = f_app_grad2(0.3, plr, app_interp, tip)
-print(dF_app2[0], dF_app2[1].E1, dF_app2[1].E_inf, dF_app2[1].tau)
-
-
-# %%
-dF_app2 = f_app_grad2(0.3, plr, app_interp, tip)
-print(dF_app2[0], dF_app2[1].E1, dF_app2[1].E_inf, dF_app2[1].tau)
-# %%
-eps = 1e-3
+eps = 1e-4
 plr1 = StandardLinearSolid(1.0, 1.0, 10.0 + 0.5 * eps)
 plr2 = StandardLinearSolid(1.0, 1.0, 10.0 - 0.5 * eps)
 args = (app_interp, tip)
 
 (
-    force_approach_scalar2(0.3, plr1, *args) - force_approach_scalar2(0.3, plr2, *args)
+    force_approach_scalar(0.3, plr1, *args) - force_approach_scalar(0.3, plr2, *args)
 ) / eps
 
 
@@ -147,15 +135,9 @@ def t1_integrand(s, t, constit, indent):
     return constit.relaxation_function(t - s) * indent.derivative(s)
 
 
-def Dt1_integrand(s, t, constit, indent):
-    s, t = jnp.asarray(s), jnp.asarray(t)
-
-    @eqx.filter_grad
-    def _Dt1_integrand(inputs, s, indent):
-        return t1_integrand(s, *inputs, indent)
-
-    grad_t_constit = _Dt1_integrand((t, constit), s, indent)
-    return jnp.asarray(jtu.tree_flatten(grad_t_constit)[0])
+def t1_integrandx(s, args):
+    t, constit, indent = args
+    return constit.relaxation_function(t - s) * indent.derivative(s)
 
 
 def t1_scalar(
@@ -165,7 +147,6 @@ def t1_scalar(
     *,
     newton_iterations: int = 5,
 ) -> FloatScalar:
-
     app_interp, ret_interp = indentations
     t_m = app_interp.t1  # Unfortunate mixup of names between my code and diffrax
     # In diffrax.AbstractPath, t1 attribute returns the final timepoint of the path
@@ -195,85 +176,74 @@ def t1_grad(t, constit, indentations):
     return _t1_grad((t, constit, indentations))
 
 
-t1_scalar2 = eqx.filter_custom_jvp(t1_scalar)
+def t1_scalarx(
+    t: FloatScalar,
+    constitutive: AbstractConstitutiveEqn,
+    indentations: tuple[diffrax.AbstractPath, diffrax.AbstractPath],
+    *,
+    newton_iterations: int = 5,
+) -> FloatScalar:
+    app_interp, ret_interp = indentations
+    t_m = app_interp.t1  # Unfortunate mixup of names between my code and diffrax
+    # In diffrax.AbstractPath, t1 attribute returns the final timepoint of the path
+    method = AdaptiveTrapezoid(1e-4, 1e-4)
 
+    const = integratex(t1_integrandx, method, t_m, t, (t, constitutive, ret_interp))
 
-@t1_scalar2.def_jvp
-def t1_scalar_jvp(primals, tangents, *, newton_iterations: int = 5):
-    # Take into account when t1=0
-    t, constit, indentations = primals
-    t_dot, constit_dot, _ = tangents
-    t_constit, t_constit_dot = (t, constit), (t_dot, constit_dot)
-
-    t1 = t1_scalar2(t, constit, indentations, newton_iterations=newton_iterations)
-
-    is_nondiff = jtu.tree_map(_is_none, t_constit_dot, is_leaf=_is_none)
-    t_constit_nondiff, t_constit_diff = eqx.partition(
-        t_constit, is_nondiff, is_leaf=_is_none
-    )
-
-    @eqx.filter_grad
-    def _Dt1_integrand(_t_constit_diff, s, indent):
-        _t_constit = eqx.combine(_t_constit_diff, t_constit_nondiff)
-        return t1_integrand(s, *_t_constit, indent)
-
-    def Dt1_integrand(s, _t_constit_diff, indent):
-        return tree_to_array1d(_Dt1_integrand(_t_constit_diff, s, indent))
-
-    def _tangents_nonzero(t1, _t_constit_diff, indentations):
-        app, ret = indentations
-        t_m = app.t1
-        t, constit = eqx.combine(_t_constit_diff, t_constit_nondiff)
-
-        Dt1 = integrate(Dt1_integrand, (t1, t_m), (_t_constit_diff, app))
-        Dt1 = Dt1 + integrate(Dt1_integrand, (t_m, t), (_t_constit_diff, ret))
-        Dt1_boundary = jax.lax.cond(
-            t_dot is None, _zeros_like_arg1, t1_integrand, t, t, constit, ret
+    def residual(t1, t):
+        return (
+            integratex(t1_integrandx, method, t1, t_m, (t, constitutive, app_interp))
+            + const
         )
-        Dt1 = Dt1.at[0].add(Dt1_boundary)
-        Dt1 = Dt1 / constit.relaxation_function(t - t1)
-        return jnp.dot(Dt1, tree_to_array1d(t_constit_dot))
 
-    tangents_out = jax.lax.cond(
-        t1 <= 0.0,
-        _zeros_like_arg1,
-        _tangents_nonzero,
-        t1,
-        t_constit_diff,
-        indentations,
-    )
-    return t1, tangents_out
+    def Dresidual(t1, t):
+        return -t1_integrandx(t1, (t, constitutive, app_interp))
+
+    t1 = t_m
+    for _ in range(newton_iterations):
+        t1 = jnp.clip(t1 - residual(t1, t) / Dresidual(t1, t), 0.0)
+
+    return t1
 
 
 @eqx.filter_jit
-def t1_grad2(t, constit, indentations):
+def t1_gradx(t, constit, indentations):
     t = jnp.asarray(t)
 
     @eqx.filter_grad
-    def _t1_grad2(inputs):
-        return t1_scalar2(*inputs)
+    def _t1_gradx(inputs):
+        return t1_scalarx(*inputs)
 
-    return _t1_grad2((t, constit, indentations))
+    return _t1_gradx((t, constit, indentations))
 
+
+# %%
+t1 = eqx.filter_vmap(t1_scalar, in_axes=(0, None, None))(
+    ret.time, plr, (app_interp, ret_interp)
+)
+t1x = eqx.filter_vmap(t1_scalarx, in_axes=(0, None, None))(
+    ret.time, plr, (app_interp, ret_interp)
+)
+
+fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+ax.plot(ret.time, t1, label="quadax")
+ax.plot(ret.time, t1x, label="integrax")
+ax.legend()
 
 # %%
 dt1 = t1_grad(1.4, plr, (app_interp, ret_interp))
 print(dt1[0], dt1[1].E1, dt1[1].E_inf, dt1[1].tau)
 # %%
-t_test = 1.99
+dt1x = t1_gradx(1.4, plr, (app_interp, ret_interp))
+print(dt1x[0], dt1x[1].E1, dt1x[1].E_inf, dt1x[1].tau)
+# %%
+t_test = 1.4
 eps = 1e-3
 plr1 = StandardLinearSolid(1.0 + 0.5 * eps, 1.0, 10.0)
 plr2 = StandardLinearSolid(1.0 - 0.5 * eps, 1.0, 10.0)
 args = (app_interp, ret_interp)
 
 (t1_scalar(t_test, plr1, args) - t1_scalar(t_test, plr2, args)) / eps
-
-# %%
-dt12 = t1_grad2(1.4, plr, (app_interp, ret_interp))
-print(dt12[0], dt12[1].E1, dt12[1].E_inf, dt12[1].tau)
-
-# %%
-t1_scalar2(1.99, plr, (app_interp, ret_interp))
 
 
 # %%
@@ -284,75 +254,8 @@ def force_retract_scalar(
     tip: AbstractTipGeometry,
 ) -> FloatScalar:
     t1 = t1_scalar(t, constitutive, indentations)
-    return _force_retract_scalar(t1, t, constitutive, indentations, tip)
-
-
-def _force_retract_scalar(
-    t1: FloatScalar,
-    t: FloatScalar,
-    constitutive: AbstractConstitutiveEqn,
-    indentations: tuple[diffrax.AbstractPath, diffrax.AbstractPath],
-    tip: AbstractTipGeometry,
-) -> FloatScalar:
     args = (t, constitutive, indentations[0], tip)
     return integrate(force_integrand, (0, t1), args)
-
-
-def force_retract_scalar2(
-    t: FloatScalar,
-    constitutive: AbstractConstitutiveEqn,
-    indentations: tuple[diffrax.AbstractPath, diffrax.AbstractPath],
-    tip: AbstractTipGeometry,
-) -> FloatScalar:
-    t1 = t1_scalar2(t, constitutive, indentations)
-    return _force_retract_scalar2(t1, t, constitutive, indentations, tip)
-
-
-@eqx.filter_custom_jvp
-def _force_retract_scalar2(
-    t1: FloatScalar,
-    t: FloatScalar,
-    constitutive: AbstractConstitutiveEqn,
-    indentations: tuple[diffrax.AbstractPath, diffrax.AbstractPath],
-    tip: AbstractTipGeometry,
-) -> FloatScalar:
-    args = (t, constitutive, indentations[0], tip)
-    return integrate(force_integrand, (0, t1), args)
-
-
-@_force_retract_scalar2.def_jvp
-def force_ret_jvp(primals, tangents):
-    t1, t, constit, indentations, tip = primals
-    app = indentations[0]
-    t1_dot, t_dot, constit_dot, _, _ = tangents
-    primal_out = _force_retract_scalar2(t1, t, constit, indentations, tip)
-
-    t_constit, t_constit_dot = (t, constit), (t_dot, constit_dot)
-    is_nondiff = jtu.tree_map(_is_none, t_constit_dot, is_leaf=_is_none)
-    t_constit_nondiff, t_constit_diff = eqx.partition(
-        t_constit, is_nondiff, is_leaf=_is_none
-    )
-
-    @eqx.filter_grad
-    def _Dforce_integrand(_t_constit_diff, s):
-        _t_constit = eqx.combine(_t_constit_diff, t_constit_nondiff)
-        return force_integrand(s, *_t_constit, app, tip)
-
-    def Dforce_integrand(s, _t_constit_diff):
-        return tree_to_array1d(_Dforce_integrand(_t_constit_diff, s))
-
-    Df = integrate(Dforce_integrand, (0, t1), (t_constit_diff,))
-    tangents_out = jnp.dot(Df, tree_to_array1d(t_constit_dot))
-
-    def tangents_out_t1(t1, t1_dot, constit, app, tip):
-        Dt1 = force_integrand(t1, t, constit, app, tip)
-        return t1_dot * Dt1
-
-    tangents_out = tangents_out + jax.lax.cond(
-        t1_dot is None, _zeros_like_arg1, tangents_out_t1, t1, t1_dot, constit, app, tip
-    )
-
-    return primal_out, tangents_out
 
 
 @eqx.filter_jit
@@ -366,21 +269,50 @@ def f_ret_grad(t, constit, indentations, tip):
     return _f_ret_grad((t, constit, indentations, tip))
 
 
+def force_retract_scalarx(
+    t: FloatScalar,
+    constitutive: AbstractConstitutiveEqn,
+    indentations: tuple[diffrax.AbstractPath, diffrax.AbstractPath],
+    tip: AbstractTipGeometry,
+) -> FloatScalar:
+    t1 = t1_scalarx(t, constitutive, indentations)
+    method = AdaptiveTrapezoid(1e-4, 1e-4)
+    args = (t, constitutive, indentations[0], tip)
+    return integratex(force_integrandx, method, 0, t1, args)
+
+
 @eqx.filter_jit
-def f_ret_grad2(t, constit, indentations, tip):
+def f_ret_gradx(t, constit, indentations, tip):
     t = jnp.asarray(t)
 
     @eqx.filter_grad
-    def _f_ret_grad2(inputs):
-        return force_retract_scalar2(*inputs)
+    def _f_ret_gradx(inputs):
+        return force_retract_scalarx(*inputs)
 
-    return _f_ret_grad2((t, constit, indentations, tip))
+    return _f_ret_gradx((t, constit, indentations, tip))
 
+
+# %%
+f_ret = eqx.filter_vmap(force_retract_scalar, in_axes=(0, None, None, None))(
+    ret.time, plr, (app_interp, ret_interp), tip
+)
+f_retx = eqx.filter_vmap(force_retract_scalarx, in_axes=(0, None, None, None))(
+    ret.time, plr, (app_interp, ret_interp), tip
+)
+
+fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+ax.plot(ret.time, f_ret, label="quadax")
+ax.plot(ret.time, f_retx, label="integrax")
+ax.legend()
 
 # %%
 args = ((app_interp, ret_interp), tip)
 dF_ret = f_ret_grad(1.6, plr, *args)
 print(dF_ret[0], dF_ret[1].E1, dF_ret[1].E_inf, dF_ret[1].tau)
+# %%
+args = ((app_interp, ret_interp), tip)
+dF_retx = f_ret_gradx(1.6, plr, *args)
+print(dF_retx[0], dF_retx[1].E1, dF_retx[1].E_inf, dF_retx[1].tau)
 # %%
 eps = 1e-3
 plr1 = StandardLinearSolid(1.0, 1.0, 10.0 + 0.5 * eps)
@@ -388,6 +320,4 @@ plr2 = StandardLinearSolid(1.0, 1.0, 10.0 - 0.5 * eps)
 (force_retract_scalar(1.6, plr1, *args) - force_retract_scalar(1.6, plr2, *args)) / eps
 
 # %%
-dF_ret2 = f_ret_grad2(1.6, plr, *args)
-print(dF_ret2[0], dF_ret2[1].E1, dF_ret2[1].E_inf, dF_ret2[1].tau)
 # %%

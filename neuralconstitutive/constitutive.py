@@ -8,6 +8,7 @@ from jax.scipy.special import exp1
 
 from neuralconstitutive.custom_types import FloatScalar, as_floatscalar
 from neuralconstitutive.relaxation_spectrum import AbstractLogDiscreteSpectrum
+from neuralconstitutive.misc import stretched_exp
 
 floatscalar_field = partial(eqx.field, converter=as_floatscalar)
 
@@ -72,8 +73,7 @@ class KohlrauschWilliamsWatts(AbstractConstitutiveEqn):
         return self.E_inf + self.E1
 
     def relaxation_function(self, t):
-        exponent = (t / self.tau) ** self.beta
-        return self.E_inf + self.E1 * jnp.exp(-exponent)
+        return self.E_inf + self.E1 * stretched_exp(t, self.tau, self.beta)
 
 
 class Fung(AbstractConstitutiveEqn):
