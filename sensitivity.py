@@ -5,11 +5,14 @@ from pathlib import Path
 import equinox as eqx
 import jax
 import jax.flatten_util
+import jax.numpy as jnp
+import jax.tree_util as jtu
 import matplotlib.pyplot as plt
 
 from neuralconstitutive.constitutive import (
-    KohlrauschWilliamsWatts,
-    StandardLinearSolid,
+    ModifiedPowerLaw,
+    floatscalar_field,
+    AbstractConstitutiveEqn,
 )
 from neuralconstitutive.io import import_data
 from neuralconstitutive.plotting import plot_indentation
@@ -20,15 +23,42 @@ from neuralconstitutive.utils import (
     normalize_indentations,
     smooth_data,
 )
+from neuralconstitutive.custom_types import FloatScalar
+from neuralconstitutive.misc import stretched_exp
 
 jax.config.update("jax_enable_x64", True)
 
 
+class StandardLinearSolid(AbstractConstitutiveEqn):
+    E0: FloatScalar = floatscalar_field()
+    E_inf: FloatScalar = floatscalar_field()
+    tau: FloatScalar = floatscalar_field()
+
+    def relaxation_function(self, t):
+        return self.E_inf + (self.E0 - self.E_inf) * jnp.exp(-t / self.tau)
+
+
+class KohlrauschWilliamsWatts(AbstractConstitutiveEqn):
+    E0: FloatScalar = floatscalar_field()
+    E_inf: FloatScalar = floatscalar_field()
+    tau: FloatScalar = floatscalar_field()
+    beta: FloatScalar = floatscalar_field()
+
+    def relaxation_function(self, t):
+        return self.E_inf + (self.E0 - self.E_inf) * stretched_exp(
+            t, self.tau, self.beta
+        )
+
+
 # %%
 
-datadir = Path("open_data/PAAM hydrogel/speed 5")
+# datadir = Path("open_data/PAAM hydrogel/speed 5")
+# name = "PAA_speed 5_4nN"
+
+datadir = Path("open_data/Interphase rep 2")
+name = "interphase_speed 2_2nN"
 (app, ret), (f_app, f_ret) = import_data(
-    datadir / "PAA_speed 5_4nN.tab", datadir / "PAA_speed 5_4nN.tsv"
+    datadir / f"{name}.tab", datadir / f"{name}.tsv"
 )
 app, ret = smooth_data(app), smooth_data(ret)
 # %%
@@ -42,6 +72,7 @@ axes[1].plot(ret.time, f_ret, ".")
 axes[2].plot(app.depth, f_app, ".")
 axes[2].plot(ret.depth, f_ret, ".")
 # %%
+f_ret = jnp.clip(f_ret, 0.0)
 (f_app, f_ret), _ = normalize_forces(f_app, f_ret)
 (app, ret), (_, h_m) = normalize_indentations(app, ret)
 # %%
@@ -57,19 +88,30 @@ axes[1].plot(ret.time, f_ret, ".")
 axes[2].plot(app.depth, f_app, ".")
 axes[2].plot(ret.depth, f_ret, ".")
 
+## pAAm, approach
+# constit_sls = StandardLinearSolid(3.8624659026709196e-10+0.30914401077841713, 0.30914401077841713, 0.0006863434675687636)
+# constit_sls = ModifiedPowerLaw(0.30914400690168486, 8.837375276016246e-14, 1.5692865062547984e-06)
+# constit_sls = KohlrauschWilliamsWatts(6.396549956377839e-10+0.3091440117012345, 0.3091440117012345, 0.0009709553387991132, 0.6871551483634736)
 
-# constit_sls = StandardLinearSolid(0.00911, 0.30103, 9544133.23332)
-# constit_sls = ModifiedPowerLaw(0.31013634, 2.7684e-09, 19806.8520)
-constit_sls = KohlrauschWilliamsWatts(0.04057453, 0.26956466, 9997384.77, 0.98299196)
+## HeLa, approach
+# constit_sls = StandardLinearSolid(2.889893879753913e-08+0.33311486553838643, 0.33311486553838643, 987.3255341470276)
+# constit_sls = ModifiedPowerLaw(0.33311573822136786, 2.6413182681594982e-06, 0.6659960422297778)
+constit_sls = KohlrauschWilliamsWatts(
+    0.0002274177325900517 + 0.3328883488087353,
+    0.3328883488087353,
+    969.0153621760131,
+    0.8037062892890634,
+)
 # %%
 import jax.numpy as jnp
 import jax
 from neuralconstitutive.tingx import force_approach_scalar
 from neuralconstitutive.indentation import interpolate_indentation
 from functools import partial
+from neuralconstitutive.utils import smooth_data
 
-app_interp = interpolate_indentation(app)
-ret_interp = interpolate_indentation(ret)
+app_interp = interpolate_indentation(smooth_data(app))
+ret_interp = interpolate_indentation(smooth_data(ret))
 
 
 def sensitvity_scalar(t, constit, app, tip):
@@ -81,14 +123,69 @@ def sensitvity_scalar(t, constit, app, tip):
         return force_approach_scalar(t, constit, app, tip)
 
     log_constit = jtu.tree_map(jnp.log, constit)
-    return inner(constit, t, app, tip)
+    return inner(log_constit, t, app, tip)
 
 
 out = sensitvity_scalar(app.time, constit_sls, app_interp, tip)
 # %%
-import jax.tree_util as jtu
+g_array = jax.flatten_util.ravel_pytree(jtu.tree_map(jnp.mean, out))[0]
+g_array = g_array.at[jnp.isnan(g_array)].set(0.0)
+print(g_array)
+L_mat = g_array.reshape(-1, 1) * g_array.reshape(1, -1)
+eigvals, eigvecs = jnp.linalg.eigh(L_mat)
+print(f"eigvals={eigvals}")
+print(f"best eigvec = {eigvecs[:,-1]}")
 
-print(jax.flatten_util.ravel_pytree(jtu.tree_map(jnp.mean, out)))
+
+# %%
+import numpy as np
+
+color_palette = np.array(
+    [
+        [0.86666667, 0.23137255, 0.20784314],
+        [1.0, 0.3882, 0.2784],
+        [0.92941176, 0.61568627, 0.24705882],
+        [0.63921569, 0.85490196, 0.52156863],
+        [0.19764706, 0.46431373, 0.34196078],
+        [0.17254902, 0.45098039, 0.69803922],
+        [0.372549, 0.596078, 1.0],
+        [0.7172549, 0.48117647, 0.92313726],
+        [0.64313725, 0.14117647, 0.48627451],
+    ]
+)
+fig, ax = plt.subplots(1, 1, figsize=(3, 3))
+
+
+def plot_eigval_spectrum(ax, eigvals, *args, **hlines_kwargs):
+    eigvals = jnp.clip(jnp.asarray(eigvals), 1e-50)
+    ax.hlines(jnp.log10(eigvals), *args, **hlines_kwargs)
+    return ax
+
+
+ax = plot_eigval_spectrum(
+    ax,
+    [-7.78397387e-30, -2.07855871e-30, 1.29338918e-01],
+    0.0,
+    1.0,
+    color=color_palette[6],
+)
+ax = plot_eigval_spectrum(
+    ax,
+    [1.41631998e-46, 9.19878085e-26, 1.29292133e-01],
+    2.0,
+    3.0,
+    color=color_palette[3],
+)
+ax = plot_eigval_spectrum(
+    ax,
+    [-1.77416405e-23, 0.00000000e00, 2.23673175e-31, 1.29116966e-01],
+    4.0,
+    5.0,
+    color=color_palette[8],
+)
+ax.set_ylabel("log (eigenvalues)")
+ax.set_xticks([0.5, 2.5, 4.5], ["MPLR", "SLS", "KWW"])
+ax.set_title("Eigenvalue spectrum, HeLa, Approach")
 
 
 # %%

@@ -21,6 +21,7 @@ from neuralconstitutive.ting import (
     _force_retract,
 )
 from neuralconstitutive.tipgeometry import AbstractTipGeometry
+from neuralconstitutive.utils import smooth_data
 
 ConstitEqn = TypeVar("ConstitEqn", bound=AbstractConstitutiveEqn)
 
@@ -144,6 +145,7 @@ def fit_indentation_data(
     init_val_sampler=None,
     n_samples: int = 1,
 ):
+    indentations = smooth_data(indentations[0]), smooth_data(indentations[1])
     if fit_type == "approach":
         fit_func = fit_approach_lmfit
         fit_data = (indentations[0], forces[0])
@@ -165,8 +167,11 @@ def fit_indentation_data(
             constit_ = type(constit)(*init_vals[i])
         else:
             constit_ = constit
-
-        constit_fit, result, minimizer = fit_func(constit_, bounds, tip, *fit_data)
+        try:
+            constit_fit, result, minimizer = fit_func(constit_, bounds, tip, *fit_data)
+        except:
+            print(f"Fit #{i} aborted")
+            constit_fit, result, minimizer = None
         constit_fits.append(constit_fit)
         results.append(result)
         minimizers.append(minimizer)

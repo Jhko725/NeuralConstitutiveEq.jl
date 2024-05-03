@@ -16,7 +16,7 @@ from neuralconstitutive.constitutive import (
     StandardLinearSolid,
     ModifiedPowerLaw,
     KohlrauschWilliamsWatts,
-    Hertzian
+    Hertzian,
 )
 from neuralconstitutive.tipgeometry import Spherical
 from neuralconstitutive.ting import force_approach, force_retract
@@ -27,17 +27,109 @@ from neuralconstitutive.utils import (
     normalize_indentations,
     normalize_forces,
 )
-import time 
+import time
 
 t_start = time.time()
 # %%
 jax.config.update("jax_enable_x64", True)
 
-datadir = Path("open_data/PAAM hydrogel/speed 5")
+datadir = Path("open_data/Interphase rep 2")
+name = "interphase_speed 2_2nN"
 (app, ret), (f_app, f_ret) = import_data(
-    datadir / "PAA_speed 5_4nN.tab", datadir / "PAA_speed 5_4nN.tsv"
+    datadir / f"{name}.tab", datadir / f"{name}.tsv"
 )
-app, ret = smooth_data(app), smooth_data(ret)
+
+# %%
+fig, ax = plt.subplots(1, 1, figsize=(4, 3))
+ax.plot(app.depth, f_app, ".", color="k", markersize=1)
+ax.plot(ret.depth, f_ret, ".", color="k", markersize=1)
+ax.set_xlabel("Indentation (m)")
+ax.set_ylabel("Force (N)")
+ax.grid(ls="--", color="lightgray")
+ax.set_title("HeLa, interphase")
+
+# %%
+datadir = Path("open_data/PAAM hydrogel/speed 5")
+name = "PAA_speed 5_4nN"
+(app, ret), (f_app, f_ret) = import_data(
+    datadir / f"{name}.tab", datadir / f"{name}.tsv"
+)
+
+fig, ax = plt.subplots(1, 1, figsize=(4, 3))
+ax.plot(app.depth, f_app, ".", color="k", markersize=1)
+ax.plot(ret.depth, f_ret, ".", color="k", markersize=1)
+ax.set_xlabel("Indentation (m)")
+ax.set_ylabel("Force (N)")
+ax.grid(ls="--", color="lightgray")
+ax.set_title("pAAm hydrogel")
+# %%
+f_ret = jnp.clip(f_ret, 0.0)
+
+fig, ax = plt.subplots(1, 1, figsize=(4, 3))
+ax.plot(app.depth, f_app, ".", color="k", markersize=1)
+ax.plot(ret.depth, f_ret, ".", color="k", markersize=1)
+ax.set_xlabel("Indentation (m)")
+ax.set_ylabel("Force (N)")
+ax.grid(ls="--", color="lightgray")
+ax.set_title("Adhesive region clipped")
+# %%
+fig, ax = plt.subplots(1, 1, figsize=(4, 3))
+ax.plot(app.time, f_app, ".", color="k", markersize=1)
+ax.plot(ret.time, f_ret, ".", color="k", markersize=1)
+ax.set_xlabel("Time")
+ax.set_ylabel("Force (N)")
+
+ax2 = ax.twinx()
+ax2.plot(app.time, app.depth, "--", color="b", linewidth=1)
+ax2.plot(ret.time, ret.depth, "--", color="b", linewidth=1)
+ax2.set_ylabel("Indentation (m)", color="blue", alpha=0.7)
+ax2.tick_params(axis="y", colors="blue")
+ax2.spines["right"].set_color("blue")
+ax.grid(ls="--", color="lightgray")
+ax.set_title("Time domain representation")
+# %%
+(f_app, f_ret), _ = normalize_forces(f_app, f_ret)
+(app, ret), (_, h_m) = normalize_indentations(app, ret)
+
+fig, ax = plt.subplots(1, 1, figsize=(4, 3))
+ax.plot(app.time, f_app, ".", color="k", markersize=1)
+ax.plot(ret.time, f_ret, ".", color="k", markersize=1)
+ax.set_xlabel("Time")
+ax.set_ylabel("Force (N)")
+
+ax2 = ax.twinx()
+ax2.plot(app.time, app.depth, "--", color="b", linewidth=1)
+ax2.plot(ret.time, ret.depth, "--", color="b", linewidth=1)
+ax2.set_ylabel("Indentation (m)", color="blue", alpha=0.7)
+ax2.tick_params(axis="y", colors="blue")
+ax2.spines["right"].set_color("blue")
+ax.grid(ls="--", color="lightgray")
+ax.set_title("Time domain, normalized")
+# %%
+datadir = Path("open_data/Interphase rep 2")
+filenames = [
+    "interphase_speed 2_2nN",
+    "interphase_speed 2_2nN-1",
+    "interphase_speed 2_2nN-2",
+    "interphase_speed 2_2nN-3",
+]
+
+data_list = [
+    import_data(datadir / f"{name}.tab", datadir / f"{name}.tsv") for name in filenames
+]
+
+fig, axes = plt.subplots(1, 2, figsize=(5, 3))
+for (app, ret), (f_app, f_ret) in data_list:
+    axes[0].plot(app.time, app.depth)
+    axes[0].plot(ret.time, ret.depth)
+    axes[1].plot(app.time, f_app, ".")
+    axes[1].plot(ret.time, f_ret, ".")
+# datadir = Path("open_data/Mitotic Rep 1/Adhesion(X)")
+# (app, ret), (f_app, f_ret) = import_data(
+#     datadir / "mitotic_speed 2_2nN-3.tab", datadir / "mitotic_speed 2_2nN-3.tsv"
+# )
+# app, ret = smooth_data(app), smooth_data(ret)
+
 # %%
 fig, axes = plt.subplots(1, 3, figsize=(10, 3))
 axes[0] = plot_indentation(axes[0], app, marker=".")
@@ -63,7 +155,8 @@ axes[1].plot(ret.time, f_ret, ".")
 
 axes[2].plot(app.depth, f_app, ".")
 axes[2].plot(ret.depth, f_ret, ".")
-
+# %%
+tip.a()
 # %%
 ## Fit only the approach portion
 
@@ -80,7 +173,7 @@ bounds_kww = [(1e-7, 1e7)] * 3 + [(0.0, 1.0)]
 
 constit_htz = Hertzian(10.0)
 bounds_htz = [(1e-7, 1e7)]
-#%%
+# %%
 # %%timeit
 sls_fit, result_sls = fit_approach_lmfit(constit_sls, bounds_sls, tip, app, f_app)
 mplr_fit, result_mplr = fit_approach_lmfit(constit_mplr, bounds_mplr, tip, app, f_app)
@@ -126,9 +219,13 @@ axes[0].plot(ret.time, f_htz_fit_ret, color="yellow", alpha=0.7)
 axes[0].legend(loc="upper right")
 
 axes[1] = plot_relaxation_fn(axes[1], sls_fit, app.time, color="red", label="SLS")
-axes[1] = plot_relaxation_fn(axes[1], mplr_fit, app.time, color="blue", label="Modified PLR")
+axes[1] = plot_relaxation_fn(
+    axes[1], mplr_fit, app.time, color="blue", label="Modified PLR"
+)
 axes[1] = plot_relaxation_fn(axes[1], kww_fit, app.time, color="green", label="KWW")
-axes[1] = plot_relaxation_fn(axes[1], htz_fit, app.time, color="yellow", label="Hertzian")
+axes[1] = plot_relaxation_fn(
+    axes[1], htz_fit, app.time, color="yellow", label="Hertzian"
+)
 
 axes[1].legend(loc="upper right")
 # %%
@@ -157,7 +254,6 @@ samples_sls[:, is_logscale] = 10 ** samples_sls[:, is_logscale]
 
 fig, axes = plt.subplots(1, 3, figsize=(7, 3))
 for i, ax in enumerate(axes):
-
     if is_logscale[i] is True:
         ax.hist(np.log10(samples_sls[:, i]))
     else:
@@ -181,7 +277,12 @@ samples_mplr[:, is_logscale] = 10 ** samples_mplr[:, is_logscale]
 mplr_is_logscale = is_logscale
 # %%
 sampler_kww = qmc.LatinHypercube(d=4, seed=seed)
-kww_range = [(1e-5, 1e5), (1e-5, 1e5), (1e-7, 1e7), (1e-10, 1e1),]
+kww_range = [
+    (1e-5, 1e5),
+    (1e-5, 1e5),
+    (1e-7, 1e7),
+    (1e-10, 1e1),
+]
 kww_range = np.asarray(kww_range)
 
 sample_scale = ["log", "log", "log", "log"]
@@ -194,7 +295,7 @@ samples_kww = qmc.scale(samples_kww, kww_range[:, 0], kww_range[:, 1])
 samples_kww[:, is_logscale] = 10 ** samples_kww[:, is_logscale]
 
 kww_is_logscale = is_logscale
-#%%
+# %%
 sampler_htz = qmc.LatinHypercube(d=1, seed=seed)
 htz_range = [(1e-5, 1e5)]
 htz_range = np.asarray(htz_range)
@@ -210,7 +311,7 @@ samples_htz[:, is_logscale] = 10 ** samples_htz[:, is_logscale]
 
 htz_is_logscale = is_logscale
 # %%
-## 
+##
 
 sls_fits, sls_results = [], []
 mplr_fits, mplr_results = [], []
@@ -244,7 +345,7 @@ for i in tqdm(range(samples_htz.shape[0])):
     constit_fit, result = fit_approach_lmfit(constit_i, bounds_htz, tip, app, f_app)
     htz_fits.append(constit_fit)
     htz_results.append(result)
-#%%
+# %%
 # BIC > 0 truncation
 
 sls_bic = np.array([sls_results[i].bic for i in np.arange(num)])
@@ -254,8 +355,10 @@ htz_bic = np.array([htz_results[i].bic for i in np.arange(num)])
 
 threshold = 2000
 
+
 def valid_inds(model_bic, threshold):
-    return model_bic<np.min(model_bic)+threshold
+    return model_bic < np.min(model_bic) + threshold
+
 
 sls_fits = np.array(sls_fits)[valid_inds(sls_bic, threshold)]
 mplr_fits = np.array(mplr_fits)[valid_inds(mplr_bic, threshold)]
@@ -313,7 +416,7 @@ for i, (constit_fit, result) in enumerate(zip(kww_fits, tqdm(kww_results))):
     axes[0].plot(ret.time, f_fit_ret, color="gray", alpha=0.7)
 
     axes[1] = plot_relaxation_fn(axes[1], constit_fit, app.time, color="gray")
-#%%
+# %%
 ## Hertzian model
 fig, axes = plt.subplots(1, 2, figsize=(7, 3))
 axes[0].plot(app.time, f_app, ".", color="royalblue", label="Data", alpha=0.5)
@@ -327,7 +430,7 @@ for i, (constit_fit, result) in enumerate(zip(htz_fits, tqdm(htz_results))):
     axes[0].plot(ret.time, f_fit_ret, color="gray", alpha=0.7)
 
     axes[1] = plot_relaxation_fn(axes[1], constit_fit, app.time, color="gray")
-#%%
+# %%
 ## For SLS
 sls_samples_fit = []
 for r in sls_results:
@@ -376,9 +479,9 @@ for i, ax in enumerate(axes):
         ax.hist(s_)
     else:
         ax.hist(kww_samples_fit[:, i])
-#%%
+# %%
 kww_results[0]
-#%%
+# %%
 ## For Hertz
 htz_samples_fit = []
 for r in htz_results:
@@ -387,7 +490,7 @@ htz_samples_fit = np.asarray(htz_samples_fit)
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(7, 3))
 
-i=0
+i = 0
 if htz_is_logscale[i] is True:
     s_ = htz_samples_fit[:, i]
     s_[s_ > 0] = np.log10(s_[s_ > 0])
@@ -445,18 +548,18 @@ with mpl.rc_context({"lines.markersize": 1.0, "lines.linewidth": 2.0}):
     axes[0].plot(ret.time, f_fit_ret, label="Curve fit", alpha=0.7)
 
     axes[1] = plot_relaxation_fn(axes[1], htz_fit, app.time)
-#%%
+# %%
 ## check parameter
 for i in range(len(kww_results)):
     print(kww_results[i].params.valuesdict())
-#%%
-## Parameter space 
-sls_params = ['E1', 'E_inf', 'tau']
-mplr_params = ['E0', 't0', 'alpha']
-kww_params = ['E1', 'E_inf', 'tau']
+# %%
+## Parameter space
+sls_params = ["E1", "E_inf", "tau"]
+mplr_params = ["E0", "t0", "alpha"]
+kww_params = ["E1", "E_inf", "tau"]
 
 fig = plt.figure()
-ax = fig.add_subplot(projection='3d')
+ax = fig.add_subplot(projection="3d")
 
 for i in np.arange(len(sls_results)):
     params = sls_params
@@ -478,7 +581,9 @@ plt.show()
 #######################################################################################################################
 # %%
 ## Fit the entire approach-retract curve for SLS
-sls_tot_fit, tot_result_sls = fit_all_lmfit(constit_sls, bounds_sls, tip, (app, ret), (f_app, f_ret))
+sls_tot_fit, tot_result_sls = fit_all_lmfit(
+    constit_sls, bounds_sls, tip, (app, ret), (f_app, f_ret)
+)
 display(result)
 # %%
 fig, axes = plt.subplots(1, 2, figsize=(7, 3))
@@ -494,7 +599,9 @@ with mpl.rc_context({"lines.markersize": 1.0, "lines.linewidth": 2.0}):
 
 # %%
 ## Fit the entire approach-retract curve for MPLR
-mplr_tot_fit, tot_result_mplr = fit_all_lmfit(constit_mplr, bounds_mplr, tip, (app, ret), (f_app, f_ret))
+mplr_tot_fit, tot_result_mplr = fit_all_lmfit(
+    constit_mplr, bounds_mplr, tip, (app, ret), (f_app, f_ret)
+)
 display(result)
 # %%
 fig, axes = plt.subplots(1, 2, figsize=(7, 3))
@@ -510,7 +617,9 @@ with mpl.rc_context({"lines.markersize": 1.0, "lines.linewidth": 2.0}):
 # %%
 ## Fit the entire approach-retract curve for KWW
 # range(1e-5, 1e5)
-kww_tot_fit, tot_result_kww = fit_all_lmfit(constit_kww, bounds_kww, tip, (app, ret), (f_app, f_ret))
+kww_tot_fit, tot_result_kww = fit_all_lmfit(
+    constit_kww, bounds_kww, tip, (app, ret), (f_app, f_ret)
+)
 display(result)
 # %%
 fig, axes = plt.subplots(1, 2, figsize=(7, 3))
@@ -525,7 +634,9 @@ with mpl.rc_context({"lines.markersize": 1.0, "lines.linewidth": 2.0}):
     axes[1] = plot_relaxation_fn(axes[1], kww_fit, app.time)
 # %%
 ## Fit the entire approach-retract curve for Hertz
-htz_tot_fit, tot_result_htz = fit_all_lmfit(constit_htz, bounds_htz, tip, (app, ret), (f_app, f_ret))
+htz_tot_fit, tot_result_htz = fit_all_lmfit(
+    constit_htz, bounds_htz, tip, (app, ret), (f_app, f_ret)
+)
 display(result)
 # %%
 fig, axes = plt.subplots(1, 2, figsize=(7, 3))
@@ -538,7 +649,7 @@ with mpl.rc_context({"lines.markersize": 1.0, "lines.linewidth": 2.0}):
     axes[0].plot(ret.time, f_fit_ret, label="Curve fit", alpha=0.7)
 
     axes[1] = plot_relaxation_fn(axes[1], htz_fit, app.time)
-#%%
+# %%
 f_sls_fit_app = force_approach(sls_tot_fit, app, tip)
 f_sls_fit_ret = force_retract(sls_tot_fit, (app, ret), tip)
 
@@ -550,7 +661,7 @@ f_kww_fit_ret = force_retract(kww_tot_fit, (app, ret), tip)
 
 f_htz_fit_app = force_approach(htz_tot_fit, app, tip)
 f_htz_fit_ret = force_retract(htz_tot_fit, (app, ret), tip)
-#%%
+# %%
 ## Graph of 4 different viscoelastic model for approach params
 fig, axes = plt.subplots(1, 2, figsize=(13, 5))
 axes[0].plot(app.time, f_app, ".", color="black", label="Data", alpha=0.5)
@@ -572,12 +683,16 @@ axes[0].plot(ret.time, f_htz_fit_ret, color="yellow", alpha=0.7)
 axes[0].legend(loc="upper right")
 
 axes[1] = plot_relaxation_fn(axes[1], sls_fit, app.time, color="red", label="SLS")
-axes[1] = plot_relaxation_fn(axes[1], mplr_fit, app.time, color="blue", label="Modified PLR")
+axes[1] = plot_relaxation_fn(
+    axes[1], mplr_fit, app.time, color="blue", label="Modified PLR"
+)
 axes[1] = plot_relaxation_fn(axes[1], kww_fit, app.time, color="green", label="KWW")
-axes[1] = plot_relaxation_fn(axes[1], htz_fit, app.time, color="yellow", label="Hertzian")
+axes[1] = plot_relaxation_fn(
+    axes[1], htz_fit, app.time, color="yellow", label="Hertzian"
+)
 
 axes[1].legend(loc="upper right")
-#%%
+# %%
 ## Latinhypercube sampling
 
 sls_tot_fits, sls_tot_results = [], []
@@ -588,28 +703,36 @@ htz_tot_fits, htz_tot_results = [], []
 for i in tqdm(range(samples_sls.shape[0])):
     sample = samples_sls[i]
     constit_i = type(constit_sls)(*sample)
-    constit_fit, result = fit_all_lmfit(constit_i, bounds_sls, tip, (app, ret), (f_app, f_ret))
+    constit_fit, result = fit_all_lmfit(
+        constit_i, bounds_sls, tip, (app, ret), (f_app, f_ret)
+    )
     sls_tot_fits.append(constit_fit)
     sls_tot_results.append(result)
 
 for i in tqdm(range(samples_mplr.shape[0])):
     sample = samples_mplr[i]
     constit_i = type(constit_mplr)(*sample)
-    constit_fit, result = fit_all_lmfit(constit_i, bounds_mplr, tip, (app, ret), (f_app, f_ret))
+    constit_fit, result = fit_all_lmfit(
+        constit_i, bounds_mplr, tip, (app, ret), (f_app, f_ret)
+    )
     mplr_tot_fits.append(constit_fit)
     mplr_tot_results.append(result)
 
 for i in tqdm(range(samples_kww.shape[0])):
     sample = samples_kww[i]
     constit_i = type(constit_kww)(*sample)
-    constit_fit, result = fit_all_lmfit(constit_i, bounds_kww, tip, (app, ret), (f_app, f_ret))
+    constit_fit, result = fit_all_lmfit(
+        constit_i, bounds_kww, tip, (app, ret), (f_app, f_ret)
+    )
     kww_tot_fits.append(constit_fit)
     kww_tot_results.append(result)
 
 for i in tqdm(range(samples_htz.shape[0])):
     sample = samples_htz[i]
     constit_i = type(constit_htz)(*sample)
-    constit_fit, result = fit_all_lmfit(constit_i, bounds_htz, tip, (app, ret), (f_app, f_ret))
+    constit_fit, result = fit_all_lmfit(
+        constit_i, bounds_htz, tip, (app, ret), (f_app, f_ret)
+    )
     htz_tot_fits.append(constit_fit)
     htz_tot_results.append(result)
 # %%
@@ -635,7 +758,7 @@ print(f"MPLR = {np.sum(valid_inds(mplr_tot_bic, threshold)==False)} truncation")
 print(f"KWW = {np.sum(valid_inds(kww_tot_bic, threshold)==False)} truncation")
 print(f"HTZ = {np.sum(valid_inds(htz_tot_bic, threshold)==False)} truncation")
 
-#%%
+# %%
 ## SLS model
 fig, axes = plt.subplots(1, 2, figsize=(7, 3))
 axes[0].plot(app.time, f_app, ".", color="royalblue", label="Data", alpha=0.5)
@@ -649,7 +772,7 @@ for i, (constit_fit, result) in enumerate(zip(sls_tot_fits, tqdm(sls_results))):
     axes[0].plot(ret.time, f_fit_ret, color="gray", alpha=0.7)
 
     axes[1] = plot_relaxation_fn(axes[1], constit_fit, app.time, color="gray")
-#%%
+# %%
 ## Modified PLR model
 fig, axes = plt.subplots(1, 2, figsize=(7, 3))
 axes[0].plot(app.time, f_app, ".", color="royalblue", label="Data", alpha=0.5)
@@ -663,7 +786,7 @@ for i, (constit_fit, result) in enumerate(zip(mplr_tot_fits, tqdm(mplr_tot_resul
     axes[0].plot(ret.time, f_fit_ret, color="gray", alpha=0.7)
 
     axes[1] = plot_relaxation_fn(axes[1], constit_fit, app.time, color="gray")
-#%%
+# %%
 ## KWW model
 fig, axes = plt.subplots(1, 2, figsize=(7, 3))
 axes[0].plot(app.time, f_app, ".", color="royalblue", label="Data", alpha=0.5)
@@ -677,7 +800,7 @@ for i, (constit_fit, result) in enumerate(zip(kww_tot_fits, tqdm(kww_tot_results
     axes[0].plot(ret.time, f_fit_ret, color="gray", alpha=0.7)
 
     axes[1] = plot_relaxation_fn(axes[1], constit_fit, app.time, color="gray")
-#%%
+# %%
 ## Hertz model
 fig, axes = plt.subplots(1, 2, figsize=(7, 3))
 axes[0].plot(app.time, f_app, ".", color="royalblue", label="Data", alpha=0.5)
@@ -691,7 +814,7 @@ for i, (constit_fit, result) in enumerate(zip(htz_tot_fits, tqdm(htz_results))):
     axes[0].plot(ret.time, f_fit_ret, color="gray", alpha=0.7)
 
     axes[1] = plot_relaxation_fn(axes[1], constit_fit, app.time, color="gray")
-#%%
+# %%
 sls_samples_tot_fit = []
 for r in sls_tot_results:
     sls_samples_tot_fit.append(list(r.params.valuesdict().values()))
@@ -707,12 +830,12 @@ for i, ax in enumerate(axes):
         ax.hist(sls_samples_tot_fit[:, i])
 # %%
 sls_tot_results[0].params.valuesdict()
-#%%
+# %%
 mplr_samples_tot_fit = []
 for r in mplr_tot_results:
     mplr_samples_tot_fit.append(list(r.params.valuesdict().values()))
 mplr_samples_tot_fit = np.asarray(mplr_samples_tot_fit)
-#%%
+# %%
 fig, axes = plt.subplots(1, 3, figsize=(7, 3))
 for i, ax in enumerate(axes):
     if mplr_is_logscale[i] is True:
@@ -723,12 +846,12 @@ for i, ax in enumerate(axes):
         ax.hist(mplr_samples_tot_fit[:, i])
 # %%
 mplr_tot_results[0].params.valuesdict()
-#%%
+# %%
 kww_samples_tot_fit = []
 for r in kww_tot_results:
     kww_samples_tot_fit.append(list(r.params.valuesdict().values()))
 kww_samples_tot_fit = np.asarray(kww_samples_tot_fit)
-#%%
+# %%
 fig, axes = plt.subplots(1, 4, figsize=(7, 3))
 for i, ax in enumerate(axes):
     if kww_is_logscale[i] is True:
@@ -739,14 +862,14 @@ for i, ax in enumerate(axes):
         ax.hist(kww_samples_tot_fit[:, i])
 # %%
 kww_tot_results[0].params.valuesdict()
-#%%
+# %%
 htz_samples_tot_fit = []
 for r in htz_tot_results:
     htz_samples_tot_fit.append(list(r.params.valuesdict().values()))
 htz_samples_tot_fit = np.asarray(htz_samples_tot_fit)
-#%%
+# %%
 fig, ax = plt.subplots(1, 1, figsize=(7, 3))
-i=0
+i = 0
 if htz_is_logscale[i] is True:
     s_ = htz_samples_tot_fit[:, i]
     s_[s_ > 0] = np.log10(s_[s_ > 0])
@@ -755,7 +878,7 @@ else:
     ax.hist(htz_samples_tot_fit[:, i])
 # %%
 htz_tot_results[0].params.valuesdict()
-#%%
+# %%
 ## Test fitting results
 sls_tot_fit = sls_tot_fits[0]
 fig, axes = plt.subplots(1, 2, figsize=(7, 3))
@@ -806,12 +929,12 @@ with mpl.rc_context({"lines.markersize": 1.0, "lines.linewidth": 2.0}):
     axes[1] = plot_relaxation_fn(axes[1], htz_tot_fit, app.time)
 # %%
 sls_tot_results[0].params.valuesdict()
-#%%
-## Parameter space 
-sls_params = ['E1', 'E_inf', 'tau']
+# %%
+## Parameter space
+sls_params = ["E1", "E_inf", "tau"]
 
-fig = plt.figure(figsize=(15,10))
-ax = fig.add_subplot(projection='3d')
+fig = plt.figure(figsize=(15, 10))
+ax = fig.add_subplot(projection="3d")
 
 for i in np.arange(len(sls_results)):
     params = sls_params
@@ -819,14 +942,14 @@ for i in np.arange(len(sls_results)):
     ys = sls_results[i].params.valuesdict()[params[1]]
     zs = sls_results[i].params.valuesdict()[params[2]]
 
-    ax.scatter(xs, ys, zs, marker='^', alpha=0.7)
+    ax.scatter(xs, ys, zs, marker="^", alpha=0.7)
 
 for i in np.arange(len(sls_tot_results)):
     xs_tot = sls_tot_results[i].params.valuesdict()[params[0]]
     ys_tot = sls_tot_results[i].params.valuesdict()[params[1]]
     zs_tot = sls_tot_results[i].params.valuesdict()[params[2]]
 
-    ax.scatter(xs_tot, ys_tot, zs_tot, marker='*', alpha=0.7)
+    ax.scatter(xs_tot, ys_tot, zs_tot, marker="*", alpha=0.7)
 
 ax.set_xlabel(params[0])
 ax.set_ylabel(params[1])
@@ -868,21 +991,21 @@ display(sls_tot_results[0])
 # %%
 sls_tot_results[0].aborted
 # %%
-print(f'operation time : {time.time()-t_start}')
+print(f"operation time : {time.time()-t_start}")
 # %%
-section = ("Approach","Total")
+section = ("Approach", "Total")
 model_bic = {
-    'SLS': (sls_bic, sls_tot_bic),
-    'MPLR': (mplr_bic, mplr_tot_bic),
-    'KWW': (kww_bic, kww_tot_bic),
-    'Hertz' : (htz_bic, htz_tot_bic)
+    "SLS": (sls_bic, sls_tot_bic),
+    "MPLR": (mplr_bic, mplr_tot_bic),
+    "KWW": (kww_bic, kww_tot_bic),
+    "Hertz": (htz_bic, htz_tot_bic),
 }
 
 x = np.arange(len(section))  # the label locations
 width = 0.2  # the width of the bars
 multiplier = 0
 
-fig, ax = plt.subplots(layout='constrained')
+fig, ax = plt.subplots(layout="constrained")
 
 for attribute, measurement in model_bic.items():
     offset = width * multiplier
@@ -891,10 +1014,10 @@ for attribute, measurement in model_bic.items():
     multiplier += 1
 
 # Add some text for labels, title and custom x-axis tick labels, etc.
-ax.set_ylabel('BIC')
-ax.set_title('4 different model by section')
-ax.set_xticks(x + width*1.5, section)
+ax.set_ylabel("BIC")
+ax.set_title("4 different model by section")
+ax.set_xticks(x + width * 1.5, section)
 ax.legend(loc="lower left", ncols=2)
 
 plt.show()
-#%%
+# %%

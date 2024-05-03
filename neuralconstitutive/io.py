@@ -37,5 +37,5 @@ def import_data(
     force_app, force_ret = force[: idx_max + 1], force[idx_max:]
 
     # Clip the negative adhesive force
-    force_ret = jnp.clip(force_ret, 0.0)
+    # force_ret = jnp.clip(force_ret, 0.0)
     return (approach, retract), (force_app, force_ret)
