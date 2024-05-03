@@ -237,8 +237,8 @@ f_htz_fit_app = eqx.filter_jit(force_approach)(htz_fit, app, tip)
 # %%
 ## Latinhypercube sampling & draw histogram for parameter space(example)
 
-num = 1
-seed = 20
+num = 10
+seed = 10
 
 sampler = qmc.LatinHypercube(d=3, seed=seed)
 sls_range = [(1e-5, 1e5), (1e-5, 1e5), (1e-5, 1e5)]
@@ -655,10 +655,10 @@ f_sls_fit_ret = force_retract(sls_tot_fit, (app, ret), tip)
 
 f_mplr_fit_app = force_approach(mplr_tot_fit, app, tip)
 f_mplr_fit_ret = force_retract(mplr_tot_fit, (app, ret), tip)
-
+#%%
 f_kww_fit_app = force_approach(kww_tot_fit, app, tip)
 f_kww_fit_ret = force_retract(kww_tot_fit, (app, ret), tip)
-
+#%%
 f_htz_fit_app = force_approach(htz_tot_fit, app, tip)
 f_htz_fit_ret = force_retract(htz_tot_fit, (app, ret), tip)
 # %%
@@ -717,7 +717,7 @@ for i in tqdm(range(samples_mplr.shape[0])):
     )
     mplr_tot_fits.append(constit_fit)
     mplr_tot_results.append(result)
-
+#%%
 for i in tqdm(range(samples_kww.shape[0])):
     sample = samples_kww[i]
     constit_i = type(constit_kww)(*sample)
@@ -726,7 +726,7 @@ for i in tqdm(range(samples_kww.shape[0])):
     )
     kww_tot_fits.append(constit_fit)
     kww_tot_results.append(result)
-
+#%%
 for i in tqdm(range(samples_htz.shape[0])):
     sample = samples_htz[i]
     constit_i = type(constit_htz)(*sample)
@@ -936,24 +936,28 @@ sls_params = ["E1", "E_inf", "tau"]
 fig = plt.figure(figsize=(15, 10))
 ax = fig.add_subplot(projection="3d")
 
-for i in np.arange(len(sls_results)):
-    params = sls_params
-    xs = sls_results[i].params.valuesdict()[params[0]]
-    ys = sls_results[i].params.valuesdict()[params[1]]
-    zs = sls_results[i].params.valuesdict()[params[2]]
+results = sls_results
+params = sls_params
 
     ax.scatter(xs, ys, zs, marker="^", alpha=0.7)
 
-for i in np.arange(len(sls_tot_results)):
-    xs_tot = sls_tot_results[i].params.valuesdict()[params[0]]
-    ys_tot = sls_tot_results[i].params.valuesdict()[params[1]]
-    zs_tot = sls_tot_results[i].params.valuesdict()[params[2]]
+    ax.scatter(xs, ys, zs, marker='^', alpha=0.7, color="red")
 
     ax.scatter(xs_tot, ys_tot, zs_tot, marker="*", alpha=0.7)
 
+for i in np.arange(len(tot_results)):
+    xs_tot = tot_results[i].params.valuesdict()[params[0]]
+    ys_tot = tot_results[i].params.valuesdict()[params[1]]
+    zs_tot = tot_results[i].params.valuesdict()[params[2]]
+
+    ax.scatter(xs_tot, ys_tot, zs_tot, marker='*', alpha=0.7, color="blue")
+
+ax.scatter(xs, ys, zs, marker='^', alpha=0.7, color="red", label="approach params")
+ax.scatter(xs_tot, ys_tot, zs_tot, marker='*', alpha=0.7, color="blue", label="entire params")
 ax.set_xlabel(params[0])
 ax.set_ylabel(params[1])
 ax.set_zlabel(params[2])
+ax.legend()
 
 plt.show()
 # %%
@@ -968,26 +972,6 @@ mplr_tot_bic = np.min(mplr_tot_bic)
 kww_tot_bic = np.min(kww_tot_bic)
 htz_tot_bic = np.min(htz_tot_bic)
 # %%
-# fig, ax = plt.subplots(1, 1, figsize=(10,5))
-
-# x=np.arange(2)
-
-# ax.bar(x[0], height=sls_bic, width=0.25, label = 'SLS')
-# ax.bar(x[0]+0.25, height=mplr_bic, width=0.25, label='MPLR')
-# ax.bar(x[0]+0.5, height=kww_bic, width=0.25, label='KWW')
-# ax.bar(x[0]+0.75, height=htz_bic, width=0.25, label='Hertz')
-
-# ax.bar(x[1]+0.25, height=sls_tot_bic, width=0.25, label = 'SLS')
-# ax.bar(x[1]+0.5, height=mplr_tot_bic, width=0.25, label='MPLR')
-# ax.bar(x[1]+0.75, height=kww_tot_bic, width=0.25, label='KWW')
-# ax.bar(x[1]+1.0, height=htz_tot_bic, width=0.25, label='Hertz')
-# ax.set_ylabel("BIC")
-
-# ax.set_xticks(x[0] + 0.25, 'Approach')
-# ax.set_xticks(x[1] + 0.25, 'Total')
-# ax.legend()
-# %%
-display(sls_tot_results[0])
 # %%
 sls_tot_results[0].aborted
 # %%
@@ -1020,4 +1004,16 @@ ax.set_xticks(x + width * 1.5, section)
 ax.legend(loc="lower left", ncols=2)
 
 plt.show()
-# %%
+#%%
+print("SLS parameter")
+for i in range(len(sls_tot_results)):
+    print(sls_tot_results[i].params.valuesdict())
+
+print("MPLR parameter")
+for i in range(len(mplr_tot_results)):
+    print(mplr_tot_results[i].params.valuesdict())
+
+print("KWW parameter")
+for i in range(len(kww_tot_results)):
+    print(kww_tot_results[i].params.valuesdict())
+#%%
