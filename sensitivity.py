@@ -96,11 +96,21 @@ axes[2].plot(ret.depth, f_ret, ".")
 ## HeLa, approach
 # constit_sls = StandardLinearSolid(2.889893879753913e-08+0.33311486553838643, 0.33311486553838643, 987.3255341470276)
 # constit_sls = ModifiedPowerLaw(0.33311573822136786, 2.6413182681594982e-06, 0.6659960422297778)
+# constit_sls = KohlrauschWilliamsWatts(
+#     0.0002274177325900517 + 0.3328883488087353,
+#     0.3328883488087353,
+#     969.0153621760131,
+#     0.8037062892890634,
+# )
+
+## HeLa, both
+# constit_sls = StandardLinearSolid(0.2704624285342905+0.08856032985310458, 0.08856032985310458, 1.8086871935944557)
+# constit_sls = ModifiedPowerLaw(0.4557845450756659, 0.5378549312669225, 0.34712280476197444)
 constit_sls = KohlrauschWilliamsWatts(
-    0.0002274177325900517 + 0.3328883488087353,
-    0.3328883488087353,
-    969.0153621760131,
-    0.8037062892890634,
+    0.6208389433733918 + 0.07978665555324893,
+    0.07978665555324893,
+    0.3394100921127051,
+    0.31797642295608725,
 )
 # %%
 import jax.numpy as jnp
@@ -164,28 +174,28 @@ def plot_eigval_spectrum(ax, eigvals, *args, **hlines_kwargs):
 
 ax = plot_eigval_spectrum(
     ax,
-    [-7.78397387e-30, -2.07855871e-30, 1.29338918e-01],
+    [-1.86785584e-19, -1.72626105e-19, 1.79797253e-01],
     0.0,
     1.0,
     color=color_palette[6],
 )
 ax = plot_eigval_spectrum(
     ax,
-    [1.41631998e-46, 9.19878085e-26, 1.29292133e-01],
+    [1.34109128e-21, 9.22859914e-20, 1.25797755e-01],
     2.0,
     3.0,
     color=color_palette[3],
 )
 ax = plot_eigval_spectrum(
     ax,
-    [-1.77416405e-23, 0.00000000e00, 2.23673175e-31, 1.29116966e-01],
+    [0.00000000e00, 8.36262631e-20, 1.43577951e-19, 2.48371196e-01],
     4.0,
     5.0,
     color=color_palette[8],
 )
 ax.set_ylabel("log (eigenvalues)")
 ax.set_xticks([0.5, 2.5, 4.5], ["MPLR", "SLS", "KWW"])
-ax.set_title("Eigenvalue spectrum, HeLa, Approach")
+ax.set_title("Eigenvalue spectrum, HeLa, Both")
 
 
 # %%
@@ -265,4 +275,18 @@ jnp.asarray(-2) ** 9997384.77
 jax.grad(stretched_exp, argnums=2)(0.1, 9997384.77, 0.98299196)
 # %%
 0.0**0.98299196
+
+
+# %%
+def normalize_and_threshold(x, threshold=0.02):
+    x = np.asarray(x)
+    x = x / np.sum(x * x)
+    x[x < threshold] = 0.0
+
+    return x
+
+
+# %%
+out = normalize_and_threshold([0.99426116, 0.0596164, 0.08882927, 0.0])
+print(out)
 # %%

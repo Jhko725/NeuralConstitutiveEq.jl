@@ -8,6 +8,7 @@ import lmfit
 import numpy as np
 from jaxtyping import Array, Float
 from scipy.stats import qmc
+import scipy.interpolate as scinterp
 from tqdm import tqdm
 
 from neuralconstitutive.constitutive import (
@@ -24,6 +25,13 @@ from neuralconstitutive.tipgeometry import AbstractTipGeometry
 from neuralconstitutive.utils import smooth_data
 
 ConstitEqn = TypeVar("ConstitEqn", bound=AbstractConstitutiveEqn)
+
+
+def create_subsampled_interpolants(indent, num_knots: int = 10):
+    interp = scinterp.make_smoothing_spline(indent.time, indent.depth)
+    t_knots = jnp.linspace(indent.time[0], indent.time[-1], num_knots)
+    d_knots = interp(t_knots)
+    return interpolate_indentation(Indentation(t_knots, d_knots))
 
 
 def constitutive_to_params(
@@ -59,7 +67,8 @@ def fit_approach_lmfit(
     force: Float[Array, " {len(approach)}"],
 ):
     params = constitutive_to_params(constitutive, bounds)
-    app_interp = interpolate_indentation(approach)
+    # app_interp = interpolate_indentation(approach)
+    app_interp = create_subsampled_interpolants(approach)
 
     @eqx.filter_jit
     def _residual_jax(constit):
@@ -85,8 +94,10 @@ def fit_all_lmfit(
 ):
     params = constitutive_to_params(constitutive, bounds)
     app, ret = indentations
-    app_interp = interpolate_indentation(app)
-    ret_interp = interpolate_indentation(ret)
+    # app_interp = interpolate_indentation(app)
+    # ret_interp = interpolate_indentation(ret)
+    app_interp = create_subsampled_interpolants(app)
+    ret_interp = create_subsampled_interpolants(ret)
 
     @eqx.filter_jit
     def _residual_jax(constit):
@@ -171,7 +182,7 @@ def fit_indentation_data(
             constit_fit, result, minimizer = fit_func(constit_, bounds, tip, *fit_data)
         except:
             print(f"Fit #{i} aborted")
-            constit_fit, result, minimizer = None
+            constit_fit, result, minimizer = None, None, None
         constit_fits.append(constit_fit)
         results.append(result)
         minimizers.append(minimizer)

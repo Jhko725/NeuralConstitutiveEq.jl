@@ -31,7 +31,7 @@ def force_approach_scalar(
     approach: diffrax.AbstractPath,
     tip: AbstractTipGeometry,
 ) -> FloatScalar:
-    method = ExtendedTrapezoid(num_refine=10)
+    method = AdaptiveTrapezoid(1e-4, 1e-4)
     args = (t, constitutive, approach, tip)
     return integrate(force_integrand, method, 0, t, args)
 
@@ -82,13 +82,13 @@ _force_approach = eqx.filter_vmap(force_approach_scalar, in_axes=(0, None, None,
 _force_retract = eqx.filter_vmap(force_retract_scalar, in_axes=(0, None, None, None))
 
 
-# @eqx.filter_jit
+@eqx.filter_jit
 def force_approach(constitutive, approach, tip, *, interp_method: str = "cubic"):
     app_interp = interpolate_indentation(approach, method=interp_method)
     return _force_approach(approach.time, constitutive, app_interp, tip)
 
 
-# @eqx.filter_jit
+@eqx.filter_jit
 def force_retract(constitutive, indentations, tip, *, interp_method: str = "cubic"):
     app, ret = indentations
     app_interp = interpolate_indentation(app, method=interp_method)

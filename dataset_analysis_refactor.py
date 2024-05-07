@@ -81,8 +81,8 @@ axes[2].plot(ret.depth, f_ret, ".")
 
 # %%
 ## Fit using Latin hypercube sampling
-N_SAMPLES = 2
-fit_type = "both"
+N_SAMPLES = 10
+fit_type = "approach"
 ### Hertzian model
 
 constit_htz = Hertzian(10.0)
@@ -179,7 +179,7 @@ for r in mplr_results:
 
 
 def get_best_model(results: list[lmfit.minimizer.MinimizerResult]):
-    bic = np.array([res.bic for res in results])
+    bic = np.array([res.bic if res is not None else np.inf for res in results])
     ind_best = np.argmin(bic)
     return results[ind_best], ind_best
 
@@ -204,16 +204,21 @@ for r in results_best.values():
     print(r.uvars)
 
 # %%
+import equinox as eqx
+from neuralconstitutive.ting import _force_approach, _force_retract
+from neuralconstitutive.fitting import create_subsampled_interpolants
+
 f_app_fits = {}
 f_ret_fits = {}
-app_fit, ret_fit = smooth_data(app), smooth_data(ret)
+app_interp = create_subsampled_interpolants(app)
+ret_interp = create_subsampled_interpolants(ret)
 for name, constit in fits_best.items():
-    f_app_fits[name] = force_approach(constit, app_fit, tip)
-    f_ret_fits[name] = force_retract(constit, (app_fit, ret_fit), tip)
+    f_app_fits[name] = _force_approach(app.time, constit, app_interp, tip)
+    f_ret_fits[name] = _force_retract(ret.time, constit, (app_interp, ret_interp), tip)
 # %%
 fig, axes = plt.subplots(1, 2, figsize=(7, 3), constrained_layout=True)
-axes[0].plot(app.time, f_app, ".", color="k", markersize=1.0, label="Data")
-axes[0].plot(ret.time, f_ret, ".", color="k", markersize=1.0)
+axes[0].plot(app.time, f_app, ".", color="k", markersize=1.0, label="Data", alpha=0.7)
+axes[0].plot(ret.time, f_ret, ".", color="k", markersize=1.0, alpha=0.7)
 
 color_palette = np.array(
     [
@@ -242,12 +247,12 @@ for n, c_ind in zip(names, color_inds):
     axes[0].set_ylabel("Force (norm.)")
 
     axes[1] = plot_relaxation_fn(axes[1], constit, app.time, color=color, linewidth=1.0)
-    axes[1].set_ylim((0, 0.4))
+    axes[1].set_ylim((0, 0.8))
     axes[1].set_xlabel("Time (norm.)")
     axes[1].set_ylabel("$G(t)$ (norm.)")
 
     handles, labels = axes[0].get_legend_handles_labels()
-    axes[1].legend(handles, labels, ncols=2, loc="lower right")
+    axes[1].legend(handles, labels, ncols=2, loc="upper right")
 for ax in axes:
     ax.grid(ls="--", color="lightgray")
 
@@ -261,7 +266,7 @@ ax.grid(ls="--", color="darkgray")
 ax.bar(names, bics, color=colors)
 ax.set_yscale("symlog")
 ax.set_ylabel("BIC")
-ax.set_title("HeLa cell (interphase), Approach")
+ax.set_title("HeLa cell (interphase), Approach only")
 
 
 # %%
