@@ -33,7 +33,7 @@ class FullyConnectedNetwork(eqx.Module):
     def __call__(self, t: Array) -> Array:
         for layer in self.layers:
             # t = self.activation(layer(t))
-            t = jax.nn.tanh(layer(t))
+            t = jax.nn.gelu(layer(t))
 
         # return self.final_activation(t)
         return jax.nn.softplus(t)
