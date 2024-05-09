@@ -5,7 +5,7 @@ import equinox as eqx
 import jax.numpy as jnp
 
 from integrax.integrate import integrate
-from integrax.solvers import AdaptiveTrapezoid, ExtendedTrapezoid
+from integrax.solvers import AdaptiveTrapezoid, AdaptiveSimpson
 from neuralconstitutive.constitutive import AbstractConstitutiveEqn
 from neuralconstitutive.custom_types import FloatScalar
 from neuralconstitutive.indentation import interpolate_indentation
@@ -31,7 +31,7 @@ def force_approach_scalar(
     approach: diffrax.AbstractPath,
     tip: AbstractTipGeometry,
 ) -> FloatScalar:
-    method = AdaptiveTrapezoid(1e-4, 1e-4)
+    method = AdaptiveSimpson(1e-4, 1e-4)
     args = (t, constitutive, approach, tip)
     return integrate(force_integrand, method, 0, t, args)
 
@@ -46,7 +46,7 @@ def t1_scalar(
     app_interp, ret_interp = indentations
     t_m = app_interp.t1  # Unfortunate mixup of names between my code and diffrax
     # In diffrax.AbstractPath, t1 attribute returns the final timepoint of the path
-    method = AdaptiveTrapezoid(1e-4, 1e-4)
+    method = AdaptiveSimpson(1e-4, 1e-4)
 
     const = integrate(t1_integrand, method, t_m, t, (t, constitutive, ret_interp))
 

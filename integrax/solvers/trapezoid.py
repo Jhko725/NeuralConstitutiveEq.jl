@@ -9,12 +9,66 @@ from jaxtyping import PyTree
 from lineax.internal import rms_norm
 
 from integrax.custom_types import BoolScalar, FloatScalar, IntScalar
-from integrax.solvers.base import AbstractIntegration
+from integrax.solvers.base import AbstractIntegration, reached_tolerance
 
 
 class TrapezoidState(eqx.Module):
     num_points: IntScalar
     terminate: BoolScalar
+
+
+def init_trapezoid(fn, lower, upper, args):
+    dx = upper - lower
+    S_init = (0.5 * dx * (fn(upper, args) ** ω - fn(lower, args) ** ω)).ω
+    return S_init
+
+
+def refine_trapezoid(S: PyTree, num_refine: IntScalar, fn, lower, upper, args):
+    """Refine the integral of fn(x, args) from [lower, upper] using num_refine additional equi-spaced interior points."""
+    dx = (upper - lower) / num_refine
+    x_init = lower + 0.5 * dx
+    sum_init = jtu.tree_map(jnp.zeros_like, S)
+    carry_init = (sum_init, x_init)
+
+    def _body_fun(_, carry):
+        sum_, x = carry
+        sum_ = (sum_**ω + fn(x, args) ** ω).ω
+        return (sum_, x + dx)
+
+    sum_, _ = jax.lax.fori_loop(0, num_refine, _body_fun, carry_init)
+    S_refined = (0.5 * (S**ω + dx * sum_**ω)).ω
+    return S_refined
+
+
+def refine_trapezoid_batch(
+    S: PyTree, num_refine: IntScalar, fn, lower, upper, args, batch_size=512
+):
+    """Refine the integral of fn(x, args) from [lower, upper] using num_refine additional equi-spaced interior points."""
+    dx = (upper - lower) / num_refine
+    num_batch, num_remainder = jnp.divmod(num_refine, batch_size)
+    inds_remainder = jnp.arange(batch_size)
+
+    x_init = lower + 0.5 * dx
+    sum_init = jtu.tree_map(jnp.zeros_like, S)
+    carry_init = (sum_init, x_init)
+
+    fn_vec = eqx.filter_vmap(in_axes=(0, None))(fn)
+
+    def _body_fun_batch(i, carry):
+        sum_, x = carry
+        x_batch = x + dx * inds_remainder
+        sum_ = (sum_**ω + jtu.tree_map(jnp.sum, fn_vec(x_batch, args)) ** ω).ω
+        return (sum_, x + dx * batch_size)
+
+    def _body_fun(_, carry):
+        sum_, x = carry
+        sum_ = (sum_**ω + fn(x, args) ** ω).ω
+        return (sum_, x + dx)
+
+    carry_out = jax.lax.fori_loop(0, num_batch, _body_fun_batch, carry_init)
+    sum_, _ = jax.lax.fori_loop(0, num_remainder, _body_fun, carry_out)
+    S_refined = (0.5 * (S**ω + dx * sum_**ω)).ω
+    return S_refined
 
 
 class TrapezoidBase(AbstractIntegration):
@@ -77,16 +131,3 @@ class AdaptiveTrapezoid(TrapezoidBase):
         )
         state_new = TrapezoidState(state_new.num_points, terminate)
         return integral_new, num_steps_new, state_new
-
-
-def reached_tolerance(
-    value_new: PyTree,
-    value_old: PyTree,
-    rtol: float,
-    atol: float,
-    norm: Callable[[PyTree], FloatScalar],
-):
-    value_diff = (value_new**ω - value_old**ω).ω
-    value_scale = (atol + rtol * ω(value_old).call(jnp.abs)).ω
-    tol_satisfied = norm((ω(value_diff).call(jnp.abs) / value_scale**ω).ω) < 1
-    return tol_satisfied

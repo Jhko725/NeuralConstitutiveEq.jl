@@ -100,16 +100,16 @@ ax.legend()
 
 #%%
 #%%
-#%%timeit
+%%timeit
 f_app_sparse = eqx.filter_jit(_force_approach)(app.time, constit, app_interp2, tip)
 #%%
-#%%timeit
+%%timeit
 f_app = eqx.filter_jit(_force_approach)(app.time, constit, app_interp, tip)
 #%%
-#%%timeit
+%%timeit
 f_ret_sparse = eqx.filter_jit(_force_retract)(ret.time, constit, (app_interp2, ret_interp2), tip)
 #%%
-#%%timeit
+%%timeit
 f_ret = eqx.filter_jit(_force_retract)(ret.time, constit, (app_interp, ret_interp), tip)
 #%%
 fig, ax = plt.subplots(1, 1, figsize = (5, 3))
@@ -157,4 +157,6 @@ interp = interpolate_indentation(app_fit)
 t_interp = jnp.linspace(interp.t0, interp.t1, len(app_fit.time)*100)
 ax.plot(t_interp, eqx.filter_vmap(interp.derivative)(t_interp))
 ax.scatter(app_fit.time, eqx.filter_vmap(interp.derivative)(app_fit.time), s = 1, color = "red")
+# %%
+jnp.repeat(jnp.asarray(False), 256)
 # %%

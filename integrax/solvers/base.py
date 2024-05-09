@@ -2,9 +2,11 @@ import abc
 from typing import Any, Callable
 
 import equinox as eqx
+from equinox.internal import ω
+import jax.numpy as jnp
 from jaxtyping import PyTree
 
-from integrax.custom_types import Args, BoolScalar, IntScalar, SolverState, X, Y
+from integrax.custom_types import Args, BoolScalar, IntScalar, FloatScalar, SolverState, X, Y
 
 
 class AbstractIntegration(eqx.Module):
@@ -39,3 +41,16 @@ class AbstractIntegration(eqx.Module):
         state: Any,
     ) -> tuple[BoolScalar, Any]:
         pass
+
+
+def reached_tolerance(
+    value_new: PyTree,
+    value_old: PyTree,
+    rtol: float,
+    atol: float,
+    norm: Callable[[PyTree], FloatScalar],
+):
+    value_diff = (value_new**ω - value_old**ω).ω
+    value_scale = (atol + rtol * ω(value_old).call(jnp.abs)).ω
+    tol_satisfied = norm((ω(value_diff).call(jnp.abs) / value_scale**ω).ω) < 1
+    return tol_satisfied
