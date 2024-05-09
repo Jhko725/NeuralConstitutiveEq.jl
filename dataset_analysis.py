@@ -17,6 +17,8 @@ from neuralconstitutive.constitutive import (
     ModifiedPowerLaw,
     KohlrauschWilliamsWatts,
     Hertzian,
+    FractionalKelvinVoigt,
+    GeneralizedMaxwellmodel
 )
 from neuralconstitutive.tipgeometry import Spherical
 from neuralconstitutive.ting import force_approach, force_retract
@@ -30,11 +32,15 @@ from neuralconstitutive.utils import (
 import time
 
 t_start = time.time()
+#%%
+import os
+print(os.getcwd())
+
 # %%
 jax.config.update("jax_enable_x64", True)
 
-datadir = Path("open_data/Interphase rep 2")
-name = "interphase_speed 2_2nN"
+datadir = Path("open_data/PAAM hydrogel/speed 5")
+name = "PAA_speed 5_4nN"
 (app, ret), (f_app, f_ret) = import_data(
     datadir / f"{name}.tab", datadir / f"{name}.tsv"
 )
@@ -168,22 +174,32 @@ bounds_sls = [(1e-7, 1e7)] * 3
 constit_mplr = ModifiedPowerLaw(10.0, 10.0, 10.0)
 bounds_mplr = [(1e-7, 1e7), (0.0, 1.0), (1e-7, 1e7)]
 
-constit_kww = KohlrauschWilliamsWatts(10.0, 10.0, 10.0, 10.0)
+constit_kww = KohlrauschWilliamsWatts(10.0, 10.0, 10.0, 0.0)
 bounds_kww = [(1e-7, 1e7)] * 3 + [(0.0, 1.0)]
 
 constit_htz = Hertzian(10.0)
 bounds_htz = [(1e-7, 1e7)]
+
+constit_fkv = FractionalKelvinVoigt(1.0, 1.0, 1.0)
+bounds_fkv = [(1e-7, 1e7)] * 2 + [(0.0, 0.7)] * 1
+
+constit_gm = GeneralizedMaxwellmodel(1.0, 1.0, 1.0, 1.0, 1.0)
+bounds_gm = [(1e-7, 1e7)] * 5
 # %%
 # %%timeit
-sls_fit, result_sls = fit_approach_lmfit(constit_sls, bounds_sls, tip, app, f_app)
-mplr_fit, result_mplr = fit_approach_lmfit(constit_mplr, bounds_mplr, tip, app, f_app)
-kww_fit, result_kww = fit_approach_lmfit(constit_kww, bounds_kww, tip, app, f_app)
-htz_fit, result_htz = fit_approach_lmfit(constit_htz, bounds_htz, tip, app, f_app)
+sls_fit, result_sls, min_sls = fit_approach_lmfit(constit_sls, bounds_sls, tip, app, f_app)
+mplr_fit, result_mplr, min_mplr = fit_approach_lmfit(constit_mplr, bounds_mplr, tip, app, f_app)
+kww_fit, result_kww, min_mplr = fit_approach_lmfit(constit_kww, bounds_kww, tip, app, f_app)
+htz_fit, result_htz, min_htz = fit_approach_lmfit(constit_htz, bounds_htz, tip, app, f_app)
+fkv_fit, result_fkv, min_fkv = fit_approach_lmfit(constit_fkv, bounds_fkv, tip, app, f_app)
+gm_fit, result_gm, min_gm = fit_approach_lmfit(constit_gm, bounds_gm, tip, app, f_app)
 # %%
 display(result_sls)
 display(result_mplr)
 display(result_kww)
 display(result_htz)
+display(result_fkv)
+display(result_gm)
 # %%
 ## Calculation of approach & retraction curve for approach params
 f_sls_fit_app = force_approach(sls_fit, app, tip)
@@ -197,6 +213,34 @@ f_kww_fit_ret = force_retract(kww_fit, (app, ret), tip)
 
 f_htz_fit_app = force_approach(htz_fit, app, tip)
 f_htz_fit_ret = force_retract(htz_fit, (app, ret), tip)
+
+f_fkv_fit_app = force_approach(fkv_fit, app, tip)
+f_fkv_fit_ret = force_retract(fkv_fit, (app, ret), tip)
+#%%
+import equinox as eqx
+from neuralconstitutive.ting import _force_approach, _force_retract
+from neuralconstitutive.fitting import create_subsampled_interpolants
+
+app_interp = create_subsampled_interpolants(app)
+ret_interp = create_subsampled_interpolants(ret)
+
+f_sls_fit_app = _force_approach(app.time, sls_fit, app_interp, tip)
+f_sls_fit_ret = _force_retract(ret.time, sls_fit, (app_interp, ret_interp), tip)
+
+f_mplr_fit_app = _force_approach(app.time, mplr_fit, app_interp, tip)
+f_mplr_fit_ret = _force_retract(ret.time, mplr_fit, (app_interp, ret_interp), tip)
+
+f_kww_fit_app = _force_approach(app.time, kww_fit, app_interp, tip)
+f_kww_fit_ret = _force_retract(ret.time, kww_fit, (app_interp, ret_interp), tip)
+
+f_htz_fit_app = _force_approach(app.time, htz_fit, app_interp, tip)
+f_htz_fit_ret = _force_retract(ret.time, htz_fit, (app_interp, ret_interp), tip)
+
+f_fkv_fit_app = _force_approach(app.time, fkv_fit, app_interp, tip)
+f_fkv_fit_ret = _force_retract(ret.time, fkv_fit, (app_interp, ret_interp), tip)
+
+f_gm_fit_app = _force_approach(app.time, gm_fit, app_interp, tip)
+f_gm_fit_ret = _force_retract(ret.time, gm_fit, (app_interp, ret_interp), tip)
 # %%
 ## Graph of 4 different viscoelastic model for approach params
 fig, axes = plt.subplots(1, 2, figsize=(13, 5))
@@ -204,36 +248,41 @@ axes[0].plot(app.time, f_app, ".", color="black", label="Data", alpha=0.5)
 axes[0].plot(ret.time, f_ret, ".", color="black", alpha=0.5)
 
 # Graph for parameters of SLS model fitting (approach portion)
-axes[0].plot(app.time, f_sls_fit_app, color="red", alpha=0.7, label="SLS")
-axes[0].plot(ret.time, f_sls_fit_ret, color="red", alpha=0.7)
+axes[0].plot(app.time, f_sls_fit_app, color="#49adad", alpha=0.7, label="SLS")
+axes[0].plot(ret.time, f_sls_fit_ret, color="#49adad", alpha=0.7)
 # Graph for parameters of Modified PLR model fitting (approach portion)
-axes[0].plot(app.time, f_mplr_fit_app, color="green", alpha=0.7, label="Modified PLR")
-axes[0].plot(ret.time, f_mplr_fit_ret, color="green", alpha=0.7)
+axes[0].plot(app.time, f_mplr_fit_app, color="#cb5b42", alpha=0.7, label="Modified PLR")
+axes[0].plot(ret.time, f_mplr_fit_ret, color="#cb5b42", alpha=0.7)
 # Graph for parameters of KWW model fitting (approach portion)
-axes[0].plot(app.time, f_kww_fit_app, color="blue", alpha=0.7, label="KWW")
-axes[0].plot(ret.time, f_kww_fit_ret, color="blue", alpha=0.7)
-
-axes[0].plot(app.time, f_htz_fit_app, color="yellow", alpha=0.7, label="Hertzian")
-axes[0].plot(ret.time, f_htz_fit_ret, color="yellow", alpha=0.7)
+axes[0].plot(app.time, f_kww_fit_app, color="#67a64e", alpha=0.7, label="KWW")
+axes[0].plot(ret.time, f_kww_fit_ret, color="#67a64e", alpha=0.7)
+#Graph for parameters of Hertz model fitting (approach portion)
+axes[0].plot(app.time, f_htz_fit_app, color="#8d70c9", alpha=0.7, label="Hertzian")
+axes[0].plot(ret.time, f_htz_fit_ret, color="#8d70c9", alpha=0.7)
+# Graph for parameters of Fractional Kelvin-Voigt fitting (approach portion)
+axes[0].plot(app.time, f_fkv_fit_app, color="#b69340", alpha=0.7, label="FKV")
+axes[0].plot(ret.time, f_fkv_fit_ret, color="#b69340", alpha=0.7)
+# Graph for parameters of Fractional Generalized Maxwell model fitting (approach portion)
+axes[0].plot(app.time, f_gm_fit_app, color="#c8588c", alpha=0.7, label="GM")
+axes[0].plot(ret.time, f_gm_fit_ret, color="#c8588c", alpha=0.7)
 
 axes[0].legend(loc="upper right")
 
-axes[1] = plot_relaxation_fn(axes[1], sls_fit, app.time, color="red", label="SLS")
-axes[1] = plot_relaxation_fn(
-    axes[1], mplr_fit, app.time, color="blue", label="Modified PLR"
-)
-axes[1] = plot_relaxation_fn(axes[1], kww_fit, app.time, color="green", label="KWW")
-axes[1] = plot_relaxation_fn(
-    axes[1], htz_fit, app.time, color="yellow", label="Hertzian"
-)
+axes[1] = plot_relaxation_fn(axes[1], sls_fit, app.time, color="#49adad", label="SLS")
+axes[1] = plot_relaxation_fn(axes[1], mplr_fit, app.time, color="#cb5b42", label="Modified PLR")
+axes[1] = plot_relaxation_fn(axes[1], kww_fit, app.time, color="#67a64e", label="KWW")
+axes[1] = plot_relaxation_fn(axes[1], htz_fit, app.time, color="#8d70c9", label="Hertzian")
+axes[1] = plot_relaxation_fn(axes[1], fkv_fit, app.time, color="#b69340", label="FKV")
+axes[1] = plot_relaxation_fn(axes[1], gm_fit, app.time, color="#c8588c", label="GM")
 
 axes[1].legend(loc="upper right")
-# %%
 # %%timeit
 f_sls_fit_app = eqx.filter_jit(force_approach)(sls_fit, app, tip)
 f_mplr_fit_app = eqx.filter_jit(force_approach)(mplr_fit, app, tip)
 f_kww_fit_app = eqx.filter_jit(force_approach)(kww_fit, app, tip)
 f_htz_fit_app = eqx.filter_jit(force_approach)(htz_fit, app, tip)
+f_fkv_fit_app = eqx.filter_jit(force_approach)(fkv_fit, app, tip)
+f_gm_fit_app = eqx.filter_jit(force_approach)(gm_fit, app, tip)
 # %%
 ## Latinhypercube sampling & draw histogram for parameter space(example)
 
@@ -310,9 +359,48 @@ samples_htz = qmc.scale(samples_htz, htz_range[:, 0], htz_range[:, 1])
 samples_htz[:, is_logscale] = 10 ** samples_htz[:, is_logscale]
 
 htz_is_logscale = is_logscale
-# %%
-##
+#%%
+sampler_fkv = qmc.LatinHypercube(d=3, seed=seed)
+fkv_range = [
+    (1e-5, 1e5),
+    (1e-5, 1e5),
+    (1e-10, 1e1)
+    ]
+fkv_range = np.asarray(fkv_range)
 
+sample_scale = ["log"]
+is_logscale = [s == "log" for s in sample_scale]
+
+fkv_range[is_logscale, :] = np.log10(fkv_range[is_logscale, :])
+
+samples_fkv = sampler_fkv.random(num)
+samples_fkv = qmc.scale(samples_fkv, fkv_range[:, 0], fkv_range[:, 1])
+samples_fkv[:, is_logscale] = 10 ** samples_fkv[:, is_logscale]
+
+fkv_is_logscale = is_logscale
+#%%
+sampler_gm = qmc.LatinHypercube(d=5, seed=seed)
+gm_range = [
+    (1e-5, 1e5),
+    (1e-5, 1e5),
+    (1e-5, 1e5),
+    (1e-5, 1e5),
+    (1e-5, 1e5)
+    ]
+gm_range = np.asarray(gm_range)
+
+sample_scale = ["log"]
+is_logscale = [s == "log" for s in sample_scale]
+
+gm_range[is_logscale, :] = np.log10(gm_range[is_logscale, :])
+
+samples_gm = sampler_htz.random(num)
+samples_gm = qmc.scale(samples_gm, gm_range[:, 0], gm_range[:, 1])
+samples_gm[:, is_logscale] = 10 ** samples_gm[:, is_logscale]
+
+gm_is_logscale = is_logscale
+#%%
+##
 sls_fits, sls_results = [], []
 mplr_fits, mplr_results = [], []
 kww_fits, kww_results = [], []

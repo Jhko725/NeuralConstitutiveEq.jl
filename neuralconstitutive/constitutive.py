@@ -10,6 +10,11 @@ from neuralconstitutive.custom_types import FloatScalar, as_floatscalar
 from neuralconstitutive.relaxation_spectrum import AbstractLogDiscreteSpectrum
 from neuralconstitutive.misc import stretched_exp
 
+from mittag_leffler_master.mittag_leffler import ml
+
+from jax.scipy.special import gamma
+
+
 floatscalar_field = partial(eqx.field, converter=as_floatscalar)
 
 
@@ -61,6 +66,20 @@ class StandardLinearSolid(AbstractConstitutiveEqn):
     def relaxation_function(self, t):
         return self.E_inf + self.E1 * jnp.exp(-t / self.tau)
 
+class GeneralizedMaxwellmodel(AbstractConstitutiveEqn):
+    E1: FloatScalar = floatscalar_field()
+    E2: FloatScalar = floatscalar_field()
+    E_inf: FloatScalar = floatscalar_field()
+    tau1: FloatScalar = floatscalar_field()
+    tau2: FloatScalar = floatscalar_field()
+
+    @property
+    def E0(self) -> FloatScalar:
+        return self.E_inf + self.E1 + self.E2
+
+    def relaxation_function(self, t):
+        return self.E_inf + self.E1 * jnp.exp(-t / self.tau1) + self.E2 * jnp.exp(-t / self.tau2)
+
 
 class KohlrauschWilliamsWatts(AbstractConstitutiveEqn):
     E1: FloatScalar = floatscalar_field()
@@ -97,6 +116,14 @@ class Fung(AbstractConstitutiveEqn):
         denominator = 1 + self.C * jnp.log(self.tau2 / self.tau1)
         return self.E0 * numerator / denominator
 
+class FractionalKelvinVoigt(AbstractConstitutiveEqn):
+    E1: FloatScalar = floatscalar_field()
+    E_inf: FloatScalar = floatscalar_field()
+    alpha: FloatScalar = floatscalar_field()
+    
+    
+    def relaxation_function(self, t: Array) -> Array:
+        return self.E_inf+self.E1*(t**(-self.alpha)/gamma(1-self.alpha))
 
 class FromLogDiscreteSpectrum(AbstractConstitutiveEqn):
     """
