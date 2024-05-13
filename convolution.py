@@ -33,9 +33,9 @@ from neuralconstitutive.fitting import (
 )
 from neuralconstitutive.io import import_data
 from neuralconstitutive.plotting import plot_indentation, plot_relaxation_fn
-from neuralconstitutive.ting import force_approach, force_retract
-from neuralconstitutive.tingx import force_approach as force_approachx
-from neuralconstitutive.tingx import force_retract as force_retractx
+#from neuralconstitutive.ting import force_approach, force_retract
+#from neuralconstitutive.tingx import force_approach as force_approachx
+#from neuralconstitutive.tingx import force_retract as force_retractx
 
 from neuralconstitutive.tipgeometry import Spherical
 from neuralconstitutive.utils import (
@@ -105,6 +105,8 @@ dIb = (
     * app_interp2.derivative(app.time)
     * app_interp2.evaluate(app.time) ** (tip.b() - 1)
 )
+#%%
+dIb
 # %%
 def force_approach_conv(constit, t_app, dIb_app, a: float = 1.0):
     G = eqx.filter_vmap(constit.relaxation_function)(t_app)
