@@ -40,7 +40,6 @@ def t1_scalar(
     t: FloatScalar,
     constitutive: AbstractConstitutiveEqn,
     indentations: tuple[diffrax.AbstractPath, diffrax.AbstractPath],
-    *,
     newton_iterations: int = 5,
 ) -> FloatScalar:
     app_interp, ret_interp = indentations
@@ -73,7 +72,7 @@ def force_retract_scalar(
     tip: AbstractTipGeometry,
 ) -> FloatScalar:
     t1 = t1_scalar(t, constitutive, indentations)
-    method = AdaptiveTrapezoid(1e-4, 1e-4)
+    method = AdaptiveSimpson(1e-4, 1e-4)
     args = (t, constitutive, indentations[0], tip)
     return integrate(force_integrand, method, 0, t1, args)
 

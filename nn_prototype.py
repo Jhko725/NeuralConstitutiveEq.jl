@@ -18,7 +18,7 @@ from neuralconstitutive.relaxation_spectrum import HonerkampWeeseBimodal
 from neuralconstitutive.indentation import Indentation
 from neuralconstitutive.tipgeometry import Spherical
 
-from neuralconstitutive.ting import _force_approach, _force_retract
+from neuralconstitutive.tingx import _force_approach, _force_retract
 from jaxtyping import Array
 import numpy as np
 from neuralconstitutive.plotting import plot_relaxation_fn

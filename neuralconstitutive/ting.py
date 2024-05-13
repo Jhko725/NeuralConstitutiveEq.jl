@@ -92,7 +92,6 @@ def t1_scalar(
     t: FloatScalar,
     constitutive: AbstractConstitutiveEqn,
     indentations: tuple[diffrax.AbstractPath, diffrax.AbstractPath],
-    *,
     newton_iterations: int = 5,
 ) -> FloatScalar:
 

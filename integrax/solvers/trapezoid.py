@@ -41,7 +41,7 @@ def refine_trapezoid(S: PyTree, num_refine: IntScalar, fn, lower, upper, args):
 
 
 def refine_trapezoid_batch(
-    S: PyTree, num_refine: IntScalar, fn, lower, upper, args, batch_size=512
+    S: PyTree, num_refine: IntScalar, fn, lower, upper, args, batch_size=256
 ):
     """Refine the integral of fn(x, args) from [lower, upper] using num_refine additional equi-spaced interior points."""
     dx = (upper - lower) / num_refine
