@@ -108,4 +108,5 @@ for i in np.arange(len(knot_vals) - 4):
     ax.plot(ts[1:], Lm_spl2_val, label=f"{knot_vals[i]}")
 # ax.legend()
 ax.set_ylim(-0.1, 2.0)
+
 # %%

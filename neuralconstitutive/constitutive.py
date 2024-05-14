@@ -1,9 +1,10 @@
+# ruff: noqa: F722
 import abc
 from functools import partial
 
+from jaxtyping import ArrayLike, Array, Float
 import equinox as eqx
 import jax.numpy as jnp
-from jax import Array
 from jax.scipy.special import exp1
 
 from neuralconstitutive.custom_types import FloatScalar, as_floatscalar
@@ -16,28 +17,40 @@ floatscalar_field = partial(eqx.field, converter=as_floatscalar)
 class AbstractConstitutiveEqn(eqx.Module):
     """Abstract base class for all constitutive equations"""
 
+    def relaxation_function(
+        self, t: Float[ArrayLike, "*dims"]
+    ) -> Float[Array, "*dims"]:
+        """Given an array of timepoints, return the corresponding array of stress relaxation function values.
+
+        The shape of the output will match that of the input. Internally, this is done by flattening the input into a 1D vector,
+        performing the calculation, then reshaping the result.
+
+        This function can also be called through its alias, self.G."""
+
+        t = jnp.asarray(t)
+        out_shape = t.shape
+        return self._relaxation_function_1D(jnp.ravel(t)).reshape(out_shape)
+
+    G = relaxation_function  # An alias for self.relaxation_function
+
     @abc.abstractmethod
-    def relaxation_function(self, t: Array) -> Array:
+    def _relaxation_function_1D(self, t: Float[Array, " N"]) -> Float[Array, " N"]:
+        """Abstract method corresponding to the actual implementation of the stress relaxation function.
+
+        Note that unlike self.relaxation_function, the inputs and the corresponding outputs are 1D arrays.
+        """
         pass
 
     def relaxation_spectrum(self, t: Array) -> Array | None:
         return None
 
 
+## Constitutive equations that are nonsingular at t=0
 class Hertzian(AbstractConstitutiveEqn):
     E0: FloatScalar = floatscalar_field()
 
-    def relaxation_function(self, t):
+    def _relaxation_function_1D(self, t: Float[Array, " N"]) -> Float[Array, " N"]:
         return self.E0 * jnp.ones_like(t)
-
-
-class PowerLaw(AbstractConstitutiveEqn):
-    E0: FloatScalar = floatscalar_field()
-    alpha: FloatScalar = floatscalar_field()
-    t0: float
-
-    def relaxation_function(self, t):
-        return self.E0 * (t / self.t0) ** (-self.alpha)
 
 
 class ModifiedPowerLaw(AbstractConstitutiveEqn):
@@ -45,7 +58,7 @@ class ModifiedPowerLaw(AbstractConstitutiveEqn):
     alpha: FloatScalar = floatscalar_field()
     t0: FloatScalar = floatscalar_field()
 
-    def relaxation_function(self, t):
+    def _relaxation_function_1D(self, t: Float[Array, " N"]) -> Float[Array, " N"]:
         return self.E0 * (1 + t / self.t0) ** (-self.alpha)
 
 
@@ -58,7 +71,7 @@ class StandardLinearSolid(AbstractConstitutiveEqn):
     def E0(self) -> FloatScalar:
         return self.E_inf + self.E1
 
-    def relaxation_function(self, t):
+    def _relaxation_function_1D(self, t: Float[Array, " N"]) -> Float[Array, " N"]:
         return self.E_inf + self.E1 * jnp.exp(-t / self.tau)
 
 
@@ -72,7 +85,7 @@ class KohlrauschWilliamsWatts(AbstractConstitutiveEqn):
     def E0(self) -> FloatScalar:
         return self.E_inf + self.E1
 
-    def relaxation_function(self, t):
+    def _relaxation_function_1D(self, t: Float[Array, " N"]) -> Float[Array, " N"]:
         return self.E_inf + self.E1 * stretched_exp(t, self.tau, self.beta)
 
 
@@ -82,7 +95,7 @@ class Fung(AbstractConstitutiveEqn):
     tau2: FloatScalar = floatscalar_field()
     C: FloatScalar = floatscalar_field()
 
-    def relaxation_function(self, t):
+    def _relaxation_function_1D(self, t: Float[Array, " N"]) -> Float[Array, " N"]:
         def _exp1_diff(t_i: float) -> float:
             return exp1(t_i / self.tau2) - exp1(t_i / self.tau1)
 
@@ -109,7 +122,7 @@ class FromLogDiscreteSpectrum(AbstractConstitutiveEqn):
     def __init__(self, relaxation_spectrum: AbstractLogDiscreteSpectrum):
         self.log10_t_grid, self.h_grid = relaxation_spectrum.discrete_spectrum()
 
-    def relaxation_function(self, t: Array) -> Array:
+    def _relaxation_function_1D(self, t: Float[Array, " N"]) -> Float[Array, " N"]:
         h0 = jnp.log(self.t_grid[1]) - jnp.log(self.t_grid[0])
         return jnp.matmul(
             jnp.exp(-jnp.expand_dims(t, -1) / self.t_grid), self.h_grid * h0
@@ -122,3 +135,13 @@ class FromLogDiscreteSpectrum(AbstractConstitutiveEqn):
     @property
     def discrete_spectrum(self) -> tuple[Array, Array]:
         return self.t_grid, self.h_grid
+
+
+## Constitutive equations that are singular ar t=0
+class PowerLaw(AbstractConstitutiveEqn):
+    E0: FloatScalar = floatscalar_field()
+    alpha: FloatScalar = floatscalar_field()
+    t0: float
+
+    def relaxation_function(self, t):
+        return self.E0 * (t / self.t0) ** (-self.alpha)

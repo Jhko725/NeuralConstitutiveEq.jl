@@ -6,25 +6,21 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
+import numpy as np
+from jaxtyping import Array
 
+from neuralconstitutive.constitutive import (
+    AbstractConstitutiveEqn,
+    FromLogDiscreteSpectrum,
+)
 from neuralconstitutive.custom_types import FloatScalar
-from neuralconstitutive.constitutive import AbstractConstitutiveEqn
+from neuralconstitutive.indentation import Indentation, interpolate_indentation
+from neuralconstitutive.io import import_data
 
 # from neuralconstitutive.integrate import integrate
-from neuralconstitutive.nn import FullyConnectedNetwork
-from integrax.solvers import AbstractIntegration, AdaptiveSimpson, ExtendedTrapezoid
-from integrax.integrate import integrate
-
-from neuralconstitutive.fitting import create_subsampled_interpolants
-from neuralconstitutive.constitutive import FromLogDiscreteSpectrum
-from neuralconstitutive.relaxation_spectrum import HonerkampWeeseBimodal
-from neuralconstitutive.indentation import Indentation, interpolate_indentation
-from neuralconstitutive.tipgeometry import Spherical
-from neuralconstitutive.io import import_data
-from neuralconstitutive.tingx import _force_approach, _force_retract
-from jaxtyping import Array
-import numpy as np
 from neuralconstitutive.plotting import plot_relaxation_fn
+from neuralconstitutive.relaxation_spectrum import HonerkampWeeseBimodal
+from neuralconstitutive.tipgeometry import Spherical
 from neuralconstitutive.utils import (
     normalize_forces,
     normalize_indentations,
@@ -33,22 +29,6 @@ from neuralconstitutive.utils import (
 
 jax.config.update("jax_enable_x64", True)
 # jax.config.update("jax_debug_nans", True)
-
-
-class NeuralConstitutive(AbstractConstitutiveEqn):
-    nn: FullyConnectedNetwork
-
-    @property
-    def dlogt(self):
-        return np.log10(self.t_grid[1]) - np.log10(self.t_grid[0])
-
-    def relaxation_function(self, t: FloatScalar) -> FloatScalar:
-        log10t_grid = jnp.linspace(-5, 5, 50)
-        t_grid = 10**log10t_grid
-        dlogt = jnp.log(t_grid[1]) - jnp.log(t_grid[0])
-        h_grid = eqx.filter_vmap(self.nn)(log10t_grid)
-        dG = h_grid * jnp.exp(-t / t_grid) * dlogt
-        return jnp.sum(dG) / 15.0
 
 
 class Prony(AbstractConstitutiveEqn):
@@ -96,10 +76,6 @@ class Mspline(AbstractConstitutiveEqn):
 
 
 # %%
-
-# %%
-nn = FullyConnectedNetwork(["scalar", 20, 20, "scalar"])
-constit = NeuralConstitutive(nn)
 # %%
 constit = Mspline()
 # %%
@@ -134,15 +110,19 @@ ax.legend()
 
 
 # %%
-def force_approach_conv(constit, t_app, dIb_app, a: float = 1.0):
-    G = eqx.filter_vmap(constit.relaxation_function)(t_app)
+def force_approach_conv(
+    constit: AbstractConstitutiveEqn, t_app, dIb_app, a: float = 1.0
+):
+    G = constit.relaxation_function(t_app)
     dt = t_app[1] - t_app[0]
     return a * jnp.convolve(G, dIb_app)[0 : len(G)] * dt
 
 
 @partial(eqx.filter_vmap, in_axes=(None, 0, 0, None, None, None))
-def _force_retract_conv(constit, t, t1, t_app, dIb_app, a: float = 1.0):
-    G = eqx.filter_vmap(constit.relaxation_function)(t - t_app)
+def _force_retract_conv(
+    constit: AbstractConstitutiveEqn, t, t1, t_app, dIb_app, a: float = 1.0
+):
+    G = constit.relaxation_function(t - t_app)
     dt = t_app[1] - t_app[0]
     dIb_masked = jnp.where(t_app <= t1, dIb_app, 0.0)
     return a * jnp.dot(G, dIb_masked) * dt
@@ -154,13 +134,12 @@ def mask_by_time_lower(t, x, t1):
 
 
 @eqx.filter_jit
-def find_t1(constit, t_ret, v_ret, t_app, v_app):
-    relax_fn = eqx.filter_vmap(constit.relaxation_function)
-    G_ret = relax_fn(t_ret)
+def find_t1(constit: AbstractConstitutiveEqn, t_ret, v_ret, t_app, v_app):
+    G_ret = constit.relaxation_function(t_ret)
     dt = t_ret[1] - t_ret[0]
     t1_obj_const = jnp.convolve(G_ret, v_ret)[0 : len(G_ret)]
 
-    G_matrix = eqx.filter_vmap(relax_fn)(jnp.expand_dims(t_ret, -1) - t_app)
+    G_matrix = constit.relaxation_function(jnp.expand_dims(t_ret, -1) - t_app)
 
     def t1_objective(t1):
         v_app_ = mask_by_time_lower(t_app, v_app, t1)
@@ -168,7 +147,7 @@ def find_t1(constit, t_ret, v_ret, t_app, v_app):
 
     def Dt1_objective(t1):
         ind_t1 = jnp.rint(t1 / dt).astype(jnp.int_)
-        return -relax_fn(t_ret - t1) * v_app.at[ind_t1].get()
+        return -constit.relaxation_function(t_ret - t1) * v_app.at[ind_t1].get()
 
     t1 = jnp.linspace(t_app[-1], 0.0, len(t_ret))
 
@@ -244,9 +223,6 @@ def make_step(constit, opt_state):
 
 
 # %%
-nn = FullyConnectedNetwork(["scalar", 20, 20, "scalar"])
-constit = NeuralConstitutive(nn)
-# %%
 constit = Prony(num_components=40)
 constit = Mspline()
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
@@ -262,7 +238,6 @@ ax.legend()
 # %%
 l1_norm(constit)
 # %%
-import numpy as np
 
 optim = optax.adam(5e-3)
 opt_state = optim.init(constit)
