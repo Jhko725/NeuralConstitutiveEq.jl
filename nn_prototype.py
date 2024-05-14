@@ -82,7 +82,7 @@ class Mspline(AbstractConstitutiveEqn):
 
     def __init__(self, num_components: int = 100):
         # self.log10_taus = jnp.linspace(-5, 5, num_components)
-        knots = jnp.linspace(0.0, 100, num_components)
+        knots = jnp.linspace(0.0, 100.0, num_components)
         self.coeffs = jnp.ones_like(knots) / num_components
         # self.coeffs = jnp.ones_like(self.log10_taus) / num_components
         self.bias = jnp.asarray(0.2)
@@ -90,7 +90,7 @@ class Mspline(AbstractConstitutiveEqn):
     def relaxation_function(self, t: FloatScalar) -> FloatScalar:
         c = jnp.abs(self.coeffs)
         b = jnp.abs(self.bias)
-        knots = jnp.linspace(0.0, 100, len(self.coeffs))
+        knots = jnp.linspace(0.0, 100.0, len(self.coeffs))
         basis_funcs = L_mspline(t, knots, knots[1] - knots[0])
         return jnp.dot(c, basis_funcs) + b
 
@@ -206,8 +206,13 @@ v_ret
 # %%
 f_app_data = force_approach_conv(bimodal, app.time, dIb, tip.a())
 f_ret_data = force_retract_conv(bimodal, ret.time, app.time, v_ret, v_app, dIb, tip.a())
-
-
+# %%
+fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+ax.plot(app.time, v_app)
+# ax.plot(ret.time, v_ret)
+# %%
+t1 = find_t1(constit, ret.time, v_ret, app.time, v_app)
+plt.plot(ret.time, t1)
 # %%
 import optax
 
@@ -219,14 +224,14 @@ def l1_norm(prony):
 
 
 @eqx.filter_value_and_grad
-def compute_loss(constit, l1_penalty=1e-2):
-    f_app = force_approach_conv(constit, app.time, dIb, tip.a())
+def compute_loss(constit, l1_penalty=0.0):
+    # f_app = force_approach_conv(constit, app.time, dIb, tip.a())
     f_ret = force_retract_conv(constit, ret.time, app.time, v_ret, v_app, dIb, tip.a())
     l1_term = l1_norm(constit)
     return (
-        jnp.sum((f_app - f_app_data) ** 2)
-        + jnp.sum((f_ret - f_ret_data) ** 2)
-        + l1_penalty * l1_term
+        # jnp.sum((f_app - f_app_data) ** 2)
+        jnp.sum((f_ret - f_ret_data) ** 2)
+        # + l1_penalty * l1_term
     )
 
 
@@ -341,9 +346,9 @@ name = "interphase_speed 2_2nN"
     datadir / f"{name}.tab", datadir / f"{name}.tsv"
 )
 app, ret = smooth_data(app), smooth_data(ret)
-
-f_ret_data = jnp.trim_zeros(jnp.clip(f_ret_data, 0.0), "b")
-ret = Indentation(ret.time[: len(f_ret_data)], ret.depth[: len(f_ret_data)])
+f_ret_data = jnp.clip(f_ret_data, 0.0)
+# f_ret_data = jnp.trim_zeros(jnp.clip(f_ret_data, 0.0), "b")
+# ret = Indentation(ret.time[: len(f_ret_data)], ret.depth[: len(f_ret_data)])
 (f_app_data, f_ret_data), _ = normalize_forces(f_app_data, f_ret_data)
 (app, ret), (_, h_m) = normalize_indentations(app, ret)
 
@@ -360,9 +365,9 @@ dIb = (
 v_app = app_interp.derivative(app.time)
 v_ret = ret_interp.derivative(ret.time)
 
-
-# constit = Mspline(num_components=50)
-constit = Prony(num_components=40)
+# %%
+constit = Mspline(num_components=50)
+# constit = Prony(num_components=40)
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
 ax.plot(app.time, f_app_data, label="data")
 ax.plot(ret.time, f_ret_data, label="data")
@@ -374,7 +379,7 @@ ax.legend()
 # %%
 f_ret_data
 # %%
-optim = optax.adam(1e-3)
+optim = optax.adam(5e-3)
 opt_state = optim.init(constit)
 
 max_epochs = 10000
