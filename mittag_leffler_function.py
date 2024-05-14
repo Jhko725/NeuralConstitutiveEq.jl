@@ -62,7 +62,24 @@ def MLF(alpha, beta, z) -> Array:
     ret = jnp.piecewise(z, conds, vals)
     return ret
 # %%
-a = [MLF(0.25, 0.45, -i) for i in jnp.arange(0,1,1e-2)]
+a = [MLF(0.25, 0.45, i) for i in jnp.arange(0,1,1e-2)]
 # %%
-plt.plot(jnp.arange(0,1,1e-2), a)
+
+# %%
+# condition : (0<alpha<=1) & (z==0), arbitraty beta
+
+
+# %%
+# condition : (0<alpha<=1) & (jnp.abs(z)<1)
+t = jnp.arange(0,1,1e-2)
+a1 = [MLF(0.25, 0.5, -i) for i in t]
+a2 = [MLF(0.5, 0.5, -i) for i in t]
+a3 = [MLF(0.75, 0.5, -i) for i in t]
+a4 = [MLF(1.0, 0.5, -i) for i in t]
+
+fig, ax = plt.subplots(1, 1, figsize=(7,5))
+ax.plot(t, a1, label="alpha = 0.25")
+ax.plot(t, a2, label="alpha = 0.5")
+ax.plot(t, a3, label="alpha = 0.75")
+ax.plot(t, a4, label="alpha = 1.0")
 # %%
