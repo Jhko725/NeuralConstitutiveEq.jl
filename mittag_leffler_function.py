@@ -6,6 +6,7 @@ from jax._src.lax.lax import _const as _lax_const
 from jax import Array
 from quadax import quadgk
 import matplotlib.pyplot as plt
+from functools import partial
 #%%
 def MLF1(alpha, beta, z, rho=1e-5) :
     val = 0
@@ -26,19 +27,25 @@ def MLF2(alpha, beta, z, rho=1e-5) :
 def K(alpha, beta, chi, z):
     return chi**((1-beta)/alpha)/(alpha*jnp.pi)*jnp.exp(-chi**(1/alpha))*(chi*jnp.sin(jnp.pi*(1-beta))-z*jnp.sin(jnp.pi*(1-beta+alpha)))
 
-def P(alpha, beta, eps, phi, z):
+def P(alpha, beta, phi, z):
+    eps = jnp.abs(z)/2
     w = phi*(1+(1-beta)/alpha)+eps**(1/alpha)*jnp.sin(phi/alpha)
     return eps**(1+(1-beta)/alpha)/(2*alpha*jnp.pi)*jnp.exp(eps**(1/alpha)*jnp.cos(phi/alpha))*((complex(jnp.cos(w), jnp.sin(w)))/((eps*jnp.exp(complex(0, phi)))-z))
 
 def MLF3(alpha, beta, z, rho=1e-5):
-    chi0 = max((1, 2*jnp.abs(z), (-jnp.log(jnp.pi*rho/6))**alpha))
+    if beta < 0 :
+        chi0 = max((jnp.abs(beta)+1)**alpha, 2*jnp.abs(z), (-2*jnp.log(jnp.pi*rho/(6*(jnp.abs(beta)+2)*((2*jnp.abs(beta))**(jnp.abs(beta)))))**alpha))
+    else :
+        chi0 = max((1, 2*jnp.abs(z), (-jnp.log(jnp.pi*rho/6))**alpha))
     val = quadgk(K, [0, chi0], args=(alpha, beta, z))[0] + z**((1-beta)/alpha)*jnp.exp(z**(1/alpha))/alpha
     return val
 
 def MLF4(alpha, beta, z, rho=1e-5):
     chi0 = max((1, 2*jnp.abs(z), (-jnp.log(jnp.pi*rho/6))**alpha))
-    
-    val = quadgk(K, [jnp.abs(z)/2, chi0], args=(alpha, beta, z))[0] + quadgk(P, [-alpha*jnp.pi,alpha*jnp.pi], args=(alpha, beta, z))
+    val = quadgk(K, [jnp.abs(z)/2, chi0], args=(alpha, beta, z))[0] 
+    + quadgk(P, [-alpha*jnp.pi,alpha*jnp.pi], args=(alpha, beta, z))
+    + z**((1-beta)/alpha)*jnp.exp(z**(1/alpha))/alpha
+    return val
 #%%    
 def MLF(alpha, beta, z) -> Array:
     alpha, beta, z = promote_args_inexact("MLF", alpha, beta, z)
@@ -50,7 +57,8 @@ def MLF(alpha, beta, z) -> Array:
     (0<alpha<=1) & (z==0),
     (0<alpha<=1) & (jnp.abs(z)<1),
     (0<alpha<=1) & (jnp.abs(z)>jnp.floor(10+5*alpha)),
-    (0<alpha<=1) & (0<=beta<=1),
+    (0<alpha<=1) & (1<=jnp.abs(z)<=jnp.floor(10+5*alpha)) & (beta<=1),
+    # (0<alpha<=1) & (1<=jnp.abs(z)<=jnp.floor(10+5*alpha)) & (1<beta),
     ]
     vals = [
     jnp.nan,
@@ -58,28 +66,48 @@ def MLF(alpha, beta, z) -> Array:
     MLF1(alpha, beta, z),
     MLF2(alpha, beta, z),
     MLF3(alpha, beta, z),
+    # MLF4(alpha, beta, z)
     ]
     ret = jnp.piecewise(z, conds, vals)
     return ret
 # %%
-a = [MLF(0.25, 0.45, i) for i in jnp.arange(0,1,1e-2)]
-# %%
+### condition : (0<alpha<=1) & (jnp.abs(z)<1)
+t = jnp.arange(0.01,1,1e-1)
+for i, alpha in enumerate(jnp.linspace(1e-6,0.25, 3)):
+    for j, beta in enumerate(jnp.linspace(-10, 10, 3)):
+        globals()['a{}'.format(i+1,j+1)] = [MLF1(alpha, beta, z) for z in t]
+#%%
+### (0<alpha<=1) & (jnp.abs(z)>jnp.floor(10+5*alpha))
+t = jnp.arange(15,17,1e-1)
+for i, alpha in enumerate(jnp.linspace(1e-6, 1, 3)):
+    for j, beta in enumerate(jnp.linspace(-10, 10, 3)):
+        globals()['b{}'.format(i+1,j+1)] = [MLF2(alpha, beta, z) for z in t]
 
-# %%
-# condition : (0<alpha<=1) & (z==0), arbitraty beta
+#%%
+### (0<alpha<=1) & (1<=jnp.abs(z)<=jnp.floor(10+5*alpha)) & (beta<=1),
+t = jnp.arange(1,15,1e-1)
+for i, alpha in enumerate(jnp.linspace(1e-6, 1, 3)):
+    for j, beta in enumerate(jnp.linspace(-10, 10, 3)):
+        globals()['c{}'.format(i+1,j+1)] = [MLF3(alpha, beta, z) for z in t]
+#%%
+###
 
 
-# %%
-# condition : (0<alpha<=1) & (jnp.abs(z)<1)
-t = jnp.arange(0,1,1e-2)
-a1 = [MLF(0.25, 0.5, -i) for i in t]
-a2 = [MLF(0.5, 0.5, -i) for i in t]
-a3 = [MLF(0.75, 0.5, -i) for i in t]
-a4 = [MLF(1.0, 0.5, -i) for i in t]
 
+
+
+
+
+#%%
+for i, a in enumerate(alpha):
+    globals()['a{}'.format(i+1)] = [MLF(a, beta, -i) for i in t]
+#%%
 fig, ax = plt.subplots(1, 1, figsize=(7,5))
 ax.plot(t, a1, label="alpha = 0.25")
 ax.plot(t, a2, label="alpha = 0.5")
 ax.plot(t, a3, label="alpha = 0.75")
 ax.plot(t, a4, label="alpha = 1.0")
+ax.legend()
+# %%
+len(jnp.linspace(1, 10, 10))
 # %%
