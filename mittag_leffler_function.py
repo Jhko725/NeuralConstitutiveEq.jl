@@ -72,32 +72,34 @@ def MLF(alpha, beta, z) -> Array:
     return ret
 # %%
 ### condition : (0<alpha<=1) & (jnp.abs(z)<1)
+fig, ax = plt.subplots(1,1, figsize=(7,5))
 t = jnp.arange(0.01,1,1e-1)
-for i, alpha in enumerate(jnp.linspace(1e-6,0.25, 3)):
-    for j, beta in enumerate(jnp.linspace(-10, 10, 3)):
-        globals()['a{}'.format(i+1,j+1)] = [MLF1(alpha, beta, z) for z in t]
+for i, alpha in enumerate(jnp.linspace(0.01,0.25, 10)):
+    for j, beta in enumerate(jnp.linspace(-2, 1, 10)):
+        globals()['a{}{}'.format(i+1,j+1)] = [MLF1(alpha, beta, -z) for z in t]
+        print(globals()['a{}{}'.format(i+1,j+1)])
+        ax.plot(t, globals()['a{}{}'.format(i+1,j+1)])
 #%%
 ### (0<alpha<=1) & (jnp.abs(z)>jnp.floor(10+5*alpha))
-t = jnp.arange(15,17,1e-1)
-for i, alpha in enumerate(jnp.linspace(1e-6, 1, 3)):
-    for j, beta in enumerate(jnp.linspace(-10, 10, 3)):
-        globals()['b{}'.format(i+1,j+1)] = [MLF2(alpha, beta, z) for z in t]
-
+fig, ax = plt.subplots(1,1, figsize=(7,5))
+t = jnp.arange(15,17,1e-3)
+for i, alpha in enumerate(jnp.linspace(0.01, 1, 10)):
+    for j, beta in enumerate(jnp.linspace(-10, 10, 10)):
+        globals()['b{}{}'.format(i+1,j+1)] = [MLF2(alpha, beta, -z) for z in t]
+        print(globals()['b{}{}'.format(i+1,j+1)])
+        ax.plot(t, globals()['b{}{}'.format(i+1,j+1)])
 #%%
-### (0<alpha<=1) & (1<=jnp.abs(z)<=jnp.floor(10+5*alpha)) & (beta<=1),
-t = jnp.arange(1,15,1e-1)
-for i, alpha in enumerate(jnp.linspace(1e-6, 1, 3)):
-    for j, beta in enumerate(jnp.linspace(-10, 10, 3)):
-        globals()['c{}'.format(i+1,j+1)] = [MLF3(alpha, beta, z) for z in t]
+### (0<alpha<=1) & (1<=jnp.abs(z)<=jnp.floor(10+5*alpha)) & (beta<=1)
+fig, ax = plt.subplots(1,1, figsize=(7,5))
+t = jnp.arange(1,2,1e-1)
+for i, alpha in enumerate(jnp.linspace(0.1, 1, 10)):
+    for j, beta in enumerate(jnp.linspace(0,   1, 10)):
+        globals()['c{}{}'.format(i+1,j+1)] = [MLF3(alpha, beta, -z) for z in t]
+        print(globals()['c{}{}'.format(i+1,j+1)])
+        ax.plot(t, globals()['c{}{}'.format(i+1,j+1)])
 #%%
 ###
-
-
-
-
-
-
-
+a11
 #%%
 for i, a in enumerate(alpha):
     globals()['a{}'.format(i+1)] = [MLF(a, beta, -i) for i in t]
@@ -110,4 +112,11 @@ ax.plot(t, a4, label="alpha = 1.0")
 ax.legend()
 # %%
 len(jnp.linspace(1, 10, 10))
+# %%
+for i, alpha in enumerate(jnp.linspace(0.01, 1, 10)):
+    for j, beta in enumerate(jnp.linspace(-10, 10, 10)):
+        globals()['b{}{}'.format(i+1, j+1)] = [1]
+        print(i,j)
+# %%
+b11
 # %%
