@@ -24,6 +24,7 @@ from neuralconstitutive.constitutive import (
     KohlrauschWilliamsWatts,
     ModifiedPowerLaw,
     StandardLinearSolid,
+    AbstractConstitutiveEqn
 )
 from neuralconstitutive.fitting import (
     LatinHypercubeSampler,
@@ -106,54 +107,70 @@ dIb = (
     * app_interp2.evaluate(app.time) ** (tip.b() - 1)
 )
 #%%
-dIb
+v_app = app_interp2.derivative(app.time)
+v_ret = ret_interp2.derivative(ret.time)
+v_total = jnp.concatenate(
+    [v_app[:-1], jnp.atleast_1d(0.5 * (v_app[-1] + v_ret[0])), v_ret[1:]]
+)
+
+
 # %%
-def force_approach_conv(constit, t_app, dIb_app, a: float = 1.0):
-    G = eqx.filter_vmap(constit.relaxation_function)(t_app)
-    dt = t_app[1]-t_app[0]
-    return a*jnp.convolve(G, dIb_app)[0 : len(G)]*dt
+def force_approach_conv(
+    constit: AbstractConstitutiveEqn, t_app, dIb_app, a: float = 1.0
+):
+    G = constit.relaxation_function(t_app)
+    dt = t_app[1] - t_app[0]
+    return a * jnp.convolve(G, dIb_app)[0 : len(G)] * dt
 
-@partial(eqx.filter_vmap, in_axes = (None, 0, 0, None, None, None))
-def _force_retract_conv(constit, t, t1, t_app, dIb_app, a: float = 1.0):
-    G = eqx.filter_vmap(constit.relaxation_function)(t-t_app)
-    dt = t_app[1]-t_app[0]
-    dIb_masked = jnp.where(t_app<=t1, dIb_app, 0.0)
-    return a* jnp.dot(G, dIb_masked) * dt
 
-@partial(jax.vmap, in_axes = (None, None, 0))
+@partial(eqx.filter_vmap, in_axes=(None, 0, 0, None, None, None))
+def _force_retract_conv(
+    constit: AbstractConstitutiveEqn, t, t1, t_app, dIb_app, a: float = 1.0
+):
+    G = constit.relaxation_function(t - t_app)
+    dt = t_app[1] - t_app[0]
+    dIb_masked = jnp.where(t_app <= t1, dIb_app, 0.0)
+    return a * jnp.dot(G, dIb_masked) * dt
+
+
+@partial(jax.vmap, in_axes=(None, None, 0))
 def mask_by_time_lower(t, x, t1):
     return jnp.where(t > t1, x, 0.0)
 
+
 @eqx.filter_jit
-def find_t1(constit, t_ret, v_ret, t_app, v_app):
-    relax_fn = eqx.filter_vmap(constit.relaxation_function)
-    G_ret = relax_fn(t_ret)
-    dt = t_ret[1]-t_ret[0]
-    t1_obj_const = jnp.convolve(G_ret, v_ret)[0 : len(G_ret)] 
-    
-    G_matrix = eqx.filter_vmap(relax_fn)(jnp.expand_dims(t_ret, -1)-t_app)
+def find_t1(constit: AbstractConstitutiveEqn, t_ret, v_ret, t_app, v_app):
+    G_ret = constit.relaxation_function(t_ret)
+    dt = t_ret[1] - t_ret[0]
+    t1_obj_const = jnp.convolve(G_ret, v_ret)[0 : len(G_ret)]
+
+    G_matrix = constit.relaxation_function(jnp.expand_dims(t_ret, -1) - t_app)
 
     def t1_objective(t1):
         v_app_ = mask_by_time_lower(t_app, v_app, t1)
-        return (jnp.sum(G_matrix*v_app_, axis = -1) + t1_obj_const)*dt
-    
+        return (jnp.sum(G_matrix * v_app_, axis=-1) + t1_obj_const) * dt
+
     def Dt1_objective(t1):
-        ind_t1 = jnp.rint(t1/dt).astype(jnp.int_)
-        return -relax_fn(t_ret-t1)*v_app.at[ind_t1].get()
+        ind_t1 = jnp.rint(t1 / dt).astype(jnp.int_)
+        return -constit.relaxation_function(t_ret - t1) * v_app.at[ind_t1].get()
 
     t1 = jnp.linspace(t_app[-1], 0.0, len(t_ret))
 
     for _ in range(3):
-        t1 = jnp.clip(t1-t1_objective(t1)/Dt1_objective(t1), 0.0)
+        t1 = jnp.clip(t1 - t1_objective(t1) / Dt1_objective(t1), 0.0, t_app[-1])
     return t1
+
 
 @eqx.filter_jit
 def force_retract_conv(constit, t_ret, t_app, v_ret, v_app, dIb_app, a: float = 1.0):
     t1 = find_t1(constit, t_ret, v_ret, t_app, v_app)
     return _force_retract_conv(constit, t_ret, t1, t_app, dIb_app, a)
+
 # %%
 # %%timeit
-
+ind = 20
+out = eqx.filter_grad(lambda c_: find_t1(c_, ret.time, v_ret, app.time, v_app)[ind])(constit)
+print(out.E1, out.E_inf, out.tau)
 # %%
 %%timeit
 f_app_conv = eqx.filter_jit(force_approach_conv)(constit, app.time, dIb, tip.a()).block_until_ready()
@@ -197,12 +214,6 @@ ax.plot(ret.time, f_ret_sparse, label="sparse")
 ax.plot(ret.time, f_ret_conv, label="convolution")
 ax.legend()
 # %%
-v_app = app_interp2.derivative(app.time)
-v_ret = ret_interp2.derivative(ret.time)
-v_total = jnp.concatenate(
-    [v_app[:-1], jnp.atleast_1d(0.5 * (v_app[-1] + v_ret[0])), v_ret[1:]]
-)
-
 
 # %%
 # @partial(jax.vmap, in_axes = (None, None, 0))

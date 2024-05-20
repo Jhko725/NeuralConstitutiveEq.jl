@@ -2,6 +2,7 @@
 
 import diffrax
 import equinox as eqx
+import jax
 import jax.numpy as jnp
 
 from integrax.integrate import integrate

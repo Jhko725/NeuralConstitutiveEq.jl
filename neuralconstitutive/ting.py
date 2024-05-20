@@ -92,7 +92,7 @@ def t1_scalar(
     t: FloatScalar,
     constitutive: AbstractConstitutiveEqn,
     indentations: tuple[diffrax.AbstractPath, diffrax.AbstractPath],
-    newton_iterations: int = 5,
+    newton_iterations: int = 3,
 ) -> FloatScalar:
 
     app_interp, ret_interp = indentations
@@ -136,28 +136,18 @@ def _t1_scalar_jvp(primals, tangents, *, newton_iterations: int = 5):
     def Dt1_integrand(s, _t_constit_diff, indent):
         return tree_to_array1d(_Dt1_integrand(_t_constit_diff, s, indent))
 
-    def _tangents_nonzero(t1, _t_constit_diff, indentations):
-        app, ret = indentations
-        t_m = app.t1
-        t, constit = eqx.combine(_t_constit_diff, t_constit_nondiff)
+    app, ret = indentations
+    t_m = app.t1
 
-        Dt1 = integrate(Dt1_integrand, (t1, t_m), (_t_constit_diff, app))
-        Dt1 = Dt1 + integrate(Dt1_integrand, (t_m, t), (_t_constit_diff, ret))
-        Dt1_boundary = jax.lax.cond(
-            t_dot is None, _zeros_like_arg1, t1_integrand, t, t, constit, ret
-        )
-        Dt1 = Dt1.at[0].add(Dt1_boundary)
-        Dt1 = Dt1 / constit.relaxation_function(t - t1)
-        return jnp.dot(Dt1, tree_to_array1d(t_constit_dot))
-
-    tangents_out = jax.lax.cond(
-        t1 <= 0.0,
-        _zeros_like_arg1,
-        _tangents_nonzero,
-        t1,
-        t_constit_diff,
-        indentations,
+    Dt1 = integrate(Dt1_integrand, (t1, t_m), (t_constit_diff, app))
+    Dt1 = Dt1 + integrate(Dt1_integrand, (t_m, t), (t_constit_diff, ret))
+    Dt1_boundary = jax.lax.cond(
+        t_dot is None, _zeros_like_arg1, t1_integrand, t, t, constit, ret
     )
+    Dt1 = Dt1.at[0].add(Dt1_boundary)
+    Dt1 = Dt1 / constit.relaxation_function(t - t1)
+    tangents_out = jnp.dot(Dt1, tree_to_array1d(t_constit_dot))
+    tangents_out = jnp.where(t1 <= app.t0, jnp.zeros_like(tangents_out), tangents_out)
     return t1, tangents_out
 
 
