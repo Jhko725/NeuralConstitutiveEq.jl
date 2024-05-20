@@ -57,12 +57,19 @@ name = "PAA_speed 5_4nN"
 fig, axes = plt.subplots(1, 3, figsize=(10, 3))
 axes[0] = plot_indentation(axes[0], app, marker=".")
 axes[0] = plot_indentation(axes[0], ret, marker=".")
+axes[0].set_xlabel("Time[s]")
+axes[0].set_ylabel("Indentation[m]")
 
 axes[1].plot(app.time, f_app, ".")
 axes[1].plot(ret.time, f_ret, ".")
+axes[1].set_xlabel("Time[s]")
+axes[1].set_ylabel("Force[N]")
 
 axes[2].plot(app.depth, f_app, ".")
 axes[2].plot(ret.depth, f_ret, ".")
+axes[2].set_xlabel("Indentation[m]")
+axes[2].set_ylabel("Force[N]")
+
 # %%
 f_ret = jnp.clip(f_ret, 0.0)
 (f_app, f_ret), _ = normalize_forces(f_app, f_ret)
@@ -73,13 +80,18 @@ tip = Spherical(2.5e-6 / h_m)  # Scale tip radius by the length scale we are usi
 fig, axes = plt.subplots(1, 3, figsize=(10, 3))
 axes[0] = plot_indentation(axes[0], app, marker=".")
 axes[0] = plot_indentation(axes[0], ret, marker=".")
+axes[0].set_xlabel("Time")
+axes[0].set_ylabel("Indentation")
 
 axes[1].plot(app.time, f_app, ".")
 axes[1].plot(ret.time, f_ret, ".")
+axes[1].set_xlabel("Time")
+axes[1].set_ylabel("Force")
 
 axes[2].plot(app.depth, f_app, ".")
 axes[2].plot(ret.depth, f_ret, ".")
-
+axes[2].set_xlabel("Indentation")
+axes[2].set_ylabel("Force")
 
 # %%
 ## Fit using Latin hypercube sampling
@@ -309,7 +321,7 @@ for n, c_ind in zip(names, color_inds):
 for ax in axes:
     ax.grid(ls="--", color="lightgray")
 
-fig.suptitle("HeLa cell (interphase) curve fit results: Approach only")
+fig.suptitle("PAAM hydrogel curve fit results: Approach only")
 # fig.suptitle("pAAm hydrogel curve fit results: Approach only")
 # %%
 bics = jnp.asarray([results_best[n].bic for n in names])
