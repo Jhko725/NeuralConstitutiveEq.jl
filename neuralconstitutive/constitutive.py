@@ -121,9 +121,9 @@ class FractionalKelvinVoigt(AbstractConstitutiveEqn):
     E_inf: FloatScalar = floatscalar_field()
     alpha: FloatScalar = floatscalar_field()
     
-    
     def relaxation_function(self, t: Array) -> Array:
         return self.E_inf+self.E1*(t**(-self.alpha)/gamma(1-self.alpha))
+
 
 class FromLogDiscreteSpectrum(AbstractConstitutiveEqn):
     """

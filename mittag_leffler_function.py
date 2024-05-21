@@ -7,14 +7,19 @@ from jax import Array
 from quadax import quadgk
 import matplotlib.pyplot as plt
 from functools import partial
+from mittag_leffler_master.mittag_leffler import ml
+
+import jax
+
+jax.config.update("jax_enable_x64", True)
 #%%
-def MLF1(alpha, beta, z, rho=1e-5) :
+def MLF1(alpha, beta, z, rho=1e-10) :
     val = 0
     a = jnp.ceil((1-beta)/alpha)
-    b = jnp.ceil(jnp.log(rho*(1-jnp.abs(z)/jnp.log(jnp.abs(z)))))
-    k0 = (a+b+jnp.abs(a-b))/2
+    b = jnp.ceil(jnp.log(rho*(1-jnp.abs(z))/jnp.log(jnp.abs(z))))
+    k0 = max(a,b)
     for k in jnp.arange(k0+1):
-        val += z**k/gamma(beta+alpha*k)
+        val += (z**k)/gamma(beta+alpha*k)
     return val
 
 def MLF2(alpha, beta, z, rho=1e-5) :
@@ -72,35 +77,42 @@ def MLF(alpha, beta, z) -> Array:
     return ret
 # %%
 ### condition : (0<alpha<=1) & (jnp.abs(z)<1)
-fig, ax = plt.subplots(1,1, figsize=(7,5))
-t = jnp.arange(0.01,1,1e-1)
-for i, alpha in enumerate(jnp.linspace(0.01,0.25, 10)):
-    for j, beta in enumerate(jnp.linspace(-2, 1, 10)):
+fig, axes = plt.subplots(1,2, figsize=(20,13))
+t = jnp.logspace(-3, 0, 1000)
+for i, alpha in enumerate(jnp.linspace(0.01, 1, 10)):
+    for j, beta in enumerate(jnp.linspace(0, 1, 10)):
         globals()['a{}{}'.format(i+1,j+1)] = [MLF1(alpha, beta, -z) for z in t]
-        print(globals()['a{}{}'.format(i+1,j+1)])
-        ax.plot(t, globals()['a{}{}'.format(i+1,j+1)])
+        print(globals()['a{}{}'.format(i+1,j+1)][0])
+        axes[0].plot(t, globals()['a{}{}'.format(i+1,j+1)], label=f"{beta}")
+        axes[1].plot(t, ml(-t, alpha=alpha, beta=beta), label=f"{beta}")
+
+# axes[0].legend()
+# axes[1].legend()
 #%%
 ### (0<alpha<=1) & (jnp.abs(z)>jnp.floor(10+5*alpha))
-fig, ax = plt.subplots(1,1, figsize=(7,5))
-t = jnp.arange(15,17,1e-3)
+fig, axes = plt.subplots(1,2, figsize=(20,13))
+t = jnp.arange(16,70,1e-1)
 for i, alpha in enumerate(jnp.linspace(0.01, 1, 10)):
-    for j, beta in enumerate(jnp.linspace(-10, 10, 10)):
+    for j, beta in enumerate(jnp.linspace(0, 100, 10)):
         globals()['b{}{}'.format(i+1,j+1)] = [MLF2(alpha, beta, -z) for z in t]
         print(globals()['b{}{}'.format(i+1,j+1)])
-        ax.plot(t, globals()['b{}{}'.format(i+1,j+1)])
+        print(ml(-t, alpha=alpha, beta=beta))
+        axes[0].plot(t, globals()['b{}{}'.format(i+1,j+1)], label=f"{alpha}")
+        axes[1].plot(t, ml(-t, alpha=alpha, beta=beta), label=f"{alpha}")
+axes[0].legend()
+axes[1].legend()
 #%%
 ### (0<alpha<=1) & (1<=jnp.abs(z)<=jnp.floor(10+5*alpha)) & (beta<=1)
 fig, ax = plt.subplots(1,1, figsize=(7,5))
-t = jnp.arange(1,2,1e-1)
+t = jnp.arange(1,10,1e-1)
 for i, alpha in enumerate(jnp.linspace(0.1, 1, 10)):
-    for j, beta in enumerate(jnp.linspace(0,   1, 10)):
+    for j, beta in enumerate(jnp.linspace(0, 1, 10)):
         globals()['c{}{}'.format(i+1,j+1)] = [MLF3(alpha, beta, -z) for z in t]
         print(globals()['c{}{}'.format(i+1,j+1)])
         ax.plot(t, globals()['c{}{}'.format(i+1,j+1)])
 #%%
 ###
-a11
-#%%
+a11                                       
 for i, a in enumerate(alpha):
     globals()['a{}'.format(i+1)] = [MLF(a, beta, -i) for i in t]
 #%%

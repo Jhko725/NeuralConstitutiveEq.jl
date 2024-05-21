@@ -96,7 +96,7 @@ axes[2].set_ylabel("Force")
 # %%
 ## Fit using Latin hypercube sampling
 N_SAMPLES = 1
-fit_type = "approach"
+fit_type = "both"
 ### Hertzian model
 
 constit_htz = Hertzian(10.0)
@@ -321,17 +321,18 @@ for n, c_ind in zip(names, color_inds):
 for ax in axes:
     ax.grid(ls="--", color="lightgray")
 
-fig.suptitle("PAAM hydrogel curve fit results: Approach only")
+fig.suptitle("PAAM hydrogel curve fit results: Entire curve")
 # fig.suptitle("pAAm hydrogel curve fit results: Approach only")
 # %%
 bics = jnp.asarray([results_best[n].bic for n in names])
 colors = color_palette[color_inds]
-fig, ax = plt.subplots(1, 1, figsize=(3, 3))
+fig, ax = plt.subplots(1, 1, figsize=(4.5
+                                      , 4))
 ax.grid(ls="--", color="darkgray")
 ax.bar(names, bics, color=colors)
 ax.set_yscale("symlog")
 ax.set_ylabel("BIC")
-ax.set_title("HeLa cell (interphase), Approach only")
+ax.set_title("PAAM hydrogel, Entire")
 # %%
 def process_uvars(uvars: dict):
     if "E0" in uvars:
