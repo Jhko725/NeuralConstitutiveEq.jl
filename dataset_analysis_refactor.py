@@ -22,6 +22,8 @@ from neuralconstitutive.constitutive import (
     KohlrauschWilliamsWatts,
     ModifiedPowerLaw,
     StandardLinearSolid,
+    FractionalKelvinVoigt,
+    GeneralizedMaxwellmodel
 )
 from neuralconstitutive.fitting import (
     LatinHypercubeSampler,
@@ -45,8 +47,8 @@ jax.config.update("jax_enable_x64", True)
 # datadir = Path("open_data/PAAM hydrogel/speed 5")
 # name = "PAA_speed 5_4nN"
 
-datadir = Path("open_data/Interphase rep 2")
-name = "interphase_speed 2_2nN"
+datadir = Path("open_data/PAAM hydrogel/speed 5")
+name = "PAA_speed 5_4nN"
 (app, ret), (f_app, f_ret) = import_data(
     datadir / f"{name}.tab", datadir / f"{name}.tsv"
 )
@@ -55,12 +57,19 @@ name = "interphase_speed 2_2nN"
 fig, axes = plt.subplots(1, 3, figsize=(10, 3))
 axes[0] = plot_indentation(axes[0], app, marker=".")
 axes[0] = plot_indentation(axes[0], ret, marker=".")
+axes[0].set_xlabel("Time[s]")
+axes[0].set_ylabel("Indentation[m]")
 
 axes[1].plot(app.time, f_app, ".")
 axes[1].plot(ret.time, f_ret, ".")
+axes[1].set_xlabel("Time[s]")
+axes[1].set_ylabel("Force[N]")
 
 axes[2].plot(app.depth, f_app, ".")
 axes[2].plot(ret.depth, f_ret, ".")
+axes[2].set_xlabel("Indentation[m]")
+axes[2].set_ylabel("Force[N]")
+
 # %%
 f_ret = jnp.clip(f_ret, 0.0)
 (f_app, f_ret), _ = normalize_forces(f_app, f_ret)
@@ -71,18 +80,23 @@ tip = Spherical(2.5e-6 / h_m)  # Scale tip radius by the length scale we are usi
 fig, axes = plt.subplots(1, 3, figsize=(10, 3))
 axes[0] = plot_indentation(axes[0], app, marker=".")
 axes[0] = plot_indentation(axes[0], ret, marker=".")
+axes[0].set_xlabel("Time")
+axes[0].set_ylabel("Indentation")
 
 axes[1].plot(app.time, f_app, ".")
 axes[1].plot(ret.time, f_ret, ".")
+axes[1].set_xlabel("Time")
+axes[1].set_ylabel("Force")
 
 axes[2].plot(app.depth, f_app, ".")
 axes[2].plot(ret.depth, f_ret, ".")
-
+axes[2].set_xlabel("Indentation")
+axes[2].set_ylabel("Force")
 
 # %%
 ## Fit using Latin hypercube sampling
-N_SAMPLES = 10
-fit_type = "approach"
+N_SAMPLES = 1
+fit_type = "both"
 ### Hertzian model
 
 constit_htz = Hertzian(10.0)
@@ -171,6 +185,57 @@ kww_fits, kww_results, kww_initvals, kww_minimizers = fit_indentation_data(
     init_val_sampler=sampler,
     n_samples=N_SAMPLES,
 )
+#%%
+### Fractional Kelvin Voigt model
+
+constit_fkv = FractionalKelvinVoigt(10.0, 10.0, 10.0)
+bounds_fkv = [(0, 1e3), (0, 1e3), (0.0, 1.0)]
+
+sampler = LatinHypercubeSampler(
+    sample_range=[
+        (1e-2, 1e2),
+        (1e-2, 1e2),
+        (0.0, 1.0)
+    ],
+    sample_scale=["log", "log", "linear"],
+)
+
+fkv_fits, fkv_results, fkv_initvals, fkv_minimizers = fit_indentation_data(
+    constit_fkv,
+    bounds_fkv,
+    (app, ret),
+    (f_app, f_ret),
+    tip,
+    fit_type=fit_type,
+    init_val_sampler=sampler,
+    n_samples=N_SAMPLES,
+)
+#%%
+### Generalized Maxwell model
+constit_gm = GeneralizedMaxwellmodel(10.0, 10.0, 10.0, 10.0, 10.0)
+bounds_gm = [(0, 1e3), (0, 1e3), (0, 1e3), (0, 1e3), (0, 1e3)]
+
+sampler = LatinHypercubeSampler(
+    sample_range=[
+        (1e-2, 1e2),
+        (1e-2, 1e2),
+        (1e-2, 1e2),
+        (1e-2, 1e2),
+        (1e-2, 1e2)
+    ],
+    sample_scale=["log", "log", "log", "log", "log"],
+)
+
+gm_fits, gm_results, gm_initvals, gm_minimizers = fit_indentation_data(
+    constit_gm,
+    bounds_gm,
+    (app, ret),
+    (f_app, f_ret),
+    tip,
+    fit_type=fit_type,
+    init_val_sampler=sampler,
+    n_samples=N_SAMPLES,
+)
 # %%
 for r in mplr_results:
     display(r)
@@ -190,9 +255,9 @@ def get_best_model(results: list[lmfit.minimizer.MinimizerResult]):
 results_best = {}
 fits_best = {}
 for results, fits, name in zip(
-    [sls_results, mplr_results, kww_results, htz_results],
-    [sls_fits, mplr_fits, kww_fits, htz_fits],
-    ["SLS", "MPLR", "KWW", "Hertzian"],
+    [sls_results, mplr_results, kww_results, htz_results, fkv_results, gm_results],
+    [sls_fits, mplr_fits, kww_fits, htz_fits, fkv_fits, gm_fits],
+    ["SLS", "MPLR", "KWW", "Hertzian", "FKV", "GM"],
 ):
     res_best, ind_best = get_best_model(results)
     results_best[name] = res_best
@@ -233,8 +298,8 @@ color_palette = np.array(
         [0.64313725, 0.14117647, 0.48627451],
     ]
 )
-names = ["Hertzian", "SLS", "MPLR", "KWW"]
-color_inds = [0, 3, 6, 8]
+names = ["Hertzian", "SLS", "MPLR", "KWW", "FKV", "GM"]
+color_inds = [0, 3, 6, 8, 5, 1]
 for n, c_ind in zip(names, color_inds):
     constit = fits_best[n]
 
@@ -256,19 +321,18 @@ for n, c_ind in zip(names, color_inds):
 for ax in axes:
     ax.grid(ls="--", color="lightgray")
 
-fig.suptitle("HeLa cell (interphase) curve fit results: Approach only")
+fig.suptitle("PAAM hydrogel curve fit results: Entire curve")
 # fig.suptitle("pAAm hydrogel curve fit results: Approach only")
 # %%
 bics = jnp.asarray([results_best[n].bic for n in names])
 colors = color_palette[color_inds]
-fig, ax = plt.subplots(1, 1, figsize=(3, 3))
+fig, ax = plt.subplots(1, 1, figsize=(4.5
+                                      , 4))
 ax.grid(ls="--", color="darkgray")
 ax.bar(names, bics, color=colors)
 ax.set_yscale("symlog")
 ax.set_ylabel("BIC")
-ax.set_title("HeLa cell (interphase), Approach only")
-
-
+ax.set_title("PAAM hydrogel, Entire")
 # %%
 def process_uvars(uvars: dict):
     if "E0" in uvars:
@@ -308,7 +372,7 @@ for name, res in results_best.items():
 
 
 fig, ax = plt.subplots(1, 1, figsize=(4, 3))
-names = ("Hertzian", "MPLR", "SLS", "KWW")
+names = ("Hertzian", "MPLR", "SLS", "KWW", "FKV", "GM")
 for name in names:
     ax.plot(relative_errors[name], ".-", label=name, linewidth=1.0, markersize=8.0)
 ax.set_yscale("log", base=10)

@@ -311,15 +311,34 @@ ax.set_ylabel(params[1])
 ax.set_zlabel(params[2])
 
 plt.show()
+#%%
+sls_bic = np.min(sls_bic)
+sls_tot_bic = np.min(sls_tot_bic)
 # %%
-fig, ax = plt.subplots(1, 1, figsize=(10,5))
+section = ("Approach","Total")
+model_bic = {
+    'SLS': (sls_bic, sls_tot_bic),
+}
 
-x=np.arange(1)
+x = np.arange(len(section))  # the label locations
+width = 0.25  # the width of the bars
+multiplier = 0
 
-ax.bar(x, height=np.min(sls_bic), width=0.25, label = 'Approach Curve')
-ax.bar(x+0.25, height=np.min(sls_tot_bic), width=0.25, label = 'Total Curve')
-ax.set_ylabel("BIC")
-ax.legend()
+fig, ax = plt.subplots(layout='constrained')
+
+for attribute, measurement in model_bic.items():
+    offset = width * multiplier
+    rects = ax.bar(x + offset, measurement, width, label=attribute)
+    ax.bar_label(rects, padding=2)
+    multiplier += 1
+
+# Add some text for labels, title and custom x-axis tick labels, etc.
+ax.set_ylabel('BIC')
+ax.set_title('SLS model by section')
+ax.set_xticks(x, section)
+ax.legend(loc="lower left", ncols=2)
+
+plt.show()
 # %%
 display(sls_tot_results[0])
 # %%
