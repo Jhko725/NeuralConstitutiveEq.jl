@@ -87,7 +87,7 @@ def _force_approach_scalar_jvp(primals, tangents):
     return primal_out, tangents_out
 
 
-# @eqx.filter_custom_jvp
+@eqx.filter_custom_jvp
 def t1_scalar(
     t: FloatScalar,
     constitutive: AbstractConstitutiveEqn,
@@ -109,12 +109,12 @@ def t1_scalar(
     t1 = t_m
     for _ in range(newton_iterations):
         f_t1, Df_t1 = residual(t1, t), Dresidual(t1, t)
-        t1 = jnp.clip(t1 - f_t1 / Df_t1, 0.0)
+        t1 = jnp.clip(t1 - f_t1 / Df_t1, 0.0, t_m)
 
     return t1
 
 
-# @t1_scalar.def_jvp
+@t1_scalar.def_jvp
 def _t1_scalar_jvp(primals, tangents, *, newton_iterations: int = 5):
     # Take into account when t1=0
     t, constit, indentations = primals
