@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.special import gamma
-from .ml_internal import LTInversion
+from mittag_leffler_master.ml_internal import LTInversion
 
 def ml(z, alpha, beta=1., gama=1.):
     eps = np.finfo(np.float64).eps

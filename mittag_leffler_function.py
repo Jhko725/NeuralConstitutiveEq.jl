@@ -8,8 +8,11 @@ from quadax import quadgk
 import matplotlib.pyplot as plt
 from functools import partial
 from mittag_leffler_master.mittag_leffler import ml
-
 import jax
+
+import os
+#%%
+print(os.getcwd())
 
 jax.config.update("jax_enable_x64", True)
 #%%
