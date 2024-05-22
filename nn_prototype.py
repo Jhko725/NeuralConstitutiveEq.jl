@@ -95,9 +95,9 @@ class Mspline(AbstractConstitutiveEqn):
     def __init__(self, num_components: int = 100):
         # self.log10_taus = jnp.linspace(-5, 5, num_components)
         knots = jnp.linspace(0.0, 1.0, num_components)
-        self.coeffs = jnp.ones_like(knots) / num_components
+        self.coeffs = jnp.ones_like(knots) * 0.01 / num_components
         # self.coeffs = jnp.ones_like(self.log10_taus) / num_components
-        self.bias = jnp.asarray(1.0 / num_components)
+        self.bias = jnp.asarray(1.0)
 
     def _relaxation_function_1D(self, t: Float[Array, " N"]) -> Float[Array, " N"]:
         c = jnp.abs(self.coeffs)
@@ -325,7 +325,7 @@ opt_state = optim.init(constit)
 import time
 
 t_start = time.time()
-max_epochs = 1000
+max_epochs = 2000
 loss_history = np.empty(max_epochs)
 for step in range(max_epochs):
     loss, constit, opt_state = make_step(constit, opt_state)
