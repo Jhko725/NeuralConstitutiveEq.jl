@@ -95,8 +95,8 @@ axes[2].set_ylabel("Force")
 
 # %%
 ## Fit using Latin hypercube sampling
-N_SAMPLES = 1
-fit_type = "both"
+N_SAMPLES = 10
+fit_type = "approach"
 ### Hertzian model
 
 constit_htz = Hertzian(10.0)
