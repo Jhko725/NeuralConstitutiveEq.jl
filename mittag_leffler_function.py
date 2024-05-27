@@ -15,6 +15,8 @@ jax.config.update("jax_enable_x64", True)
 
 
 # %%
+
+
 def MLF1(alpha, beta, z, rho=1e-10):
     a = jnp.ceil((1 - beta) / alpha)
     b = jnp.ceil(jnp.log(rho * (1 - jnp.abs(z))) / jnp.log(jnp.abs(z)))
@@ -25,7 +27,7 @@ def MLF1(alpha, beta, z, rho=1e-10):
 
 def MLF2(alpha, beta, z, rho=1e-10):
     k0 = jnp.floor(-jnp.log(rho) / jnp.log(jnp.abs(z)))
-    z_inv_alpha = z ** (1 / alpha)
+    # z_inv_alpha = z ** (1 / alpha)
     val = 0.0  # z_inv_alpha ** (1 - beta) * jnp.exp(z_inv_alpha) / alpha
     k = jnp.arange(1, k0 + 1)
     val = val - jnp.sum(z ** (-k) / gamma(beta - alpha * k))
