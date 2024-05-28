@@ -201,7 +201,7 @@ def reweighting_fn(
 
     def find_lmbda_next():
         lmbda_init = 0.5 * (1 + state.lmbda)
-        sol = optx.find(
+        sol = optx.root_find(
             objective_fn,
             solver,
             lmbda_init,
@@ -522,10 +522,22 @@ print(state.particles[0].E1)
 print(state.ess)
 print(state.lmbda)
 # %%
+import time
+
+t_start = time.time()
+state1 = step2(rng_key, state, log_prior_fn, log_likelihood_fn)
+# jax.block_until_ready(state1)
+print(state1.particles[0].E1)
+print(state1.lmbda)
+print(f"Elapsed time: {time.time()-t_start}")
 # %%
-state = step(rng_key, state, log_prior_fn, log_likelihood_fn)
-print(state.particles[0].E1)
-print(state.lmbda)
+import time
+
+t_start = time.time()
+state1 = step(rng_key, state, log_prior_fn, log_likelihood_fn)
+print(state1.particles[0].E1)
+print(state1.lmbda)
+print(f"Elapsed time: {time.time()-t_start}")
 # %%
 with jax.profiler.trace("/tmp/jax-trace", create_perfetto_trace=True):
     state = step(rng_key, state, log_prior, log_likelihood)
