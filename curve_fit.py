@@ -55,7 +55,7 @@ def log_prior_fn(params):
     return log_p_E_inf + log_p_E1 + log_p_tau + log_p_eps
 
 
-N_samples = 50
+N_samples = 300
 
 rng_key = jax.random.PRNGKey(0)
 rng_key, *sub_keys = jax.random.split(rng_key, 5)
@@ -155,6 +155,7 @@ class AdamsTemperedSMCState(eqx.Module):
 
     particles: PyTree[Float[Array, " M"]]
     weights: Float[Array, " M"]
+    log_prior: Float[Array, " M"]
     log_likelihood: Float[Array, " M"]
     lmbda: float
     ess: float
@@ -176,9 +177,10 @@ def infer_num_particles(particles: PyTree[Float[Array, " M"]]):
 def init(particles: PyTree[Float[Array, " M"]]):
     n_particles = infer_num_particles(particles)
     weights = jnp.ones(n_particles) / n_particles
+    log_prior = log_prior_fn(particles)
     log_likelihood = log_likelihood_fn(particles)
     return AdamsTemperedSMCState(
-        particles, weights, log_likelihood, 0.0, jnp.float_(n_particles)
+        particles, weights, log_prior, log_likelihood, 0.0, jnp.float_(n_particles)
     )
 
 
@@ -218,9 +220,106 @@ def reweighting_fn(
     ess_next = effective_sample_size(weights_next)
 
     state_next = AdamsTemperedSMCState(
-        state.particles, weights_next, state.log_likelihood, lmbda_next, ess_next
+        state.particles,
+        weights_next,
+        state.log_prior,
+        state.log_likelihood,
+        lmbda_next,
+        ess_next,
     )
     return state_next
+
+
+def resampling_fn(
+    resample_key, state, log_likelihood_fn, resample_ess_threshold: float = 0.5
+):
+    n_particles = state.n_particles
+    should_resample = (state.ess < n_particles * resample_ess_threshold) | (
+        state.lmbda >= 1
+    )
+
+    def resample():
+        idx_orig = jnp.arange(n_particles, dtype=jnp.int_)
+        idx_new = jax.random.choice(resample_key, idx_orig, idx_orig.shape)
+        particles_new = jtu.tree_map(lambda leaf: leaf[idx_new], state.particles)
+        weights_new = jnp.ones(n_particles) / n_particles
+        log_likelihood_new = log_likelihood_fn(state.particles)
+        return AdamsTemperedSMCState(
+            particles_new,
+            weights_new,
+            state.log_prior,
+            log_likelihood_new,
+            state.lmbda,
+            jnp.float_(n_particles),
+        )
+
+    return jax.lax.cond(should_resample, resample, lambda: state)
+
+
+def mutating_fn(
+    mutation_key, state, log_prior_fn, log_likelihood_fn, mutation_ratio: float = 0.95
+):
+
+    logposterior_current = state.lmbda * state.log_likelihood + state.log_prior
+
+    def cond_fn(carry):
+        n_loop, _, _, idx_accepted = carry
+        n_accepted = jnp.sum(idx_accepted)
+        jax.debug.print("Mutated: {n_accepted}", n_accepted=n_accepted)
+        return (n_accepted < mutation_ratio * state.n_particles) & (n_loop <= 20)
+
+    def body_fn(carry):
+        n_loop, mutation_key, particles, accepted_prev = carry
+        mutation_key, sample_key, accept_key = jax.random.split(mutation_key, 3)
+        proposal_covar = empirical_covariance(particles, state.weights) / (n_loop**2)
+        particle_values, treedef = jtu.tree_flatten(particles)
+        particle_values = jnp.stack(particle_values, axis=-1)
+
+        particle_proposed_values = jax.random.multivariate_normal(
+            sample_key, particle_values, proposal_covar
+        )
+
+        particle_proposed = jtu.tree_unflatten(
+            treedef, list(particle_proposed_values.T)
+        )
+
+        logposterior_proposed = state.lmbda * log_likelihood_fn(
+            particle_proposed
+        ) + log_prior_fn(particle_proposed)
+
+        A = jnp.clip(jnp.exp(logposterior_proposed - logposterior_current), max=1.0)
+        accepted = jax.random.bernoulli(accept_key, A)
+
+        particle_next = jtu.tree_map(
+            lambda a, b: jnp.where(accepted, b, a),
+            particles,
+            particle_proposed,
+        )
+        accepted_total = jnp.logical_or(accepted, accepted_prev)
+        return n_loop + 1, mutation_key, particle_next, accepted_total
+
+    def mutate():
+        carry_init = (
+            1,
+            mutation_key,
+            state.particles,
+            jnp.zeros(state.n_particles, dtype=jnp.bool_),
+        )
+
+        _, _, particles_next, _ = jax.lax.while_loop(cond_fn, body_fn, carry_init)
+        log_prior_next = log_prior_fn(particles_next)
+        log_likelihood_next = log_likelihood_fn(particles_next)
+
+        return AdamsTemperedSMCState(
+            particles_next,
+            state.weights,
+            log_prior_next,
+            log_likelihood_next,
+            state.lmbda,
+            state.ess,
+        )
+
+    return jax.lax.cond(state.lmbda < 1, mutate, lambda: state)
 
 
 @eqx.filter_jit
@@ -272,7 +371,12 @@ def step(
     ess_new = effective_sample_size(weights_new)
 
     state = AdamsTemperedSMCState(
-        state.particles, weights_new, state.log_likelihood, lmbda_new, ess_new
+        state.particles,
+        weights_new,
+        state.log_prior,
+        state.log_likelihood,
+        lmbda_new,
+        ess_new,
     )
 
     def should_resample(state) -> bool:
@@ -290,6 +394,7 @@ def step(
         return AdamsTemperedSMCState(
             particles_new,
             weights_new,
+            state.log_prior,
             state.log_likelihood,
             state.lmbda,
             jnp.float_(n_particles),
@@ -356,7 +461,12 @@ def step(
         carry_init = (1, mutation_key, state.particles, 0.0)
         _, _, particles_new, _ = jax.lax.while_loop(cond_fn, body_fn, carry_init)
         return AdamsTemperedSMCState(
-            particles_new, state.weights, state.log_likelihood, state.lmbda, state.ess
+            particles_new,
+            state.weights,
+            state.log_prior,
+            state.log_likelihood,
+            state.lmbda,
+            state.ess,
         )
 
     ## Mutation step
@@ -410,109 +520,23 @@ class Bisection(optx.Bisection):
 def step2(
     rng_key: jax.random.PRNGKey,
     state: AdamsTemperedSMCState,
-    logprior_fn: Callable,
-    loglikelihood_fn: Callable,
+    log_prior_fn: Callable,
+    log_likelihood_fn: Callable,
     ess_decrement_ratio: float = 1e-2,
     solver=Bisection(rtol=1e-6, atol=1e-6, flip=True),
     resample_ess_threshold: float = 0.5,
     mutation_ratio: float = 0.95,
 ):
+    rng_key, resample_key, mutation_key = jax.random.split(rng_key, 3)
 
     state = reweighting_fn(state, ess_decrement_ratio, solver)
-
-    def should_resample(state) -> bool:
-        return jnp.logical_or(
-            state.ess < state.n_particles * resample_ess_threshold, state.lmbda >= 1
-        )
-
-    def resample_fn(resample_key, state):
-        n_particles = state.n_particles
-        idx_orig = jnp.arange(n_particles, dtype=jnp.int_)
-        idx_new = jax.random.choice(resample_key, idx_orig, idx_orig.shape)
-        particles_new = jtu.tree_map(lambda leaf: leaf[idx_new], state.particles)
-        weights_new = jnp.ones(n_particles) / n_particles
-        print("Resampled!")
-        return AdamsTemperedSMCState(
-            particles_new,
-            weights_new,
-            state.log_likelihood,
-            state.lmbda,
-            jnp.float_(n_particles),
-        )
-
-    def identity_fn(_, state):
-        return state
-
-    ## Resampling step
-    rng_key, resample_key = jax.random.split(rng_key)
-    state = jax.lax.cond(
-        should_resample(state),
-        resample_fn,
-        identity_fn,
-        resample_key,
-        state,
+    state = resampling_fn(
+        resample_key, state, log_likelihood_fn, resample_ess_threshold
+    )
+    state = mutating_fn(
+        mutation_key, state, log_prior_fn, log_likelihood_fn, mutation_ratio
     )
 
-    ## Mutation step
-    def should_mutate(state):
-        return state.lmbda < 1
-
-    def mutation_fn(mutation_key, state):
-
-        def cond_fn(carry):
-            _, _, _, n_accepted = carry
-            return n_accepted < mutation_ratio * state.n_particles
-
-        def body_fn(carry):
-            n_loop, mutation_key, particles, n_accepted = carry
-            mutation_key, sample_key, accept_key = jax.random.split(mutation_key, 3)
-            proposal_covar = empirical_covariance(particles, state.weights) / (
-                n_loop**2
-            )
-            particle_values, treedef = jtu.tree_flatten(particles)
-            particle_values = jnp.stack(particle_values, axis=-1)
-            proposal_dist = distrax.MultivariateNormalFullCovariance(
-                particle_values, proposal_covar
-            )
-
-            particle_proposed_values = proposal_dist.sample(seed=sample_key)
-            particle_proposed = jtu.tree_unflatten(
-                treedef, list(particle_proposed_values.T)
-            )
-
-            logposterior_current = state.lmbda * loglikelihood_fn(
-                particles
-            ) + logprior_fn(particles)
-            logposterior_proposed = state.lmbda * loglikelihood_fn(
-                particle_proposed
-            ) + logprior_fn(particle_proposed)
-
-            A = jnp.clip(jnp.exp(logposterior_proposed - logposterior_current), max=1.0)
-            idx_accept = A > jax.random.uniform(accept_key, A.shape)
-
-            n_accepted = n_accepted + jnp.sum(idx_accept)
-            particle_next = jtu.tree_map(
-                lambda a, b: jnp.where(idx_accept, b, a),
-                particles,
-                particle_proposed,
-            )
-            return n_loop + 1, mutation_key, particle_next, n_accepted
-
-        carry_init = (1, mutation_key, state.particles, 0.0)
-        _, _, particles_new, _ = jax.lax.while_loop(cond_fn, body_fn, carry_init)
-        return AdamsTemperedSMCState(
-            particles_new, state.weights, state.log_likelihood, state.lmbda, state.ess
-        )
-
-    ## Mutation step
-    rng_key, mutation_key = jax.random.split(rng_key)
-    state = jax.lax.cond(
-        should_mutate(state),
-        mutation_fn,
-        identity_fn,
-        mutation_key,
-        state,
-    )
     return state
 
 
@@ -546,8 +570,10 @@ with jax.profiler.trace("/tmp/jax-trace", create_perfetto_trace=True):
 from tqdm import tqdm
 
 lmbda_list = [state.lmbda]
-for i in tqdm(jnp.arange(10)):
-    state = step(rng_key, state, log_prior, log_likelihood, target_ess_reduction=0.4)
+for i in tqdm(jnp.arange(100)):
+    state = step2(
+        rng_key, state, log_prior_fn, log_likelihood_fn, ess_decrement_ratio=0.1
+    )
     print(f"iter {i}, lmbda = {state.lmbda}, ess = {state.ess}")
     lmbda_list.append(state.lmbda)
 # %%
