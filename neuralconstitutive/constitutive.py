@@ -90,7 +90,7 @@ class GeneralizedMaxwellmodel(AbstractConstitutiveEqn):
     def E0(self) -> FloatScalar:
         return self.E_inf + self.E1 + self.E2
 
-    def relaxation_function(self, t):
+    def _relaxation_function_1D(self, t):
         return self.E_inf + self.E1 * jnp.exp(-t / self.tau1) + self.E2 * jnp.exp(-t / self.tau2)
 
 
@@ -134,7 +134,7 @@ class FractionalKelvinVoigt(AbstractConstitutiveEqn):
     E_inf: FloatScalar = floatscalar_field()
     alpha: FloatScalar = floatscalar_field()
     
-    def relaxation_function(self, t: Array) -> Array:
+    def _relaxation_function_1D(self, t: Array) -> Array:
         return self.E_inf+self.E1*(t**(-self.alpha)/gamma(1-self.alpha))
 
 
