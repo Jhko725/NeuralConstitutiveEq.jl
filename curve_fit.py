@@ -33,15 +33,12 @@ from neuralconstitutive.ting import _force_approach, _force_retract
 
 jax.config.update("jax_enable_x64", True)
 
-prob_E_inf = distrax.Uniform(-5, 2)
-prob_E1 = distrax.Uniform(-5, 2)
-prob_tau = distrax.Uniform(-5, 2)
+prob_E_inf = distrax.Uniform(0.0, 100)
+prob_E1 = distrax.Uniform(0.0, 100)
+prob_tau = distrax.Uniform(1e-5, 1e2)
 prob_eps = distrax.Uniform(0.0, 0.1)
 
 params_test = (jnp.asarray(0.0), StandardLinearSolid(1.0, 1.0, 1.0))
-
-# %%
-prob_E1.log_prob(jnp.asarray(-7))
 
 
 # %%
@@ -55,7 +52,7 @@ def log_prior_fn(params):
     return log_p_E_inf + log_p_E1 + log_p_tau + log_p_eps
 
 
-N_samples = 300
+N_samples = 500
 
 rng_key = jax.random.PRNGKey(0)
 rng_key, *sub_keys = jax.random.split(rng_key, 5)
@@ -117,7 +114,7 @@ ret_interp = make_smoothed_cubic_spline(ret)
 @partial(eqx.filter_vmap, in_axes=eqx.if_array(0))
 def log_likelihood_fn(params):
     sls, eps = params
-    sls = jtu.tree_map(lambda x: 10**x, sls)
+    #sls = jtu.tree_map(lambda x: 10**x, sls)
     f_app_pred = _force_approach(app.time, sls, app_interp, tip)
     f_ret_pred = _force_retract(ret.time, sls, (app_interp, ret_interp), tip)
     p_app = distrax.MultivariateNormalDiag(f_app_pred, jnp.ones_like(f_app_pred) * eps)
@@ -264,9 +261,9 @@ def mutating_fn(
 
     def cond_fn(carry):
         n_loop, _, _, idx_accepted = carry
-        n_accepted = jnp.sum(idx_accepted)
-        jax.debug.print("Mutated: {n_accepted}", n_accepted=n_accepted)
-        return (n_accepted < mutation_ratio * state.n_particles) & (n_loop <= 20)
+        accepted_ratio = jnp.sum(idx_accepted)/state.n_particles
+        jax.debug.print("Mutated: {accepted_ratio}", accepted_ratio=accepted_ratio)
+        return (accepted_ratio < mutation_ratio) & (n_loop <= 40)
 
     def body_fn(carry):
         n_loop, mutation_key, particles, accepted_prev = carry
@@ -572,7 +569,7 @@ from tqdm import tqdm
 lmbda_list = [state.lmbda]
 for i in tqdm(jnp.arange(100)):
     state = step2(
-        rng_key, state, log_prior_fn, log_likelihood_fn, ess_decrement_ratio=0.1
+        rng_key, state, log_prior_fn, log_likelihood_fn, ess_decrement_ratio=0.2
     )
     print(f"iter {i}, lmbda = {state.lmbda}, ess = {state.ess}")
     lmbda_list.append(state.lmbda)
