@@ -52,11 +52,11 @@ class KohlrauschWilliamsWatts(AbstractConstitutiveEqn):
 
 # %%
 
-# datadir = Path("open_data/PAAM hydrogel/speed 5")
-# name = "PAA_speed 5_4nN"
+datadir = Path("open_data/PAAM hydrogel/speed 5")
+name = "PAA_speed 5_4nN"
 
-datadir = Path("open_data/Interphase rep 2")
-name = "interphase_speed 2_2nN"
+#datadir = Path("open_data/Interphase rep 2")
+#name = "interphase_speed 2_2nN"
 (app, ret), (f_app, f_ret) = import_data(
     datadir / f"{name}.tab", datadir / f"{name}.tsv"
 )
@@ -75,6 +75,8 @@ axes[2].plot(ret.depth, f_ret, ".")
 f_ret = jnp.clip(f_ret, 0.0)
 (f_app, f_ret), _ = normalize_forces(f_app, f_ret)
 (app, ret), (_, h_m) = normalize_indentations(app, ret)
+f_ret = jnp.trim_zeros(jnp.clip(f_ret, 0.0), "b")
+ret = jtu.tree_map(lambda leaf: leaf[: len(f_ret)], ret)
 # %%
 tip = Spherical(2.5e-6 / h_m)  # Scale tip radius by the length scale we are using
 
@@ -117,11 +119,12 @@ import jax.numpy as jnp
 import jax
 from neuralconstitutive.tingx import force_approach_scalar
 from neuralconstitutive.indentation import interpolate_indentation
+from neuralconstitutive.smoothing import make_smoothed_cubic_spline
 from functools import partial
 from neuralconstitutive.utils import smooth_data
 
-app_interp = interpolate_indentation(smooth_data(app))
-ret_interp = interpolate_indentation(smooth_data(ret))
+app_interp = make_smoothed_cubic_spline(app)
+ret_interp = make_smoothed_cubic_spline(ret)
 
 
 def sensitvity_scalar(t, constit, app, tip):

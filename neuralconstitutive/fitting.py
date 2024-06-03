@@ -21,6 +21,7 @@ from neuralconstitutive.ting import (
     force_retract,
     _force_retract,
 )
+from neuralconstitutive.smoothing import make_smoothed_cubic_spline
 from neuralconstitutive.tipgeometry import AbstractTipGeometry
 from neuralconstitutive.utils import smooth_data
 
@@ -58,6 +59,12 @@ def constitutive_to_params(
 def params_to_constitutive(params: lmfit.Parameters, constit: ConstitEqn) -> ConstitEqn:
     return type(constit)(**params.valuesdict())
 
+@eqx.filter_jit
+def _residual_app(constit, args):
+    t_app, app_interp, tip, force = args
+    f_pred = _force_approach(t_app, constit, app_interp, tip)
+    return f_pred - force
+    
 
 def fit_approach_lmfit(
     constitutive: AbstractConstitutiveEqn,
@@ -67,23 +74,25 @@ def fit_approach_lmfit(
     force: Float[Array, " {len(approach)}"],
 ):
     params = constitutive_to_params(constitutive, bounds)
-    # app_interp = interpolate_indentation(approach)
-    app_interp = create_subsampled_interpolants(approach)
-
-    @eqx.filter_jit
-    def _residual_jax(constit):
-        f_pred = _force_approach(approach.time, constit, app_interp, tip)
-        return f_pred - force
+    app_interp = make_smoothed_cubic_spline(approach)
 
     def residual(params: lmfit.Parameters, args) -> Float[Array, " N"]:
         constit = params_to_constitutive(params, constitutive)
-        return _residual_jax(constit)
-
-    minimizer = lmfit.Minimizer(residual, params, fcn_args=(None,))
+        return _residual_app(constit, args)
+    
+    args = (approach.time, app_interp, tip, force)
+    minimizer = lmfit.Minimizer(residual, params, fcn_args=(args,))
     result = minimizer.minimize()
     constit_fit = params_to_constitutive(result.params, constitutive)
     return constit_fit, result, minimizer
 
+@eqx.filter_jit
+def _residual_jax(constit, args):
+    t_app, t_ret, app_interp, ret_interp, tip, forces = args
+    f_pred_app = _force_approach(t_app, constit, app_interp, tip)
+    f_pred_ret = _force_retract(t_ret, constit, (app_interp, ret_interp), tip)
+
+    return jnp.concatenate((f_pred_app, f_pred_ret)) - jnp.concatenate(forces)
 
 def fit_all_lmfit(
     constitutive: AbstractConstitutiveEqn,
@@ -96,21 +105,16 @@ def fit_all_lmfit(
     app, ret = indentations
     # app_interp = interpolate_indentation(app)
     # ret_interp = interpolate_indentation(ret)
-    app_interp = create_subsampled_interpolants(app)
-    ret_interp = create_subsampled_interpolants(ret)
+    app_interp = make_smoothed_cubic_spline(app)
+    ret_interp = make_smoothed_cubic_spline(ret)
 
-    @eqx.filter_jit
-    def _residual_jax(constit):
-        f_pred_app = _force_approach(app.time, constit, app_interp, tip)
-        f_pred_ret = _force_retract(ret.time, constit, (app_interp, ret_interp), tip)
-
-        return jnp.concatenate((f_pred_app, f_pred_ret)) - jnp.concatenate(forces)
 
     def residual(params: lmfit.Parameters, args) -> Float[Array, " N"]:
         constit = params_to_constitutive(params, constitutive)
-        return _residual_jax(constit)
+        return _residual_jax(constit, args)
 
-    minimizer = lmfit.Minimizer(residual, params, fcn_args=(None,))
+    args = (app.time, ret.time, app_interp, ret_interp, tip, forces)
+    minimizer = lmfit.Minimizer(residual, params, fcn_args=(args,))
     result = minimizer.minimize()
     constit_fit = params_to_constitutive(result.params, constitutive)
     return constit_fit, result, minimizer
@@ -156,7 +160,6 @@ def fit_indentation_data(
     init_val_sampler=None,
     n_samples: int = 1,
 ):
-    indentations = smooth_data(indentations[0]), smooth_data(indentations[1])
     if fit_type == "approach":
         fit_func = fit_approach_lmfit
         fit_data = (indentations[0], forces[0])
@@ -180,7 +183,7 @@ def fit_indentation_data(
             constit_ = constit
         try:
             constit_fit, result, minimizer = fit_func(constit_, bounds, tip, *fit_data)
-        except:
+        except ValueError:
             print(f"Fit #{i} aborted")
             constit_fit, result, minimizer = None, None, None
         constit_fits.append(constit_fit)

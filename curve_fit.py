@@ -1,48 +1,40 @@
 # %%
 # ruff: noqa: F722
-from pathlib import Path
 from functools import partial
+from pathlib import Path
 
+import distrax
+import equinox as eqx
 import jax
 import jax.flatten_util
 import jax.numpy as jnp
 import jax.tree_util as jtu
-from jax.random import PRNGKey
-from jaxtyping import Float, Array
-import equinox as eqx
-import optimistix as optx
-import diffrax
 import matplotlib.pyplot as plt
-import distrax
-import scipy.interpolate as scinterp
+import optimistix as optx
+from jaxtyping import Array, Float
 
-from neuralconstitutive.custom_types import FloatScalar
 from neuralconstitutive.constitutive import (
-    AbstractConstitutiveEqn,
-    ModifiedPowerLaw,
     StandardLinearSolid,
-    KohlrauschWilliamsWatts,
 )
 from neuralconstitutive.indentation import Indentation
-from neuralconstitutive.tipgeometry import AbstractTipGeometry, Spherical
-from neuralconstitutive.integrate import integrate
-from neuralconstitutive.plotting import plot_relaxation_fn
 from neuralconstitutive.io import import_data
-from neuralconstitutive.utils import normalize_forces, normalize_indentations
+from neuralconstitutive.smoothing import make_smoothed_cubic_spline
 from neuralconstitutive.ting import _force_approach, _force_retract
+from neuralconstitutive.tipgeometry import Spherical
+from neuralconstitutive.utils import normalize_forces, normalize_indentations
 
 jax.config.update("jax_enable_x64", True)
 
-prob_E_inf = distrax.Uniform(0.0, 100)
-prob_E1 = distrax.Uniform(0.0, 100)
+prob_E_inf = distrax.Uniform(0.0, 10)
+prob_E1 = distrax.Uniform(0.0, 10)
 prob_tau = distrax.Uniform(1e-5, 1e2)
-prob_eps = distrax.Uniform(0.0, 0.1)
+prob_eps = distrax.Uniform(1e-6, 0.1)
 
 params_test = (jnp.asarray(0.0), StandardLinearSolid(1.0, 1.0, 1.0))
 
 
 # %%
-@partial(eqx.filter_vmap, in_axes=eqx.if_array(0))
+#@partial(eqx.filter_vmap, in_axes=eqx.if_array(0))
 def log_prior_fn(params):
     sls, eps = params
     log_p_E_inf = prob_E_inf.log_prob(sls.E_inf)
@@ -72,24 +64,6 @@ params_batched = make_params(E1_samples, E_inf_samples, tau_samples, eps_samples
 
 
 # %%
-class PiecewiseCubic(diffrax.CubicInterpolation):
-
-    def _interpret_t(self, t, left: bool) -> tuple:
-        maxlen = self.ts_size - 2
-        index = jnp.searchsorted(
-            self.ts, t, side="left" if left else "right", method="compare_all"
-        )
-        index = jnp.clip(index - 1, a_min=0, a_max=maxlen)
-        # Will never access the final element of `ts`; this is correct behaviour.
-        fractional_part = t - self.ts[index]
-        return index, fractional_part
-
-
-def make_smoothed_cubic_spline(indentation, s=1.5e-4):
-    tck = scinterp.splrep(indentation.time, indentation.depth, s=s)
-    ppoly = scinterp.PPoly.from_spline(tck)
-    cubic_interp = PiecewiseCubic(ppoly.x[3:-3], tuple(ppoly.c[:, 3:-3]))
-    return cubic_interp
 
 
 datadir = Path("data/abuhattum_iscience_2022/Interphase rep 2")
@@ -110,11 +84,11 @@ ret_interp = make_smoothed_cubic_spline(ret)
 
 
 # %%
-@eqx.filter_jit
-@partial(eqx.filter_vmap, in_axes=eqx.if_array(0))
+#@eqx.filter_jit
+#@partial(eqx.filter_vmap, in_axes=eqx.if_array(0))
 def log_likelihood_fn(params):
     sls, eps = params
-    #sls = jtu.tree_map(lambda x: 10**x, sls)
+    # sls = jtu.tree_map(lambda x: 10**x, sls)
     f_app_pred = _force_approach(app.time, sls, app_interp, tip)
     f_ret_pred = _force_retract(ret.time, sls, (app_interp, ret_interp), tip)
     p_app = distrax.MultivariateNormalDiag(f_app_pred, jnp.ones_like(f_app_pred) * eps)
@@ -134,10 +108,9 @@ log_likelihood_fn(params_batched)
 # %%
 
 # %%
-import abc
-from jaxtyping import PyTree, Array, Float
-from typing import Callable, NamedTuple
-import optimistix as optx
+from typing import Callable
+
+from jaxtyping import PyTree
 
 
 class AdamsTemperedSMCState(eqx.Module):
@@ -186,7 +159,6 @@ def reweighting_fn(
     ess_decrement_ratio: float = 1e-2,
     solver=optx.Bisection(rtol=1e-6, atol=1e-6, flip=True),
 ):
-
     def calculate_new_weights(lmbda_next):
         log_weights_next = (
             jnp.log(state.weights) + (lmbda_next - state.lmbda) * state.log_likelihood
@@ -256,12 +228,11 @@ def resampling_fn(
 def mutating_fn(
     mutation_key, state, log_prior_fn, log_likelihood_fn, mutation_ratio: float = 0.95
 ):
-
     logposterior_current = state.lmbda * state.log_likelihood + state.log_prior
 
     def cond_fn(carry):
         n_loop, _, _, idx_accepted = carry
-        accepted_ratio = jnp.sum(idx_accepted)/state.n_particles
+        accepted_ratio = jnp.sum(idx_accepted) / state.n_particles
         jax.debug.print("Mutated: {accepted_ratio}", accepted_ratio=accepted_ratio)
         return (accepted_ratio < mutation_ratio) & (n_loop <= 40)
 
@@ -329,7 +300,6 @@ def step(
     resample_ess_threshold: float = 0.5,
     mutation_ratio: float = 0.95,
 ):
-
     def calculate_weight_update(lmbda_diff):
         logweights_new = jnp.log(state.weights) + lmbda_diff * loglikelihood_fn(
             state.particles
@@ -415,7 +385,6 @@ def step(
         return state.lmbda < 1
 
     def mutation_fn(mutation_key, state):
-
         def cond_fn(carry):
             _, _, _, n_accepted = carry
             return n_accepted < mutation_ratio * state.n_particles
@@ -498,7 +467,6 @@ def empirical_covariance(particles, weights):
 
 # %%
 class Bisection(optx.Bisection):
-
     def terminate(
         self,
         fn,
@@ -580,7 +548,6 @@ params_batched[0].E1
 # %%
 state.lmbda
 # %%
-import matplotlib.pyplot as plt
 
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
 ax.plot(jnp.arange(len(lmbda_list)), jnp.stack(lmbda_list))
@@ -588,4 +555,62 @@ ax.set_yscale("log", base=10)
 ax.set_xlabel("SMC Iteration")
 ax.set_ylabel("Tempering parameter")
 
+# %%
+import blackjax
+from blackjax.smc import resampling
+from blackjax.smc import extend_params
+
+def smc_inference_loop(rng_key, smc_kernel, initial_state):
+    """Run the temepered SMC algorithm.
+
+    We run the adaptive algorithm until the tempering parameter lambda reaches the value
+    lambda=1.
+
+    """
+    @eqx.filter_jit
+    def cond(carry):
+        i, state, _k = carry
+        jax.debug.print("lmbda: {lmbda}", lmbda=state.lmbda)
+        return state.lmbda < 1
+    
+    @eqx.filter_jit
+    def one_step(carry):
+        i, state, k = carry
+        k, subk = jax.random.split(k, 2)
+        state, _ = smc_kernel(subk, state)
+        #jax.debug.print("E1: {E1}", E1 = state.particles[0].E1)
+        return i + 1, state, k
+
+    n_iter, final_state, _ = jax.lax.while_loop(
+        cond, one_step, (0, initial_state, rng_key)
+    )
+
+    return n_iter, final_state
+
+inv_mass_matrix = jnp.eye(4)
+hmc_parameters = dict(
+    step_size=1e-4, inverse_mass_matrix=inv_mass_matrix, num_integration_steps=1
+)
+
+tempered = blackjax.adaptive_tempered_smc(
+    log_prior_fn,
+    log_likelihood_fn,
+    blackjax.hmc.build_kernel(),
+    blackjax.hmc.init,
+    extend_params(N_samples, hmc_parameters),
+    resampling.systematic,
+    0.5,
+    num_mcmc_steps=1,
+)
+
+rng_key, init_key, sample_key = jax.random.split(rng_key, 3)
+initial_smc_state = jax.random.multivariate_normal(
+    init_key, jnp.zeros([1]), jnp.eye(1), (N_samples,)
+)
+initial_smc_state = tempered.init(params_batched)
+#%%
+n_iter, smc_samples = smc_inference_loop(sample_key, tempered.step, initial_smc_state)
+print("Number of steps in the adaptive algorithm: ", n_iter.item())
+# %%
+smc_samples.particles[1]
 # %%

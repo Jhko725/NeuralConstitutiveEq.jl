@@ -8,9 +8,11 @@ from typing import Callable, Sequence
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+import jax.tree_util as jtu
 import lmfit
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+
 import numpy as np
 from IPython.display import display
 from jaxtyping import Bool
@@ -33,14 +35,14 @@ from neuralconstitutive.fitting import (
 )
 from neuralconstitutive.io import import_data
 from neuralconstitutive.plotting import plot_indentation, plot_relaxation_fn
-from neuralconstitutive.ting import force_approach, force_retract
+from neuralconstitutive.ting import force_approach, force_retract, _force_approach, _force_retract
 from neuralconstitutive.tipgeometry import Spherical
 from neuralconstitutive.utils import (
     normalize_forces,
     normalize_indentations,
     smooth_data,
 )
-
+from neuralconstitutive.smoothing import make_smoothed_cubic_spline
 # %%
 jax.config.update("jax_enable_x64", True)
 
@@ -74,6 +76,8 @@ axes[2].set_ylabel("Force[N]")
 f_ret = jnp.clip(f_ret, 0.0)
 (f_app, f_ret), _ = normalize_forces(f_app, f_ret)
 (app, ret), (_, h_m) = normalize_indentations(app, ret)
+f_ret = jnp.trim_zeros(jnp.clip(f_ret, 0.0), "b")
+ret = jtu.tree_map(lambda leaf: leaf[: len(f_ret)], ret)
 # %%
 tip = Spherical(2.5e-6 / h_m)  # Scale tip radius by the length scale we are using
 
@@ -92,11 +96,40 @@ axes[2].plot(app.depth, f_app, ".")
 axes[2].plot(ret.depth, f_ret, ".")
 axes[2].set_xlabel("Indentation")
 axes[2].set_ylabel("Force")
+#%%
+import optimistix as optx
+app_interp = make_smoothed_cubic_spline(app)
+ret_interp = make_smoothed_cubic_spline(ret)
 
+def residual_approach(constit, args):
+    t_data, f_data, interp, tip = args
+    constit = jtu.tree_map(lambda x: x**10, constit)
+    f_app_pred = _force_approach(t_data, constit, interp, tip)
+    return f_app_pred - f_data
+
+def residual_all(constit, args):
+    t_data, f_data, interps, tip = args
+    t_app, t_ret = t_data
+    f_app_pred = _force_approach(t_app, constit, interps[0], tip)
+    f_ret_pred = _force_retract(t_ret, constit, interps, tip)
+    return jnp.concatenate((f_app_pred, f_ret_pred))-jnp.concatenate(f_data)
+
+def fit_approach_optx(constit, t_data, f_data, interp, tip, bounds):
+    solver = optx.LevenbergMarquardt(rtol=1e-6, atol= 1e-6)
+    args = (t_data, f_data, interp, tip)
+    sol = optx.least_squares(residual_approach, solver, constit, args, max_steps=1000)
+    return sol.value
+
+def fit_all_optx(constit, t_data, f_data, interp, tip, bounds):
+    solver = optx.LevenbergMarquardt(rtol=1e-6, atol= 1e-6)
+    args = (t_data, f_data, interp, tip)
+    sol = optx.least_squares(residual_all, solver, constit, args, max_steps=1000)
+    return sol.value
 # %%
+#%%
 ## Fit using Latin hypercube sampling
-N_SAMPLES = 10
-fit_type = "approach"
+N_SAMPLES = 100
+fit_type = "all"
 ### Hertzian model
 
 constit_htz = Hertzian(10.0)
@@ -122,7 +155,7 @@ htz_fits, htz_results, htz_initvals, htz_minimizers = fit_indentation_data(
 ### SLS model
 constit_sls = StandardLinearSolid(10.0, 10.0, 10.0)
 bounds_sls = [(0, 1e3), (0, 1e3), (1e-6, 1e3)]
-
+#%%
 sampler = LatinHypercubeSampler(
     sample_range=[(1e-2, 1e2), (1e-2, 1e2), (1e-5, 1e2)],
     sample_scale=["log", "log", "log"],
@@ -137,8 +170,25 @@ sls_fits, sls_results, sls_initvals, sls_minimizers = fit_indentation_data(
     init_val_sampler=sampler,
     n_samples=N_SAMPLES,
 )
-
+#%%
+constit_sls = StandardLinearSolid(1.0, 1.0, 1.0)
+out = fit_approach_optx(constit_sls, app.time, f_app, app_interp, tip, None)
 # %%
+out.E1
+#%%
+out2, _, _ = fit_approach_lmfit(constit_sls, bounds_sls, tip, app, f_app)
+#%%
+out2.E1
+#%%
+constit_sls = StandardLinearSolid(1.0, 1.0, 1.0)
+out = fit_all_optx(constit_sls, (app.time, ret.time), (f_app, f_ret), (app_interp, ret_interp), tip, None)
+#%%
+out=jtu.tree_map(lambda x: 10**x, out)
+out.E1
+#%%
+out2, _, _ = fit_all_lmfit(constit_sls, bounds_sls, tip, (app, ret), (f_app, f_ret))
+out2.E1
+#%%
 ### Modified PLR model
 
 constit_mplr = ModifiedPowerLaw(10.0, 10.0, 10.0)
@@ -255,9 +305,9 @@ def get_best_model(results: list[lmfit.minimizer.MinimizerResult]):
 results_best = {}
 fits_best = {}
 for results, fits, name in zip(
-    [sls_results, mplr_results, kww_results, htz_results, fkv_results, gm_results],
-    [sls_fits, mplr_fits, kww_fits, htz_fits, fkv_fits, gm_fits],
-    ["SLS", "MPLR", "KWW", "Hertzian", "FKV", "GM"],
+    [sls_results, mplr_results, kww_results, htz_results],#, fkv_results, gm_results],
+    [sls_fits, mplr_fits, kww_fits, htz_fits],#, fkv_fits, gm_fits],
+    ["SLS", "MPLR", "KWW", "Hertzian"],#, "FKV", "GM"],
 ):
     res_best, ind_best = get_best_model(results)
     results_best[name] = res_best
@@ -275,8 +325,7 @@ from neuralconstitutive.fitting import create_subsampled_interpolants
 
 f_app_fits = {}
 f_ret_fits = {}
-app_interp = create_subsampled_interpolants(app)
-ret_interp = create_subsampled_interpolants(ret)
+
 for name, constit in fits_best.items():
     f_app_fits[name] = _force_approach(app.time, constit, app_interp, tip)
     f_ret_fits[name] = _force_retract(ret.time, constit, (app_interp, ret_interp), tip)
@@ -298,8 +347,8 @@ color_palette = np.array(
         [0.64313725, 0.14117647, 0.48627451],
     ]
 )
-names = ["Hertzian", "SLS", "MPLR", "KWW", "FKV", "GM"]
-color_inds = [0, 3, 6, 8, 5, 1]
+names = ["Hertzian", "SLS", "MPLR", "KWW"]#, "FKV", "GM"]
+color_inds = [0, 3, 6, 8]#, 5, 1]
 for n, c_ind in zip(names, color_inds):
     constit = fits_best[n]
 
@@ -326,8 +375,7 @@ fig.suptitle("PAAM hydrogel curve fit results: Entire curve")
 # %%
 bics = jnp.asarray([results_best[n].bic for n in names])
 colors = color_palette[color_inds]
-fig, ax = plt.subplots(1, 1, figsize=(4.5
-                                      , 4))
+fig, ax = plt.subplots(1, 1, figsize=(4.5, 4))
 ax.grid(ls="--", color="darkgray")
 ax.bar(names, bics, color=colors)
 ax.set_yscale("symlog")
@@ -372,7 +420,7 @@ for name, res in results_best.items():
 
 
 fig, ax = plt.subplots(1, 1, figsize=(4, 3))
-names = ("Hertzian", "MPLR", "SLS", "KWW", "FKV", "GM")
+names = ("Hertzian", "MPLR", "SLS", "KWW")#, "FKV", "GM")
 for name in names:
     ax.plot(relative_errors[name], ".-", label=name, linewidth=1.0, markersize=8.0)
 ax.set_yscale("log", base=10)
