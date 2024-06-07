@@ -12,20 +12,20 @@ import jax.tree_util as jtu
 import lmfit
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-
 import numpy as np
+import optimistix as optx
 from IPython.display import display
 from jaxtyping import Bool
 from lmfit.minimizer import MinimizerResult
 from tqdm import tqdm
 
 from neuralconstitutive.constitutive import (
+    FractionalKelvinVoigt,
+    GeneralizedMaxwellmodel,
     Hertzian,
     KohlrauschWilliamsWatts,
     ModifiedPowerLaw,
     StandardLinearSolid,
-    FractionalKelvinVoigt,
-    GeneralizedMaxwellmodel
 )
 from neuralconstitutive.fitting import (
     LatinHypercubeSampler,
@@ -35,22 +35,28 @@ from neuralconstitutive.fitting import (
 )
 from neuralconstitutive.io import import_data
 from neuralconstitutive.plotting import plot_indentation, plot_relaxation_fn
-from neuralconstitutive.ting import force_approach, force_retract, _force_approach, _force_retract
+from neuralconstitutive.smoothing import make_smoothed_cubic_spline
+from neuralconstitutive.ting import (
+    _force_approach,
+    _force_retract,
+    force_approach,
+    force_retract,
+)
 from neuralconstitutive.tipgeometry import Spherical
 from neuralconstitutive.utils import (
     normalize_forces,
     normalize_indentations,
     smooth_data,
 )
-from neuralconstitutive.smoothing import make_smoothed_cubic_spline
+
 # %%
 jax.config.update("jax_enable_x64", True)
 
 # datadir = Path("open_data/PAAM hydrogel/speed 5")
 # name = "PAA_speed 5_4nN"
 
-datadir = Path("open_data/PAAM hydrogel/speed 5")
-name = "PAA_speed 5_4nN"
+datadir = Path("data/abuhattum_iscience_2022/Agarose/speed 5")
+name = "Agarose_speed 5_2nN"
 (app, ret), (f_app, f_ret) = import_data(
     datadir / f"{name}.tab", datadir / f"{name}.tsv"
 )
@@ -96,11 +102,10 @@ axes[2].plot(app.depth, f_app, ".")
 axes[2].plot(ret.depth, f_ret, ".")
 axes[2].set_xlabel("Indentation")
 axes[2].set_ylabel("Force")
-#%%
-import optimistix as optx
+
 app_interp = make_smoothed_cubic_spline(app)
 ret_interp = make_smoothed_cubic_spline(ret)
-
+#%%
 def residual_approach(constit, args):
     t_data, f_data, interp, tip = args
     constit = jtu.tree_map(lambda x: x**10, constit)
@@ -129,7 +134,7 @@ def fit_all_optx(constit, t_data, f_data, interp, tip, bounds):
 #%%
 ## Fit using Latin hypercube sampling
 N_SAMPLES = 100
-fit_type = "all"
+fit_type = "approach"
 ### Hertzian model
 
 constit_htz = Hertzian(10.0)
@@ -320,8 +325,9 @@ for r in results_best.values():
 
 # %%
 import equinox as eqx
-from neuralconstitutive.ting import _force_approach, _force_retract
+
 from neuralconstitutive.fitting import create_subsampled_interpolants
+from neuralconstitutive.ting import _force_approach, _force_retract
 
 f_app_fits = {}
 f_ret_fits = {}
@@ -370,8 +376,9 @@ for n, c_ind in zip(names, color_inds):
 for ax in axes:
     ax.grid(ls="--", color="lightgray")
 
-fig.suptitle("PAAM hydrogel curve fit results: Entire curve")
-# fig.suptitle("pAAm hydrogel curve fit results: Approach only")
+# fig.suptitle("PAAM hydrogel curve fit results: Entire curve")
+fig.suptitle("Agarose hydrogel curve fit results: Approach only")
+
 # %%
 bics = jnp.asarray([results_best[n].bic for n in names])
 colors = color_palette[color_inds]
