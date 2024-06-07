@@ -6,6 +6,7 @@ import diffrax
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+import jax.tree_util as jtu
 import matplotlib.pyplot as plt
 import numpy as np
 import optax
@@ -94,14 +95,14 @@ class Mspline(AbstractConstitutiveEqn):
 
     def __init__(self, num_components: int = 100):
         # self.log10_taus = jnp.linspace(-5, 5, num_components)
-        knots = jnp.linspace(0.0, 1.0, num_components)
-        self.coeffs = jnp.ones_like(knots) * 0.01 / num_components
+        knots = jnp.linspace(0.0, 10.0, num_components)
+        self.coeffs = softplus_inverse(jnp.ones_like(knots) / num_components)
         # self.coeffs = jnp.ones_like(self.log10_taus) / num_components
-        self.bias = jnp.asarray(1.0)
+        self.bias = softplus_inverse(jnp.asarray(1.0 / num_components))
 
     def _relaxation_function_1D(self, t: Float[Array, " N"]) -> Float[Array, " N"]:
-        c = jnp.abs(self.coeffs)
-        b = jnp.abs(self.bias)
+        c = jax.nn.softplus(self.coeffs)
+        b = jax.nn.softplus(self.bias)
         knots = jnp.linspace(0.0, 1.0, len(self.coeffs))
         basis_funcs = L_mspline(t, knots, knots[1] - knots[0])
         return jnp.matmul(basis_funcs, c) + b
@@ -146,7 +147,13 @@ app_interp = make_smoothed_cubic_spline(app)
 ret_interp = make_smoothed_cubic_spline(ret)
 f_app_data = _force_approach(app.time, bimodal, app_interp, tip)
 f_ret_data = _force_retract(ret.time, bimodal, (app_interp, ret_interp), tip)
-
+f_ret_data = jnp.clip(f_ret_data, 0.0)
+#(f_app, f_ret), _ = normalize_forces(f_app, f_ret)
+#(app, ret), (_, h_m) = normalize_indentations(app, ret)
+f_ret = jnp.trim_zeros(jnp.clip(f_ret_data, 0.0), "b")
+ret = jtu.tree_map(lambda leaf: leaf[: len(f_ret)], ret)
+app_interp = make_smoothed_cubic_spline(app)
+ret_interp = make_smoothed_cubic_spline(ret)
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
 ax.plot(app.time, f_app_data)
 ax.plot(ret.time, f_ret_data)
@@ -184,8 +191,8 @@ def make_step(constit, opt_state):
 
 
 # %%
-constit = Prony(num_components=20)
-# constit = Mspline()
+#constit = Prony(num_components=20)
+constit = Mspline(num_components=100)
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
 ax.plot(app.time, f_app_data, label="data")
 ax.plot(ret.time, f_ret_data, label="data")
@@ -203,10 +210,10 @@ ax.legend()
 l1_norm(constit)
 # %%
 
-optim = optax.adam(1e-2)
+optim = optax.adam(5e-2)
 opt_state = optim.init(constit)
 
-max_epochs = 2000
+max_epochs = 10000
 loss_history = np.empty(max_epochs)
 for step in range(max_epochs):
     loss, constit, opt_state = make_step(constit, opt_state)
@@ -273,7 +280,7 @@ H_ = H_approx(t_test, constit)
 
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
 
-# ax.plot(t_test, bimodal.h_grid, label="data")
+ax.plot(10**bimodal.log10_t_grid, bimodal.h_grid, label="data")
 ax.plot(t_test, H_, ".")
 ax.set_xscale("log")
 
