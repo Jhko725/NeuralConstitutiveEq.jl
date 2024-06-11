@@ -55,8 +55,8 @@ class KohlrauschWilliamsWatts(AbstractConstitutiveEqn):
 datadir = Path("open_data/PAAM hydrogel/speed 5")
 name = "PAA_speed 5_4nN"
 
-#datadir = Path("open_data/Interphase rep 2")
-#name = "interphase_speed 2_2nN"
+# datadir = Path("open_data/Interphase rep 2")
+# name = "interphase_speed 2_2nN"
 (app, ret), (f_app, f_ret) = import_data(
     datadir / f"{name}.tab", datadir / f"{name}.tsv"
 )
@@ -127,6 +127,28 @@ app_interp = make_smoothed_cubic_spline(app)
 ret_interp = make_smoothed_cubic_spline(ret)
 
 
+def calculate_sensitivity_matrix(
+    objective_fn, x_data, y_data, params, approx_hessian: bool = True
+):
+    """Given an objective function with the signature objective_fn(x_data, y_data, params) -> FloatScalar,
+    compute the associated sensitivity_matrix.
+
+    The specifics of the calculation depends on the value of the parameter approx_hessian.
+
+    If True, the sensitivity matrix is given by S_{ij} = \frac{\partial L}{\partial \log\theta_i}\frac{\partial L}{\partial \log\theta_j},
+    which corresponds to the Levenberg-Marquardt approximation of the Hessian of the objective function.
+
+    If False, the sensitivity matrix is the Hessian of the objective function: S_{ij} = \frac{\partial^2 L}{\partial \log\theta_i \partial \log\theta_j},
+    which is also the observed Fisher information matrix.
+    """
+
+    def obj_from_logparams(log_params):
+        params = jtu.tree_map(jnp.exp, log_params)
+        return objective_fn(x_data, y_data, params)
+
+    return obj_from_logparams(jtu.tree_map(jnp.log, params))
+
+
 def sensitvity_scalar(t, constit, app, tip):
 
     @partial(eqx.filter_vmap, in_axes=(None, 0, None, None))
@@ -169,9 +191,9 @@ color_palette = np.array(
 fig, ax = plt.subplots(1, 1, figsize=(3, 3))
 
 
-def plot_eigval_spectrum(ax, eigvals, *args, **hlines_kwargs):
+def plot_eigval_spectrum(ax, eigvals, bar_offset=0.0, bar_length=1.0, **hlines_kwargs):
     eigvals = jnp.clip(jnp.asarray(eigvals), 1e-50)
-    ax.hlines(jnp.log10(eigvals), *args, **hlines_kwargs)
+    ax.hlines(jnp.log10(eigvals), bar_offset, bar_offset + bar_length, **hlines_kwargs)
     return ax
 
 

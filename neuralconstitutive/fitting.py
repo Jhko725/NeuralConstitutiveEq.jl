@@ -28,13 +28,6 @@ from neuralconstitutive.utils import smooth_data
 ConstitEqn = TypeVar("ConstitEqn", bound=AbstractConstitutiveEqn)
 
 
-def create_subsampled_interpolants(indent, num_knots: int = 10):
-    interp = scinterp.make_smoothing_spline(indent.time, indent.depth)
-    t_knots = jnp.linspace(indent.time[0], indent.time[-1], num_knots)
-    d_knots = interp(t_knots)
-    return interpolate_indentation(Indentation(t_knots, d_knots))
-
-
 def constitutive_to_params(
     constit, bounds: Sequence[tuple[float, float] | None]
 ) -> lmfit.Parameters:
@@ -59,12 +52,13 @@ def constitutive_to_params(
 def params_to_constitutive(params: lmfit.Parameters, constit: ConstitEqn) -> ConstitEqn:
     return type(constit)(**params.valuesdict())
 
+
 @eqx.filter_jit
 def _residual_app(constit, args):
     t_app, app_interp, tip, force = args
     f_pred = _force_approach(t_app, constit, app_interp, tip)
     return f_pred - force
-    
+
 
 def fit_approach_lmfit(
     constitutive: AbstractConstitutiveEqn,
@@ -79,12 +73,13 @@ def fit_approach_lmfit(
     def residual(params: lmfit.Parameters, args) -> Float[Array, " N"]:
         constit = params_to_constitutive(params, constitutive)
         return _residual_app(constit, args)
-    
+
     args = (approach.time, app_interp, tip, force)
     minimizer = lmfit.Minimizer(residual, params, fcn_args=(args,))
     result = minimizer.minimize()
     constit_fit = params_to_constitutive(result.params, constitutive)
     return constit_fit, result, minimizer
+
 
 @eqx.filter_jit
 def _residual_jax(constit, args):
@@ -93,6 +88,7 @@ def _residual_jax(constit, args):
     f_pred_ret = _force_retract(t_ret, constit, (app_interp, ret_interp), tip)
 
     return jnp.concatenate((f_pred_app, f_pred_ret)) - jnp.concatenate(forces)
+
 
 def fit_all_lmfit(
     constitutive: AbstractConstitutiveEqn,
@@ -107,7 +103,6 @@ def fit_all_lmfit(
     # ret_interp = interpolate_indentation(ret)
     app_interp = make_smoothed_cubic_spline(app)
     ret_interp = make_smoothed_cubic_spline(ret)
-
 
     def residual(params: lmfit.Parameters, args) -> Float[Array, " N"]:
         constit = params_to_constitutive(params, constitutive)
