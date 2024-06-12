@@ -62,21 +62,21 @@ name = "PAA_speed 5_4nN"
 )
 # app, ret = smooth_data(app), smooth_data(ret)
 # %%
-fig, axes = plt.subplots(1, 3, figsize=(10, 3))
+fig, axes = plt.subplots(1, 3, figsize=(12, 3.6))
 axes[0] = plot_indentation(axes[0], app, marker=".")
 axes[0] = plot_indentation(axes[0], ret, marker=".")
-axes[0].set_xlabel("Time[s]")
-axes[0].set_ylabel("Indentation[m]")
+axes[0].set_xlabel("Time [s]")
+axes[0].set_ylabel("Indentation [m]")
 
 axes[1].plot(app.time, f_app, ".")
 axes[1].plot(ret.time, f_ret, ".")
-axes[1].set_xlabel("Time[s]")
-axes[1].set_ylabel("Force[N]")
+axes[1].set_xlabel("Time [s]")
+axes[1].set_ylabel("Force [N]")
 
 axes[2].plot(app.depth, f_app, ".")
 axes[2].plot(ret.depth, f_ret, ".")
-axes[2].set_xlabel("Indentation[m]")
-axes[2].set_ylabel("Force[N]")
+axes[2].set_xlabel("Indentation [m]")
+axes[2].set_ylabel("Force [N]")
 
 # %%
 
@@ -89,26 +89,24 @@ ret = jtu.tree_map(lambda leaf: leaf[: len(f_ret)], ret)
 # %%
 tip = Spherical(2.5e-6 / h_m)  # Scale tip radius by the length scale we are using
 
-fig, axes = plt.subplots(1, 3, figsize=(10, 3))
+fig, axes = plt.subplots(1, 3, figsize=(12, 3.6))
 axes[0] = plot_indentation(axes[0], app, marker=".")
 axes[0] = plot_indentation(axes[0], ret, marker=".")
-axes[0].set_xlabel("Time")
-axes[0].set_ylabel("Indentation")
+axes[0].set_xlabel("Time [norm.]")
+axes[0].set_ylabel("Indentation [norm.]")
 
 axes[1].plot(app.time, f_app, ".")
 axes[1].plot(ret.time, f_ret, ".")
-axes[1].set_xlabel("Time")
-axes[1].set_ylabel("Force")
+axes[1].set_xlabel("Time [norm.]")
+axes[1].set_ylabel("Force [norm.]")
 
 axes[2].plot(app.depth, f_app, ".")
 axes[2].plot(ret.depth, f_ret, ".")
-axes[2].set_xlabel("Indentation")
-axes[2].set_ylabel("Force")
+axes[2].set_xlabel("Indentation [norm.]")
+axes[2].set_ylabel("Force [norm.]")
 
 app_interp = make_smoothed_cubic_spline(app)
 ret_interp = make_smoothed_cubic_spline(ret)
-
-
 # %%
 def residual_approach(constit, args):
     t_data, f_data, interp, tip = args
@@ -143,7 +141,7 @@ def fit_all_optx(constit, t_data, f_data, interp, tip, bounds):
 # %%
 ## Fit using Latin hypercube sampling
 N_SAMPLES = 5
-fit_type = "approach"
+fit_type = "both"
 ### Hertzian model
 
 constit_htz = Hertzian(10.0)
@@ -185,31 +183,6 @@ sls_fits, sls_results, sls_initvals, sls_minimizers = fit_indentation_data(
     init_val_sampler=sampler,
     n_samples=N_SAMPLES,
 )
-# %%
-constit_sls = StandardLinearSolid(1.0, 1.0, 1.0)
-out = fit_approach_optx(constit_sls, app.time, f_app, app_interp, tip, None)
-# %%
-out.E1
-# %%
-out2, _, _ = fit_approach_lmfit(constit_sls, bounds_sls, tip, app, f_app)
-# %%
-out2.E1
-# %%
-constit_sls = StandardLinearSolid(1.0, 1.0, 1.0)
-out = fit_all_optx(
-    constit_sls,
-    (app.time, ret.time),
-    (f_app, f_ret),
-    (app_interp, ret_interp),
-    tip,
-    None,
-)
-# %%
-out = jtu.tree_map(lambda x: 10**x, out)
-out.E1
-# %%
-out2, _, _ = fit_all_lmfit(constit_sls, bounds_sls, tip, (app, ret), (f_app, f_ret))
-out2.E1
 # %%
 ### Modified PLR model
 N_SAMPLES = 5**3
@@ -300,16 +273,13 @@ gm_fits, gm_results, gm_initvals, gm_minimizers = fit_indentation_data(
     n_samples=N_SAMPLES,
 )
 # %%
-for r in mplr_results:
-    display(r)
-
+# for r in mplr_results:
+#     display(r)
 # %%
 def get_best_model(results: list[lmfit.minimizer.MinimizerResult]):
     bic = np.array([res.bic if res is not None else np.inf for res in results])
     ind_best = np.argmin(bic)
     return results[ind_best], ind_best
-
-
 # %%
 ## Assess results
 
@@ -325,9 +295,9 @@ for results, fits, name in zip(
     fits_best[name] = fits[ind_best]
 
 # %%
-for r in results_best.values():
-    display(r)
-    print(r.uvars)
+# for r in results_best.values():
+#     display(r)
+#     print(r.uvars)
 
 # %%
 import equinox as eqx
@@ -369,13 +339,13 @@ for n, c_ind in zip(names, color_inds):
         app.time, f_app_fits[n], color=color, linewidth=1.0, label=n, alpha=0.9
     )
     axes[0].plot(ret.time, f_ret_fits[n], color=color, linewidth=1.0, alpha=0.9)
-    axes[0].set_xlabel("Time (norm.)")
-    axes[0].set_ylabel("Force (norm.)")
+    axes[0].set_xlabel("Time [norm.]")
+    axes[0].set_ylabel("Force [norm.]")
 
     axes[1] = plot_relaxation_fn(axes[1], constit, app.time, color=color, linewidth=1.0)
     axes[1].set_ylim((0, 0.8))
-    axes[1].set_xlabel("Time (norm.)")
-    axes[1].set_ylabel("$G(t)$ (norm.)")
+    axes[1].set_xlabel("Time [norm.]")
+    axes[1].set_ylabel("$G(t)$ [norm.]")
 
     handles, labels = axes[0].get_legend_handles_labels()
     axes[1].legend(handles, labels, ncols=2, loc="upper right")
@@ -383,7 +353,7 @@ for ax in axes:
     ax.grid(ls="--", color="lightgray")
 
 # fig.suptitle("PAAM hydrogel curve fit results: Entire curve")
-fig.suptitle("Agarose hydrogel curve fit results: Approach only")
+fig.suptitle("PAAM hydrogel curve fit results: Entire")
 
 # %%
 bics = jnp.asarray([results_best[n].bic for n in names])
@@ -543,16 +513,22 @@ ax.grid(ls="--", color="lightgray")
 ## LatinHyperCube Sampling demonstration
 #%%
 ## Hertz model
+params_htz= ['E_0']
 fig, ax = plt.subplots(1, len(htz_initvals[1]), figsize=(10, 5))
 for i in jnp.arange(len(htz_initvals[1])):
+    ax.set_ylabel("Frequency")
+    ax.set_xlabel(f"${params_htz[i]}$")
     if sampler.sample_scale[i] is True:
-        ax.hist(np.log10(htz_initvals[:, i]))
+        ax.hist(np.log10(htz_initvals[:, i]), color=color_palette[5])
+        ax.grid(ls="--", color="darkgray")
     else:
-        ax.hist(htz_initvals[:, i])
+        ax.hist(htz_initvals[:, i], color=color_palette[5])
+        ax.set_xscale("log")
+        ax.grid(ls="--", color="darkgray")
 
-fig, axes = plt.subplots(1, 2, figsize=(7, 3))
-axes[0].plot(app.time, f_app, ".", color="royalblue", label="Data", alpha=0.5)
-axes[0].plot(ret.time, f_ret, ".", color="royalblue", alpha=0.5)
+fig, axes = plt.subplots(1, 2, figsize=(12, 3.6))
+axes[0].plot(app.time, f_app, ".", color=color_palette[5], label="Data", alpha=0.5)
+axes[0].plot(ret.time, f_ret, ".", color=color_palette[5], alpha=0.5)
 
 for i, (constit_fit, result) in enumerate(zip(htz_fits, tqdm(htz_results))):
     f_fit_app = _force_approach(app.time, constit, app_interp, tip)
@@ -562,18 +538,34 @@ for i, (constit_fit, result) in enumerate(zip(htz_fits, tqdm(htz_results))):
     axes[0].plot(ret.time, f_fit_ret, color="gray", alpha=0.7)
 
     axes[1] = plot_relaxation_fn(axes[1], constit_fit, app.time, color="gray")
+
+    axes[0].grid(ls="--", color="darkgray")
+    axes[0].set_xlabel("Time[norm.]")
+    axes[0].set_ylabel("Force[norm.]")
+    
+    axes[1].grid(ls="--", color="darkgray")
+    axes[1].set_xlabel("Time[norm.]")
+    axes[1].set_ylabel("$G(t)$[norm.]")
+
+fig.suptitle(f"Hertz model curve fit results(LHS=$5^{len(params_htz)}$) : Entire", position=(0.5,1.0+0.01)) 
 #%%
 ## SLS model
+params_sls= ['E_1', 'E_{\infty}', '\\tau']
 fig, axes = plt.subplots(1, len(sls_initvals[1]), figsize=(10, 5))
 for i, ax in enumerate(axes):
+    ax.set_xlabel(f"${params_sls[i]}$")
     if sampler.sample_scale[i] is True:
-        ax.hist(np.log10(sls_initvals[:, i]))
+        ax.hist(np.log10(sls_initvals[:, i]), color=color_palette[5])
+        ax.grid(ls="--", color="darkgray")
     else:
-        ax.hist(sls_initvals[:, i])
+        ax.hist(sls_initvals[:, i], color=color_palette[5])
+        ax.set_xscale("log")
+        ax.grid(ls="--", color="darkgray")
+axes[0].set_ylabel("Frequency")
 
-fig, axes = plt.subplots(1, 2, figsize=(7, 3))
-axes[0].plot(app.time, f_app, ".", color="royalblue", label="Data", alpha=0.5)
-axes[0].plot(ret.time, f_ret, ".", color="royalblue", alpha=0.5)
+fig, axes = plt.subplots(1, 2, figsize=(12, 3.6))
+axes[0].plot(app.time, f_app, ".", color=color_palette[5], label="Data", alpha=0.5)
+axes[0].plot(ret.time, f_ret, ".", color=color_palette[5], alpha=0.5)
 
 for i, (constit_fit, result) in enumerate(zip(sls_fits, tqdm(sls_results))):
     f_fit_app = _force_approach(app.time, constit, app_interp, tip)
@@ -582,20 +574,38 @@ for i, (constit_fit, result) in enumerate(zip(sls_fits, tqdm(sls_results))):
     axes[0].plot(app.time, f_fit_app, color="gray", alpha=0.7)
     axes[0].plot(ret.time, f_fit_ret, color="gray", alpha=0.7)
 
-    axes[1] = plot_relaxation_fn(axes[1], constit_fit, app.time, color="gray")  
+    axes[1] = plot_relaxation_fn(axes[1], constit_fit, app.time, color="gray") 
+    
+    axes[0].grid(ls="--", color="darkgray")
+    axes[0].set_xlabel("Time[norm.]")
+    axes[0].set_ylabel("Force[norm.]")
+    
+    axes[1].grid(ls="--", color="darkgray")
+    axes[1].set_xlabel("Time[norm.]")
+    axes[1].set_ylabel("$G(t)$[norm.]") 
+
+fig.suptitle(f"SLS model curve fit results(LHS=$5^{len(params_sls)}$) : Entire", position=(0.5,1.0+0.01)) 
 #%%
 ## MPLR model
+params_mplr= ['E_0', '\\alpha', 't_0']
 fig, axes = plt.subplots(1, len(mplr_initvals[1]), figsize=(10, 5))
 for i, ax in enumerate(axes):
+    ax.set_xlabel(f"${params_mplr[i]}$")
     if sampler.sample_scale[i] is True:
-        ax.hist(np.log10(mplr_initvals[:, i]))
+        ax.hist(np.log10(mplr_initvals[:, i]), color=color_palette[5])
+        ax.grid(ls="--", color="darkgray")
     else:
-        ax.hist(mplr_initvals[:, i])
+        ax.hist(mplr_initvals[:, i], color=color_palette[5])
+        ax.grid(ls="--", color="darkgray")
+
+axes[0].set_ylabel("Frequency")
+axes[0].set_xscale("log")
+axes[2].set_xscale("log")
 
 
-fig, axes = plt.subplots(1, 2, figsize=(7, 3))
-axes[0].plot(app.time, f_app, ".", color="royalblue", label="Data", alpha=0.5)
-axes[0].plot(ret.time, f_ret, ".", color="royalblue", alpha=0.5)
+fig, axes = plt.subplots(1, 2, figsize=(12, 3.6))
+axes[0].plot(app.time, f_app, ".", color=color_palette[5], label="Data", alpha=0.5)
+axes[0].plot(ret.time, f_ret, ".", color=color_palette[5], alpha=0.5)
 
 for i, (constit_fit, result) in enumerate(zip(mplr_fits, tqdm(mplr_results))):
     f_fit_app = _force_approach(app.time, constit, app_interp, tip)
@@ -605,19 +615,37 @@ for i, (constit_fit, result) in enumerate(zip(mplr_fits, tqdm(mplr_results))):
     axes[0].plot(ret.time, f_fit_ret, color="gray", alpha=0.7)
 
     axes[1] = plot_relaxation_fn(axes[1], constit_fit, app.time, color="gray")    
+
+    axes[0].grid(ls="--", color="darkgray")
+    axes[0].set_xlabel("Time[norm.]")
+    axes[0].set_ylabel("Force[norm.]")
+    
+    axes[1].grid(ls="--", color="darkgray")
+    axes[1].set_xlabel("Time[norm.]")
+    axes[1].set_ylabel("$G(t)$[norm.]")
+
+fig.suptitle(f"MPLR model curve fit results(LHS=$5^{len(params_mplr)}$) : Entire", position=(0.5,1.0+0.01)) 
 #%%
 ## KWW model
+params_kww = ['E_1','E_{\infty}','\\tau', '\\beta']
 fig, axes = plt.subplots(1, len(kww_initvals[1]), figsize=(10, 5))
 for i, ax in enumerate(axes):
+    ax.set_xlabel(f"${params_kww[i]}$")
     if sampler.sample_scale[i] is True:
-        ax.hist(np.log10(kww_initvals[:, i]))
+        ax.hist(np.log10(kww_initvals[:, i], ), color=color_palette[5])
+        ax.grid(ls="--", color="darkgray")
     else:
-        ax.hist(kww_initvals[:, i])
+        ax.hist(kww_initvals[:, i], color=color_palette[5])
+        ax.grid(ls="--", color="darkgray")
 
+axes[0].set_ylabel("Frequency")
+axes[0].set_xscale("log")
+axes[1].set_xscale("log")
+axes[2].set_xscale("log")
 
-fig, axes = plt.subplots(1, 2, figsize=(7, 3))
-axes[0].plot(app.time, f_app, ".", color="royalblue", label="Data", alpha=0.5)
-axes[0].plot(ret.time, f_ret, ".", color="royalblue", alpha=0.5)
+fig, axes = plt.subplots(1, 2, figsize=(12, 3.6))
+axes[0].plot(app.time, f_app, ".", color=color_palette[5], label="Data", alpha=0.5)
+axes[0].plot(ret.time, f_ret, ".", color=color_palette[5], alpha=0.5)
 
 for i, (constit_fit, result) in enumerate(zip(kww_fits, tqdm(kww_results))):
     f_fit_app = _force_approach(app.time, constit, app_interp, tip)
@@ -628,18 +656,36 @@ for i, (constit_fit, result) in enumerate(zip(kww_fits, tqdm(kww_results))):
 
     axes[1] = plot_relaxation_fn(axes[1], constit_fit, app.time, color="gray")
 
+    axes[0].grid(ls="--", color="darkgray")
+    axes[0].set_xlabel("Time[norm.]")
+    axes[0].set_ylabel("Force[norm.]")
+    
+    axes[1].grid(ls="--", color="darkgray")
+    axes[1].set_xlabel("Time[norm.]")
+    axes[1].set_ylabel("$G(t)$[norm.]")
+    
+fig.suptitle(f"KWW model curve fit results(LHS=$5^{len(params_kww)}$) : Entire", position=(0.5,1.0+0.01)) 
+
 #%%
 ## FKV model
+params_fkv= ['E_1','E_{\infty}', '\\alpha']
 fig, axes = plt.subplots(1, len(fkv_initvals[1]), figsize=(10, 5))
 for i, ax in enumerate(axes):
+    ax.set_xlabel(f"${params_fkv[i]}$")
     if sampler.sample_scale[i] is True:
-        ax.hist(np.log10(fkv_initvals[:, i]))
+        ax.hist(np.log10(fkv_initvals[:, i]), color=color_palette[5])
+        ax.grid(ls="--", color="darkgray")
     else:
-        ax.hist(fkv_initvals[:, i])
+        ax.hist(fkv_initvals[:, i], color=color_palette[5])
+        ax.grid(ls="--", color="darkgray")
 
-fig, axes = plt.subplots(1, 2, figsize=(7, 3))
-axes[0].plot(app.time, f_app, ".", color="royalblue", label="Data", alpha=0.5)
-axes[0].plot(ret.time, f_ret, ".", color="royalblue", alpha=0.5)
+axes[0].set_ylabel("Frequency")
+axes[0].set_xscale("log")
+axes[1].set_xscale("log")
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 3.6))
+axes[0].plot(app.time, f_app, ".", color=color_palette[5], label="Data", alpha=0.5)
+axes[0].plot(ret.time, f_ret, ".", color=color_palette[5], alpha=0.5)
 
 for i, (constit_fit, result) in enumerate(zip(fkv_fits, tqdm(fkv_results))):
     f_fit_app = _force_approach(app.time, constit, app_interp, tip)
@@ -649,25 +695,52 @@ for i, (constit_fit, result) in enumerate(zip(fkv_fits, tqdm(fkv_results))):
     axes[0].plot(ret.time, f_fit_ret, color="gray", alpha=0.7)
 
     axes[1] = plot_relaxation_fn(axes[1], constit_fit, app.time, color="gray")
+
+    axes[0].grid(ls="--", color="darkgray")
+    axes[0].set_xlabel("Time[norm.]")
+    axes[0].set_ylabel("Force[norm.]")
+    
+    axes[1].grid(ls="--", color="darkgray")
+    axes[1].set_xlabel("Time[norm.]")
+    axes[1].set_ylabel("$G(t)$[norm.]")
+
+fig.suptitle(f"FKV model curve fit results(LHS=$5^{len(params_fkv)}$) : Entire", position=(0.5,1.0+0.01)) 
 #%%
 ## GM model
-fig, axes = plt.subplots(1, len(gm_initvals[1]), figsize=(10, 5))
+params_gm= ['E_1','E_2','E_{\infty}','\\tau_1','\\tau_2']
+fig, axes = plt.subplots(1, len(gm_initvals[1]), figsize=(12, 6))
 for i, ax in enumerate(axes):
+    ax.set_xlabel(f"${params_gm[i]}$")
     if sampler.sample_scale[i] is True:
-        ax.hist(np.log10(gm_initvals[:, i]))
+        ax.hist(np.log10(gm_initvals[:, i]), color=color_palette[5])
+        ax.grid(ls="--", color="darkgray")
     else:
-        ax.hist(gm_initvals[:, i])
+        ax.hist(gm_initvals[:, i], color=color_palette[5])
+        ax.grid(ls="--", color="darkgray")
+        ax.set_xscale("log")
+        
+axes[0].set_ylabel("Frequency")
 
-fig, axes = plt.subplots(1, 2, figsize=(7, 3))
-axes[0].plot(app.time, f_app, ".", color="royalblue", label="Data", alpha=0.5)
-axes[0].plot(ret.time, f_ret, ".", color="royalblue", alpha=0.5)
+fig, axes = plt.subplots(1, 2, figsize=(12, 3.6))
+axes[0].plot(app.time, f_app, ".", color=color_palette[5], label="Data", alpha=0.5)
+axes[0].plot(ret.time, f_ret, ".", color=color_palette[5], alpha=0.5)
 
 for i, (constit_fit, result) in enumerate(zip(gm_fits, tqdm(gm_results))):
     f_fit_app = _force_approach(app.time, constit, app_interp, tip)
     f_fit_ret = _force_retract(ret.time, constit, (app_interp, ret_interp), tip)
 
-    axes[0].plot(app.time, f_fit_app, color="gray", alpha=0.7)
-    axes[0].plot(ret.time, f_fit_ret, color="gray", alpha=0.7)
+    axes[0].plot(app.time, f_fit_app, color="gray", alpha=0.5)
+    axes[0].plot(ret.time, f_fit_ret, color="gray", alpha=0.5)
 
     axes[1] = plot_relaxation_fn(axes[1], constit_fit, app.time, color="gray")
+    
+    axes[0].grid(ls="--", color="darkgray")
+    axes[0].set_xlabel("Time[norm.]")
+    axes[0].set_ylabel("Force[norm.]")
+    
+    axes[1].grid(ls="--", color="darkgray")
+    axes[1].set_xlabel("Time[norm.]")
+    axes[1].set_ylabel("$G(t)$[norm.]")
+
+fig.suptitle(f"GM model curve fit results(LHS=$5^{len(params_gm)}$) : Entire", position=(0.5,1.0+0.01))     
 # %%
