@@ -494,6 +494,7 @@ def plot_eigval_spectrum(ax, eigvals, bar_offset=0.0, bar_length=1.0, **hlines_k
     return ax
 
 
+eigvecs = []
 fig, ax = plt.subplots(1, 1, figsize=(4.5, 4))
 names = ["Hertzian", "SLS", "MPLR", "KWW", "FKV", "GM"]
 color_inds = [0, 3, 6, 8, 5, 1]
@@ -506,6 +507,7 @@ for n, c_ind in zip(names, color_inds):
 
     S_matrix = sensitivity_matrix(constit)
     eigval, eigvec = jnp.linalg.eigh(S_matrix)
+    eigvecs.append(eigvecs)
     eigval = eigval / jnp.max(eigval)
     print(eigval)
     x_tick_positions.append(bar_offset + 0.5 * bar_length)
@@ -517,3 +519,5 @@ ax.set_xticks(x_tick_positions, names)
 ax.set_ylabel("log (eigenvalues)")
 ax.grid(ls="--", color="lightgray")
 # %%
+eigvecs = dict(zip(names, eigvecs))
+print(eigvecs)
