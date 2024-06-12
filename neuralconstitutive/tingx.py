@@ -78,8 +78,8 @@ def force_retract_scalar(
     return integrate(force_integrand, method, 0, t1, args)
 
 
-_force_approach = eqx.filter_vmap(force_approach_scalar, in_axes=(0, None, None, None))
-_force_retract = eqx.filter_vmap(force_retract_scalar, in_axes=(0, None, None, None))
+_force_approach = eqx.filter_jit(eqx.filter_vmap(force_approach_scalar, in_axes=(0, None, None, None)))
+_force_retract = eqx.filter_jit(eqx.filter_vmap(force_retract_scalar, in_axes=(0, None, None, None)))
 
 
 @eqx.filter_jit

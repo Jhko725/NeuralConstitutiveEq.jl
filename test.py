@@ -154,7 +154,7 @@ def fit_all_optx(constit, t_data, f_data, interp, tip, bounds):
 # %%
 ## Fit using Latin hypercube sampling
 N_SAMPLES = 100
-fit_type = "all"
+fit_type = "approach"
 ### Hertzian model
 
 constit_htz = Hertzian(10.0)
@@ -424,7 +424,8 @@ def process_uvars(uvars: dict):
                 uvars_[k] = v
         return uvars_
     else:
-        raise ValueError("Unexpected combination of parameters!")
+        #raise ValueError("Unexpected combination of parameters!")
+        return uvars
 
 
 def rel_error(uvar):
@@ -435,8 +436,13 @@ def get_param_rel_errors(uvars: dict):
     uvars = deepcopy(uvars)
     rel_errors = []
     # First element of the list is always that of E0
-    E0 = uvars.pop("E0")
-    rel_errors.append(rel_error(E0))
+    try:
+        E0 = uvars.pop("E0")
+        rel_errors.append(rel_error(E0))
+        
+    except KeyError:
+        pass
+
     for v in uvars.values():
         rel_errors.append(rel_error(v))
     return np.asarray(rel_errors)
@@ -445,7 +451,8 @@ def get_param_rel_errors(uvars: dict):
 relative_errors = {}
 for name, res in results_best.items():
     display(res)
-    uvars_proc = process_uvars(res.uvars)
+    #uvars_proc = process_uvars(res.uvars)
+    uvars_proc = res.uvars
     relative_errors[name] = get_param_rel_errors(uvars_proc)
 
 

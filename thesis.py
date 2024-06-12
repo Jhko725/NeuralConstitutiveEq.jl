@@ -128,7 +128,7 @@ def fit_all_optx(constit, t_data, f_data, interp, tip, bounds):
 # %%
 #%%
 ## Fit using Latin hypercube sampling
-N_SAMPLES = 100
+N_SAMPLES = 5**1
 fit_type = "approach"
 ### Hertzian model
 
@@ -136,7 +136,7 @@ constit_htz = Hertzian(10.0)
 bounds_htz = [(0, 1e3)]
 
 sampler = LatinHypercubeSampler(
-    sample_range=[(1e-2, 1e2)],
+    sample_range=[(1e-5, 1e5)],
     sample_scale=["log"],
 )
 
@@ -151,13 +151,13 @@ htz_fits, htz_results, htz_initvals, htz_minimizers = fit_indentation_data(
     n_samples=N_SAMPLES,
 )
 # %%
-# %%
 ### SLS model
+N_SAMPLES = 5**3
 constit_sls = StandardLinearSolid(10.0, 10.0, 10.0)
 bounds_sls = [(0, 1e3), (0, 1e3), (1e-6, 1e3)]
-#%%
+
 sampler = LatinHypercubeSampler(
-    sample_range=[(1e-2, 1e2), (1e-2, 1e2), (1e-5, 1e2)],
+    sample_range=[(1e-5, 1e5), (1e-5, 1e5), (1e-5, 1e5)],
     sample_scale=["log", "log", "log"],
 )
 sls_fits, sls_results, sls_initvals, sls_minimizers = fit_indentation_data(
@@ -190,12 +190,12 @@ out2, _, _ = fit_all_lmfit(constit_sls, bounds_sls, tip, (app, ret), (f_app, f_r
 out2.E1
 #%%
 ### Modified PLR model
-
+N_SAMPLES = 5**3
 constit_mplr = ModifiedPowerLaw(10.0, 10.0, 10.0)
 bounds_mplr = [(0, 1e3), (0.0, 1.0), (1e-6, 1e3)]
 
 sampler = LatinHypercubeSampler(
-    sample_range=[(1e-2, 1e2), (0.0, 1.0), (1e-5, 1e2)],
+    sample_range=[(1e-5, 1e5), (0.0, 1.0), (1e-5, 1e5)],
     sample_scale=["log", "linear", "log"],
 )
 mplr_fits, mplr_results, mplr_initvals, mplr_minimizers = fit_indentation_data(
@@ -211,15 +211,15 @@ mplr_fits, mplr_results, mplr_initvals, mplr_minimizers = fit_indentation_data(
 
 # %%
 ### KWW model
-
+N_SAMPLES = 5**4
 constit_kww = KohlrauschWilliamsWatts(10.0, 10.0, 10.0, 10.0)
 bounds_kww = [(0, 1e3), (0, 1e3), (1e-6, 1e3), (0.0, 1.0)]
 
 sampler = LatinHypercubeSampler(
     sample_range=[
-        (1e-2, 1e2),
-        (1e-2, 1e2),
-        (1e-5, 1e2),
+        (1e-5, 1e5),
+        (1e-5, 1e5),
+        (1e-5, 1e5),
         (0.0, 1.0),
     ],
     sample_scale=["log", "log", "log", "linear"],
@@ -237,14 +237,14 @@ kww_fits, kww_results, kww_initvals, kww_minimizers = fit_indentation_data(
 )
 #%%
 ### Fractional Kelvin Voigt model
-
+N_SAMPLES = 5**3
 constit_fkv = FractionalKelvinVoigt(10.0, 10.0, 10.0)
 bounds_fkv = [(0, 1e3), (0, 1e3), (0.0, 1.0)]
 
 sampler = LatinHypercubeSampler(
     sample_range=[
-        (1e-2, 1e2),
-        (1e-2, 1e2),
+        (1e-5, 1e5),
+        (1e-5, 1e5),
         (0.0, 1.0)
     ],
     sample_scale=["log", "log", "linear"],
@@ -262,16 +262,17 @@ fkv_fits, fkv_results, fkv_initvals, fkv_minimizers = fit_indentation_data(
 )
 #%%
 ### Generalized Maxwell model
+N_SAMPLES = 5**2
 constit_gm = GeneralizedMaxwellmodel(10.0, 10.0, 10.0, 10.0, 10.0)
 bounds_gm = [(0, 1e3), (0, 1e3), (0, 1e3), (0, 1e3), (0, 1e3)]
 
 sampler = LatinHypercubeSampler(
     sample_range=[
-        (1e-2, 1e2),
-        (1e-2, 1e2),
-        (1e-2, 1e2),
-        (1e-2, 1e2),
-        (1e-2, 1e2)
+        (1e-5, 1e5),
+        (1e-5, 1e5),
+        (1e-5, 1e5),
+        (1e-5, 1e5),
+        (1e-5, 1e5)
     ],
     sample_scale=["log", "log", "log", "log", "log"],
 )
@@ -287,37 +288,29 @@ gm_fits, gm_results, gm_initvals, gm_minimizers = fit_indentation_data(
     n_samples=N_SAMPLES,
 )
 # %%
-for r in mplr_results:
-    display(r)
-
+# for r in mplr_results:
+#     display(r)
 # %%
-
-
 def get_best_model(results: list[lmfit.minimizer.MinimizerResult]):
     bic = np.array([res.bic if res is not None else np.inf for res in results])
     ind_best = np.argmin(bic)
     return results[ind_best], ind_best
-
-
 # %%
 ## Assess results
-
 results_best = {}
 fits_best = {}
 for results, fits, name in zip(
-    [sls_results, mplr_results, kww_results, htz_results],#, fkv_results, gm_results],
-    [sls_fits, mplr_fits, kww_fits, htz_fits],#, fkv_fits, gm_fits],
-    ["SLS", "MPLR", "KWW", "Hertzian"],#, "FKV", "GM"],
+    [sls_results, mplr_results, kww_results, htz_results, fkv_results, gm_results],
+    [sls_fits, mplr_fits, kww_fits, htz_fits, fkv_fits, gm_fits],
+    ["SLS", "MPLR", "KWW", "Hertzian", "FKV", "GM"],
 ):
     res_best, ind_best = get_best_model(results)
     results_best[name] = res_best
     fits_best[name] = fits[ind_best]
-
-# %%
+#%%
 for r in results_best.values():
-    display(r)
-    print(r.uvars)
-
+    # display(r)
+    # print(r.uvars)
 # %%
 import equinox as eqx
 from neuralconstitutive.ting import _force_approach, _force_retract
@@ -347,8 +340,8 @@ color_palette = np.array(
         [0.64313725, 0.14117647, 0.48627451],
     ]
 )
-names = ["Hertzian", "SLS", "MPLR", "KWW"]#, "FKV", "GM"]
-color_inds = [0, 3, 6, 8]#, 5, 1]
+names = ["Hertzian", "SLS", "MPLR", "KWW", "FKV", "GM"]
+color_inds = [0, 3, 6, 8, 5, 1]
 for n, c_ind in zip(names, color_inds):
     constit = fits_best[n]
 
@@ -370,7 +363,7 @@ for n, c_ind in zip(names, color_inds):
 for ax in axes:
     ax.grid(ls="--", color="lightgray")
 
-fig.suptitle("PAAM hydrogel curve fit results: Entire curve")
+fig.suptitle("PAAM hydrogel curve fit results: Approach curve")
 # fig.suptitle("pAAm hydrogel curve fit results: Approach only")
 # %%
 bics = jnp.asarray([results_best[n].bic for n in names])
@@ -380,7 +373,7 @@ ax.grid(ls="--", color="darkgray")
 ax.bar(names, bics, color=colors)
 ax.set_yscale("symlog")
 ax.set_ylabel("BIC")
-ax.set_title("PAAM hydrogel, Entire")
+ax.set_title("PAAM hydrogel, Approach")
 # %%
 def process_uvars(uvars: dict):
     if "E0" in uvars:
@@ -411,13 +404,12 @@ def get_param_rel_errors(uvars: dict):
         rel_errors.append(rel_error(v))
     return np.asarray(rel_errors)
 
-
+#%%
 relative_errors = {}
 for name, res in results_best.items():
     display(res)
     uvars_proc = process_uvars(res.uvars)
     relative_errors[name] = get_param_rel_errors(uvars_proc)
-
 
 fig, ax = plt.subplots(1, 1, figsize=(4, 3))
 names = ("Hertzian", "MPLR", "SLS", "KWW")#, "FKV", "GM")
@@ -432,11 +424,108 @@ xticklabels = ax.get_xticks().tolist()
 xticklabels[0] = "0 ($E_0$)"
 ax.set_xticklabels(xticklabels)
 ax.grid(ls="--", color="lightgray")
+#%%
+fig, ax = plt.subplots(1, 1, figsize=(4, 3))
+names = ("Hertzian", "MPLR", "SLS", "KWW", "FKV", "GM")
+for name in names:
+    ax.plot(relative_errors[name], ".-", label=name, linewidth=1.0, markersize=8.0)
+ax.set_yscale("log", base=10)
+ax.set_xticks([0, 1, 2, 3])
+ax.legend()
+ax.set_ylabel("Relative error")
+ax.set_xlabel("Model free parameters")
+xticklabels = ax.get_xticks().tolist()
+ax.set_xticklabels(xticklabels)
+ax.grid(ls="--", color="lightgray")
 
 # %%
 for n, r in results_best.items():
     print(n, r.params.valuesdict())
 # %%
+
+
+
+
+
+
+
+
+#%%
+## LatinHyperCube Sampling demonstration
+#%%
+## Hertz model
+fig, ax = plt.subplots(1, len(htz_initvals[1]), figsize=(10, 5))
+for i in jnp.arange(len(htz_initvals[1])):
+    if sampler.sample_scale[i] is True:
+        ax.hist(np.log10(htz_initvals[:, i]))
+    else:
+        ax.hist(htz_initvals[:, i])
+
+fig, axes = plt.subplots(1, 2, figsize=(7, 3))
+axes[0].plot(app.time, f_app, ".", color="royalblue", label="Data", alpha=0.5)
+axes[0].plot(ret.time, f_ret, ".", color="royalblue", alpha=0.5)
+
+for i, (constit_fit, result) in enumerate(zip(htz_fits, tqdm(htz_results))):
+    f_fit_app = _force_approach(app.time, constit, app_interp, tip)
+    f_fit_ret = _force_retract(ret.time, constit, (app_interp, ret_interp), tip)
+
+    axes[0].plot(app.time, f_fit_app, color="gray", alpha=0.7)
+    axes[0].plot(ret.time, f_fit_ret, color="gray", alpha=0.7)
+
+    axes[1] = plot_relaxation_fn(axes[1], constit_fit, app.time, color="gray")
+#%%
+## SLS model
+fig, axes = plt.subplots(1, len(sls_initvals[1]), figsize=(10, 5))
+for i, ax in enumerate(axes):
+    if sampler.sample_scale[i] is True:
+        ax.hist(np.log10(sls_initvals[:, i]))
+    else:
+        ax.hist(sls_initvals[:, i])
+
+fig, axes = plt.subplots(1, 2, figsize=(7, 3))
+axes[0].plot(app.time, f_app, ".", color="royalblue", label="Data", alpha=0.5)
+axes[0].plot(ret.time, f_ret, ".", color="royalblue", alpha=0.5)
+
+for i, (constit_fit, result) in enumerate(zip(sls_fits, tqdm(sls_results))):
+    f_fit_app = _force_approach(app.time, constit, app_interp, tip)
+    f_fit_ret = _force_retract(ret.time, constit, (app_interp, ret_interp), tip)
+
+    axes[0].plot(app.time, f_fit_app, color="gray", alpha=0.7)
+    axes[0].plot(ret.time, f_fit_ret, color="gray", alpha=0.7)
+
+    axes[1] = plot_relaxation_fn(axes[1], constit_fit, app.time, color="gray")  
+#%%
+## MPLR model
+fig, axes = plt.subplots(1, len(mplr_initvals[1]), figsize=(10, 5))
+for i, ax in enumerate(axes):
+    if sampler.sample_scale[i] is True:
+        ax.hist(np.log10(mplr_initvals[:, i]))
+    else:
+        ax.hist(mplr_initvals[:, i])
+
+
+fig, axes = plt.subplots(1, 2, figsize=(7, 3))
+axes[0].plot(app.time, f_app, ".", color="royalblue", label="Data", alpha=0.5)
+axes[0].plot(ret.time, f_ret, ".", color="royalblue", alpha=0.5)
+
+for i, (constit_fit, result) in enumerate(zip(mplr_fits, tqdm(mplr_results))):
+    f_fit_app = _force_approach(app.time, constit, app_interp, tip)
+    f_fit_ret = _force_retract(ret.time, constit, (app_interp, ret_interp), tip)
+
+    axes[0].plot(app.time, f_fit_app, color="gray", alpha=0.7)
+    axes[0].plot(ret.time, f_fit_ret, color="gray", alpha=0.7)
+
+    axes[1] = plot_relaxation_fn(axes[1], constit_fit, app.time, color="gray")    
+#%%
+## KWW model
+fig, axes = plt.subplots(1, len(kww_initvals[1]), figsize=(10, 5))
+for i, ax in enumerate(axes):
+    if sampler.sample_scale[i] is True:
+        ax.hist(np.log10(kww_initvals[:, i]))
+    else:
+        ax.hist(kww_initvals[:, i])
+
+
 fig, axes = plt.subplots(1, 2, figsize=(7, 3))
 axes[0].plot(app.time, f_app, ".", color="royalblue", label="Data", alpha=0.5)
 axes[0].plot(ret.time, f_ret, ".", color="royalblue", alpha=0.5)
@@ -449,4 +538,47 @@ for i, (constit_fit, result) in enumerate(zip(kww_fits, tqdm(kww_results))):
     axes[0].plot(ret.time, f_fit_ret, color="gray", alpha=0.7)
 
     axes[1] = plot_relaxation_fn(axes[1], constit_fit, app.time, color="gray")
+
 #%%
+## FKV model
+fig, axes = plt.subplots(1, len(fkv_initvals[1]), figsize=(10, 5))
+for i, ax in enumerate(axes):
+    if sampler.sample_scale[i] is True:
+        ax.hist(np.log10(fkv_initvals[:, i]))
+    else:
+        ax.hist(fkv_initvals[:, i])
+
+fig, axes = plt.subplots(1, 2, figsize=(7, 3))
+axes[0].plot(app.time, f_app, ".", color="royalblue", label="Data", alpha=0.5)
+axes[0].plot(ret.time, f_ret, ".", color="royalblue", alpha=0.5)
+
+for i, (constit_fit, result) in enumerate(zip(fkv_fits, tqdm(fkv_results))):
+    f_fit_app = _force_approach(app.time, constit, app_interp, tip)
+    f_fit_ret = _force_retract(ret.time, constit, (app_interp, ret_interp), tip)
+
+    axes[0].plot(app.time, f_fit_app, color="gray", alpha=0.7)
+    axes[0].plot(ret.time, f_fit_ret, color="gray", alpha=0.7)
+
+    axes[1] = plot_relaxation_fn(axes[1], constit_fit, app.time, color="gray")
+#%%
+## GM model
+fig, axes = plt.subplots(1, len(gm_initvals[1]), figsize=(10, 5))
+for i, ax in enumerate(axes):
+    if sampler.sample_scale[i] is True:
+        ax.hist(np.log10(gm_initvals[:, i]))
+    else:
+        ax.hist(gm_initvals[:, i])
+
+fig, axes = plt.subplots(1, 2, figsize=(7, 3))
+axes[0].plot(app.time, f_app, ".", color="royalblue", label="Data", alpha=0.5)
+axes[0].plot(ret.time, f_ret, ".", color="royalblue", alpha=0.5)
+
+for i, (constit_fit, result) in enumerate(zip(gm_fits, tqdm(gm_results))):
+    f_fit_app = _force_approach(app.time, constit, app_interp, tip)
+    f_fit_ret = _force_retract(ret.time, constit, (app_interp, ret_interp), tip)
+
+    axes[0].plot(app.time, f_fit_app, color="gray", alpha=0.7)
+    axes[0].plot(ret.time, f_fit_ret, color="gray", alpha=0.7)
+
+    axes[1] = plot_relaxation_fn(axes[1], constit_fit, app.time, color="gray")
+# %%
