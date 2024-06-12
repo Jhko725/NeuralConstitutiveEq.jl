@@ -52,11 +52,11 @@ from neuralconstitutive.utils import (
 # %%
 jax.config.update("jax_enable_x64", True)
 
-# datadir = Path("open_data/PAAM hydrogel/speed 5")
-# name = "PAA_speed 5_4nN"
+datadir = Path("open_data/PAAM hydrogel/speed 5")
+name = "PAA_speed 5_4nN"
 
-datadir = Path("data/abuhattum_iscience_2022/Agarose/speed 5")
-name = "Agarose_speed 5_2nN"
+# datadir = Path("data/abuhattum_iscience_2022/Agarose/speed 5")
+# name = "Agarose_speed 5_2nN"
 (app, ret), (f_app, f_ret) = import_data(
     datadir / f"{name}.tab", datadir / f"{name}.tsv"
 )
@@ -79,6 +79,8 @@ axes[2].set_xlabel("Indentation[m]")
 axes[2].set_ylabel("Force[N]")
 
 # %%
+
+## Abstract fitting into three parts: init / step / postprocess
 f_ret = jnp.clip(f_ret, 0.0)
 (f_app, f_ret), _ = normalize_forces(f_app, f_ret)
 (app, ret), (_, h_m) = normalize_indentations(app, ret)
@@ -105,36 +107,43 @@ axes[2].set_ylabel("Force")
 
 app_interp = make_smoothed_cubic_spline(app)
 ret_interp = make_smoothed_cubic_spline(ret)
-#%%
+
+
+# %%
 def residual_approach(constit, args):
     t_data, f_data, interp, tip = args
     constit = jtu.tree_map(lambda x: x**10, constit)
     f_app_pred = _force_approach(t_data, constit, interp, tip)
     return f_app_pred - f_data
 
+
 def residual_all(constit, args):
     t_data, f_data, interps, tip = args
     t_app, t_ret = t_data
     f_app_pred = _force_approach(t_app, constit, interps[0], tip)
     f_ret_pred = _force_retract(t_ret, constit, interps, tip)
-    return jnp.concatenate((f_app_pred, f_ret_pred))-jnp.concatenate(f_data)
+    return jnp.concatenate((f_app_pred, f_ret_pred)) - jnp.concatenate(f_data)
+
 
 def fit_approach_optx(constit, t_data, f_data, interp, tip, bounds):
-    solver = optx.LevenbergMarquardt(rtol=1e-6, atol= 1e-6)
+    solver = optx.LevenbergMarquardt(rtol=1e-6, atol=1e-6)
     args = (t_data, f_data, interp, tip)
     sol = optx.least_squares(residual_approach, solver, constit, args, max_steps=1000)
     return sol.value
 
+
 def fit_all_optx(constit, t_data, f_data, interp, tip, bounds):
-    solver = optx.LevenbergMarquardt(rtol=1e-6, atol= 1e-6)
+    solver = optx.LevenbergMarquardt(rtol=1e-6, atol=1e-6)
     args = (t_data, f_data, interp, tip)
     sol = optx.least_squares(residual_all, solver, constit, args, max_steps=1000)
     return sol.value
+
+
 # %%
-#%%
+# %%
 ## Fit using Latin hypercube sampling
 N_SAMPLES = 100
-fit_type = "approach"
+fit_type = "all"
 ### Hertzian model
 
 constit_htz = Hertzian(10.0)
@@ -160,7 +169,7 @@ htz_fits, htz_results, htz_initvals, htz_minimizers = fit_indentation_data(
 ### SLS model
 constit_sls = StandardLinearSolid(10.0, 10.0, 10.0)
 bounds_sls = [(0, 1e3), (0, 1e3), (1e-6, 1e3)]
-#%%
+# %%
 sampler = LatinHypercubeSampler(
     sample_range=[(1e-2, 1e2), (1e-2, 1e2), (1e-5, 1e2)],
     sample_scale=["log", "log", "log"],
@@ -175,25 +184,32 @@ sls_fits, sls_results, sls_initvals, sls_minimizers = fit_indentation_data(
     init_val_sampler=sampler,
     n_samples=N_SAMPLES,
 )
-#%%
+# %%
 constit_sls = StandardLinearSolid(1.0, 1.0, 1.0)
 out = fit_approach_optx(constit_sls, app.time, f_app, app_interp, tip, None)
 # %%
 out.E1
-#%%
+# %%
 out2, _, _ = fit_approach_lmfit(constit_sls, bounds_sls, tip, app, f_app)
-#%%
+# %%
 out2.E1
-#%%
+# %%
 constit_sls = StandardLinearSolid(1.0, 1.0, 1.0)
-out = fit_all_optx(constit_sls, (app.time, ret.time), (f_app, f_ret), (app_interp, ret_interp), tip, None)
-#%%
-out=jtu.tree_map(lambda x: 10**x, out)
+out = fit_all_optx(
+    constit_sls,
+    (app.time, ret.time),
+    (f_app, f_ret),
+    (app_interp, ret_interp),
+    tip,
+    None,
+)
+# %%
+out = jtu.tree_map(lambda x: 10**x, out)
 out.E1
-#%%
+# %%
 out2, _, _ = fit_all_lmfit(constit_sls, bounds_sls, tip, (app, ret), (f_app, f_ret))
 out2.E1
-#%%
+# %%
 ### Modified PLR model
 
 constit_mplr = ModifiedPowerLaw(10.0, 10.0, 10.0)
@@ -240,18 +256,14 @@ kww_fits, kww_results, kww_initvals, kww_minimizers = fit_indentation_data(
     init_val_sampler=sampler,
     n_samples=N_SAMPLES,
 )
-#%%
+# %%
 ### Fractional Kelvin Voigt model
 
 constit_fkv = FractionalKelvinVoigt(10.0, 10.0, 10.0)
 bounds_fkv = [(0, 1e3), (0, 1e3), (0.0, 1.0)]
 
 sampler = LatinHypercubeSampler(
-    sample_range=[
-        (1e-2, 1e2),
-        (1e-2, 1e2),
-        (0.0, 1.0)
-    ],
+    sample_range=[(1e-2, 1e2), (1e-2, 1e2), (0.0, 1.0)],
     sample_scale=["log", "log", "linear"],
 )
 
@@ -265,19 +277,13 @@ fkv_fits, fkv_results, fkv_initvals, fkv_minimizers = fit_indentation_data(
     init_val_sampler=sampler,
     n_samples=N_SAMPLES,
 )
-#%%
+# %%
 ### Generalized Maxwell model
 constit_gm = GeneralizedMaxwellmodel(10.0, 10.0, 10.0, 10.0, 10.0)
 bounds_gm = [(0, 1e3), (0, 1e3), (0, 1e3), (0, 1e3), (0, 1e3)]
 
 sampler = LatinHypercubeSampler(
-    sample_range=[
-        (1e-2, 1e2),
-        (1e-2, 1e2),
-        (1e-2, 1e2),
-        (1e-2, 1e2),
-        (1e-2, 1e2)
-    ],
+    sample_range=[(1e-2, 1e2), (1e-2, 1e2), (1e-2, 1e2), (1e-2, 1e2), (1e-2, 1e2)],
     sample_scale=["log", "log", "log", "log", "log"],
 )
 
@@ -310,9 +316,9 @@ def get_best_model(results: list[lmfit.minimizer.MinimizerResult]):
 results_best = {}
 fits_best = {}
 for results, fits, name in zip(
-    [sls_results, mplr_results, kww_results, htz_results],#, fkv_results, gm_results],
-    [sls_fits, mplr_fits, kww_fits, htz_fits],#, fkv_fits, gm_fits],
-    ["SLS", "MPLR", "KWW", "Hertzian"],#, "FKV", "GM"],
+    [sls_results, mplr_results, kww_results, htz_results, fkv_results, gm_results],
+    [sls_fits, mplr_fits, kww_fits, htz_fits, fkv_fits, gm_fits],
+    ["SLS", "MPLR", "KWW", "Hertzian", "FKV", "GM"],
 ):
     res_best, ind_best = get_best_model(results)
     results_best[name] = res_best
@@ -326,7 +332,7 @@ for r in results_best.values():
 # %%
 import equinox as eqx
 
-from neuralconstitutive.fitting import create_subsampled_interpolants
+# from neuralconstitutive.fitting import create_subsampled_interpolants
 from neuralconstitutive.ting import _force_approach, _force_retract
 
 f_app_fits = {}
@@ -353,8 +359,8 @@ color_palette = np.array(
         [0.64313725, 0.14117647, 0.48627451],
     ]
 )
-names = ["Hertzian", "SLS", "MPLR", "KWW"]#, "FKV", "GM"]
-color_inds = [0, 3, 6, 8]#, 5, 1]
+names = ["Hertzian", "SLS", "MPLR", "KWW", "FKV", "GM"]
+color_inds = [0, 3, 6, 8, 5, 1]
 for n, c_ind in zip(names, color_inds):
     constit = fits_best[n]
 
@@ -388,6 +394,8 @@ ax.bar(names, bics, color=colors)
 ax.set_yscale("symlog")
 ax.set_ylabel("BIC")
 ax.set_title("PAAM hydrogel, Entire")
+
+
 # %%
 def process_uvars(uvars: dict):
     if "E0" in uvars:
@@ -427,7 +435,7 @@ for name, res in results_best.items():
 
 
 fig, ax = plt.subplots(1, 1, figsize=(4, 3))
-names = ("Hertzian", "MPLR", "SLS", "KWW")#, "FKV", "GM")
+names = ("Hertzian", "MPLR", "SLS", "KWW")  # , "FKV", "GM")
 for name in names:
     ax.plot(relative_errors[name], ".-", label=name, linewidth=1.0, markersize=8.0)
 ax.set_yscale("log", base=10)
@@ -443,4 +451,69 @@ ax.grid(ls="--", color="lightgray")
 # %%
 for n, r in results_best.items():
     print(n, r.params.valuesdict())
+
+
+# %%
+def residual(constit):
+    f_app_pred = _force_approach(app.time, constit, app_interp, tip)
+    if fit_type == "approach":
+        return f_app - f_app_pred
+    else:
+        f_ret_pred = _force_retract(ret.time, constit, (app_interp, ret_interp), tip)
+        f_pred = jnp.concatenate((f_app_pred, f_ret_pred), axis=0)
+        f = jnp.concatenate((f_app, f_ret), axis=0)
+        return f - f_pred
+
+
+def sensitivity_matrix(constit):
+    log_constit = jtu.tree_map(jnp.log, constit)
+
+    def residual_from_logconstit(log_constit):
+        constit = jtu.tree_map(jnp.exp, log_constit)
+        return residual(constit)
+
+    D_res = jax.jacfwd(residual_from_logconstit)(log_constit)
+    D_res_array, _ = jtu.tree_flatten(D_res)
+    D_res_array = jnp.stack(D_res_array, axis=-1)
+
+    S = jax.vmap(jnp.outer)(D_res_array, D_res_array)
+    return jnp.sum(S, axis=0)
+
+
+S_matrix = sensitivity_matrix(fits_best["SLS"])
+eigval, eigvec = jnp.linalg.eigh(S_matrix)
+# %%
+print(eigval)
+print(eigvec)
+
+
+# %%
+def plot_eigval_spectrum(ax, eigvals, bar_offset=0.0, bar_length=1.0, **hlines_kwargs):
+    eigvals = jnp.clip(jnp.asarray(eigvals), 1e-50)
+    ax.hlines(jnp.log10(eigvals), bar_offset, bar_offset + bar_length, **hlines_kwargs)
+    return ax
+
+
+fig, ax = plt.subplots(1, 1, figsize=(4.5, 4))
+names = ["Hertzian", "SLS", "MPLR", "KWW", "FKV", "GM"]
+color_inds = [0, 3, 6, 8, 5, 1]
+bar_offset = 0.0
+bar_length = 1.0
+x_tick_positions = []
+for n, c_ind in zip(names, color_inds):
+    constit = fits_best[n]
+    color = color_palette[c_ind]
+
+    S_matrix = sensitivity_matrix(constit)
+    eigval, eigvec = jnp.linalg.eigh(S_matrix)
+    eigval = eigval / jnp.max(eigval)
+    print(eigval)
+    x_tick_positions.append(bar_offset + 0.5 * bar_length)
+    plot_eigval_spectrum(ax, eigval, bar_offset, bar_length, color=color)
+
+    bar_offset += 2 * bar_length
+
+ax.set_xticks(x_tick_positions, names)
+ax.set_ylabel("log (eigenvalues)")
+ax.grid(ls="--", color="lightgray")
 # %%
