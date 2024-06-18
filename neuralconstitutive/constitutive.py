@@ -175,5 +175,5 @@ class PowerLaw(AbstractConstitutiveEqn):
     E0: FloatScalar = floatscalar_field()
     alpha: FloatScalar = floatscalar_field()
 
-    def relaxation_function(self, t):
+    def _relaxation_function_1D(self, t: Float[Array, " N"]) -> Float[Array, " N"]:
         return self.E0 * t ** (-self.alpha)

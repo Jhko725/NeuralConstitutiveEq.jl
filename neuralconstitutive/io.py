@@ -2,7 +2,7 @@
 import jax
 import jax.numpy as jnp
 import pandas as pd
-from jaxtyping import Array, Float
+from jaxtyping import Array, ArrayLike, Float
 import equinox as eqx
 
 from neuralconstitutive.custom_types import FileName
@@ -46,10 +46,14 @@ def import_data(
     return ForceIndentDataset(approach, retract)
 
 
+def maybe_asarray(x: ArrayLike | None) -> Array | None:
+    return x if x is None else jnp.asarray(x)
+
+
 class ForceIndentDataSegment(eqx.Module):
     time: Float[Array, " N"] = eqx.field(converter=jnp.asarray)
     depth: Float[Array, " N"] = eqx.field(converter=jnp.asarray)
-    force: Float[Array, " N"] = eqx.field(converter=jnp.asarray)
+    force: Float[Array, " N"] = eqx.field(converter=maybe_asarray)
 
 
 class ForceIndentDataset(eqx.Module):
