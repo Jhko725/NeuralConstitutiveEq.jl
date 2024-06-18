@@ -79,6 +79,7 @@ class StandardLinearSolid(AbstractConstitutiveEqn):
     def _relaxation_function_1D(self, t: Float[Array, " N"]) -> Float[Array, " N"]:
         return self.E_inf + self.E1 * jnp.exp(-t / self.tau)
 
+
 class GeneralizedMaxwellmodel(AbstractConstitutiveEqn):
     E1: FloatScalar = floatscalar_field()
     E2: FloatScalar = floatscalar_field()
@@ -91,7 +92,11 @@ class GeneralizedMaxwellmodel(AbstractConstitutiveEqn):
         return self.E_inf + self.E1 + self.E2
 
     def _relaxation_function_1D(self, t):
-        return self.E_inf + self.E1 * jnp.exp(-t / self.tau1) + self.E2 * jnp.exp(-t / self.tau2)
+        return (
+            self.E_inf
+            + self.E1 * jnp.exp(-t / self.tau1)
+            + self.E2 * jnp.exp(-t / self.tau2)
+        )
 
 
 class KohlrauschWilliamsWatts(AbstractConstitutiveEqn):
@@ -129,13 +134,14 @@ class Fung(AbstractConstitutiveEqn):
         denominator = 1 + self.C * jnp.log(self.tau2 / self.tau1)
         return self.E0 * numerator / denominator
 
+
 class FractionalKelvinVoigt(AbstractConstitutiveEqn):
     E1: FloatScalar = floatscalar_field()
     E_inf: FloatScalar = floatscalar_field()
     alpha: FloatScalar = floatscalar_field()
-    
+
     def _relaxation_function_1D(self, t: Array) -> Array:
-        return self.E_inf+self.E1*(t**(-self.alpha)/gamma(1-self.alpha))
+        return self.E_inf + self.E1 * (t ** (-self.alpha) / gamma(1 - self.alpha))
 
 
 class FromLogDiscreteSpectrum(AbstractConstitutiveEqn):
@@ -168,7 +174,6 @@ class FromLogDiscreteSpectrum(AbstractConstitutiveEqn):
 class PowerLaw(AbstractConstitutiveEqn):
     E0: FloatScalar = floatscalar_field()
     alpha: FloatScalar = floatscalar_field()
-    t0: float
 
     def relaxation_function(self, t):
-        return self.E0 * (t / self.t0) ** (-self.alpha)
+        return self.E0 * t ** (-self.alpha)

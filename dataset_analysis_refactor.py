@@ -1,23 +1,17 @@
 # %%
 # ruff: noqa: F722
-import time
 from copy import deepcopy
 from pathlib import Path
-from typing import Callable, Sequence
 
-import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
+import equinox as eqx
 import lmfit
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import optimistix as optx
 from IPython.display import display
-from jaxtyping import Bool
-from lmfit.minimizer import MinimizerResult
-from tqdm import tqdm
 
 from neuralconstitutive.constitutive import (
     FractionalKelvinVoigt,
@@ -33,80 +27,89 @@ from neuralconstitutive.fitting import (
     fit_approach_lmfit,
     fit_indentation_data,
 )
-from neuralconstitutive.io import import_data
-from neuralconstitutive.plotting import plot_indentation, plot_relaxation_fn
+from neuralconstitutive.io import import_data, truncate_adhesion, normalize_dataset
+from neuralconstitutive.plotting import plot_relaxation_fn, plot_forceindent
 from neuralconstitutive.smoothing import make_smoothed_cubic_spline
 from neuralconstitutive.ting import (
+    force_approach_scalar,
+    force_retract_scalar,
     _force_approach,
     _force_retract,
-    force_approach,
-    force_retract,
 )
 from neuralconstitutive.tipgeometry import Spherical
 from neuralconstitutive.utils import (
     normalize_forces,
     normalize_indentations,
-    smooth_data,
 )
 
 # %%
 jax.config.update("jax_enable_x64", True)
 
-datadir = Path("open_data/PAAM hydrogel/speed 5")
-name = "PAA_speed 5_4nN"
+# datadir = Path("open_data/PAAM hydrogel/speed 5")
+# name = "PAA_speed 5_4nN"
 
+datadir = Path("data/abuhattum_iscience_2022/Interphase rep 2")
+name = "interphase_speed 2_2nN"
 # datadir = Path("data/abuhattum_iscience_2022/Agarose/speed 5")
 # name = "Agarose_speed 5_2nN"
-(app, ret), (f_app, f_ret) = import_data(
-    datadir / f"{name}.tab", datadir / f"{name}.tsv"
-)
+dataset = import_data(datadir / f"{name}.tab", datadir / f"{name}.tsv")
+
+
 # app, ret = smooth_data(app), smooth_data(ret)
 # %%
-fig, axes = plt.subplots(1, 3, figsize=(10, 3))
-axes[0] = plot_indentation(axes[0], app, marker=".")
-axes[0] = plot_indentation(axes[0], ret, marker=".")
-axes[0].set_xlabel("Time[s]")
-axes[0].set_ylabel("Indentation[m]")
-
-axes[1].plot(app.time, f_app, ".")
-axes[1].plot(ret.time, f_ret, ".")
-axes[1].set_xlabel("Time[s]")
-axes[1].set_ylabel("Force[N]")
-
-axes[2].plot(app.depth, f_app, ".")
-axes[2].plot(ret.depth, f_ret, ".")
-axes[2].set_xlabel("Indentation[m]")
-axes[2].set_ylabel("Force[N]")
+fig = plot_forceindent(dataset)
+# %%
+dataset = truncate_adhesion(dataset)
+dataset, scale = normalize_dataset(dataset)
+fig = plot_forceindent(dataset)
+# %%
+tip = Spherical(
+    2.5e-6 / scale.depth
+)  # Scale tip radius by the length scale we are using
 
 # %%
+app_interp = make_smoothed_cubic_spline(dataset.approach)
+ret_interp = make_smoothed_cubic_spline(dataset.retract)
 
-## Abstract fitting into three parts: init / step / postprocess
-f_ret = jnp.clip(f_ret, 0.0)
-(f_app, f_ret), _ = normalize_forces(f_app, f_ret)
-(app, ret), (_, h_m) = normalize_indentations(app, ret)
-f_ret = jnp.trim_zeros(jnp.clip(f_ret, 0.0), "b")
-ret = jtu.tree_map(lambda leaf: leaf[: len(f_ret)], ret)
+f_app_func = eqx.Partial(force_approach_scalar, approach=app_interp, tip=tip)
+f_ret_func = eqx.Partial(
+    force_retract_scalar, indentations=(app_interp, ret_interp), tip=tip
+)
+
+
+@eqx.filter_jit
+def force_app_map(t, constit):
+    def _f_app_func(t_):
+        return f_app_func(t_, constit)
+    return jax.lax.map(_f_app_func, t)
+
+
+@eqx.filter_jit
+def force_app_vmap(t, constit):
+    return eqx.filter_vmap(f_app_func, in_axes=(0, None))(t, constit)
+
+
+@eqx.filter_jit
+def force_ret_map(t, constit):
+    def _f_ret_func(t_):
+        return f_ret_func(t_, constit)
+    return jax.lax.map(_f_ret_func, t)
+
+
+@eqx.filter_jit
+def force_ret_vmap(t, constit):
+    return eqx.filter_vmap(f_ret_func, in_axes=(0, None))(t, constit)
+
+
+constit_test = StandardLinearSolid(10.0, 10.0, 10.0)
 # %%
-tip = Spherical(2.5e-6 / h_m)  # Scale tip radius by the length scale we are using
-
-fig, axes = plt.subplots(1, 3, figsize=(10, 3))
-axes[0] = plot_indentation(axes[0], app, marker=".")
-axes[0] = plot_indentation(axes[0], ret, marker=".")
-axes[0].set_xlabel("Time")
-axes[0].set_ylabel("Indentation")
-
-axes[1].plot(app.time, f_app, ".")
-axes[1].plot(ret.time, f_ret, ".")
-axes[1].set_xlabel("Time")
-axes[1].set_ylabel("Force")
-
-axes[2].plot(app.depth, f_app, ".")
-axes[2].plot(ret.depth, f_ret, ".")
-axes[2].set_xlabel("Indentation")
-axes[2].set_ylabel("Force")
-
-app_interp = make_smoothed_cubic_spline(app)
-ret_interp = make_smoothed_cubic_spline(ret)
+%%timeit
+f_app_pred1 = force_app_map(dataset.t_app, constit_test)
+f_app_pred1.block_until_ready()
+# %%
+%%timeit
+f_app_pred2 = force_app_vmap(dataset.t_app, constit_test)
+f_app_pred2.block_until_ready()
 
 
 # %%
@@ -157,8 +160,7 @@ sampler = LatinHypercubeSampler(
 htz_fits, htz_results, htz_initvals, htz_minimizers = fit_indentation_data(
     constit_htz,
     bounds_htz,
-    (app, ret),
-    (f_app, f_ret),
+    dataset,
     tip,
     fit_type=fit_type,
     init_val_sampler=sampler,
@@ -177,8 +179,7 @@ sampler = LatinHypercubeSampler(
 sls_fits, sls_results, sls_initvals, sls_minimizers = fit_indentation_data(
     constit_sls,
     bounds_sls,
-    (app, ret),
-    (f_app, f_ret),
+    dataset,
     tip,
     fit_type=fit_type,
     init_val_sampler=sampler,
@@ -222,8 +223,7 @@ sampler = LatinHypercubeSampler(
 mplr_fits, mplr_results, mplr_initvals, mplr_minimizers = fit_indentation_data(
     constit_mplr,
     bounds_mplr,
-    (app, ret),
-    (f_app, f_ret),
+    dataset,
     tip,
     fit_type=fit_type,
     init_val_sampler=sampler,
@@ -249,8 +249,7 @@ sampler = LatinHypercubeSampler(
 kww_fits, kww_results, kww_initvals, kww_minimizers = fit_indentation_data(
     constit_kww,
     bounds_kww,
-    (app, ret),
-    (f_app, f_ret),
+    dataset,
     tip,
     fit_type=fit_type,
     init_val_sampler=sampler,
@@ -270,8 +269,7 @@ sampler = LatinHypercubeSampler(
 fkv_fits, fkv_results, fkv_initvals, fkv_minimizers = fit_indentation_data(
     constit_fkv,
     bounds_fkv,
-    (app, ret),
-    (f_app, f_ret),
+    dataset,
     tip,
     fit_type=fit_type,
     init_val_sampler=sampler,
@@ -290,8 +288,7 @@ sampler = LatinHypercubeSampler(
 gm_fits, gm_results, gm_initvals, gm_minimizers = fit_indentation_data(
     constit_gm,
     bounds_gm,
-    (app, ret),
-    (f_app, f_ret),
+    dataset,
     tip,
     fit_type=fit_type,
     init_val_sampler=sampler,
@@ -316,9 +313,9 @@ def get_best_model(results: list[lmfit.minimizer.MinimizerResult]):
 results_best = {}
 fits_best = {}
 for results, fits, name in zip(
-    [sls_results, mplr_results, kww_results, htz_results, fkv_results, gm_results],
-    [sls_fits, mplr_fits, kww_fits, htz_fits, fkv_fits, gm_fits],
-    ["SLS", "MPLR", "KWW", "Hertzian", "FKV", "GM"],
+    [htz_results, sls_results],  # mplr_results, kww_results, fkv_results, gm_results],
+    [htz_fits, sls_fits],  # mplr_fits, kww_fits,fkv_fits, gm_fits],
+    ["Hertzian", "SLS"],  # , "MPLR", "KWW", "FKV", "GM"],
 ):
     res_best, ind_best = get_best_model(results)
     results_best[name] = res_best
@@ -330,21 +327,28 @@ for r in results_best.values():
     print(r.uvars)
 
 # %%
-import equinox as eqx
 
 # from neuralconstitutive.fitting import create_subsampled_interpolants
-from neuralconstitutive.ting import _force_approach, _force_retract
 
 f_app_fits = {}
 f_ret_fits = {}
 
+t_app, t_ret = dataset.approach.time, dataset.retract.time
 for name, constit in fits_best.items():
-    f_app_fits[name] = _force_approach(app.time, constit, app_interp, tip)
-    f_ret_fits[name] = _force_retract(ret.time, constit, (app_interp, ret_interp), tip)
+    f_app_fits[name] = _force_approach(t_app, constit, app_interp, tip)
+    f_ret_fits[name] = _force_retract(t_ret, constit, (app_interp, ret_interp), tip)
 # %%
 fig, axes = plt.subplots(1, 2, figsize=(7, 3), constrained_layout=True)
-axes[0].plot(app.time, f_app, ".", color="k", markersize=1.0, label="Data", alpha=0.7)
-axes[0].plot(ret.time, f_ret, ".", color="k", markersize=1.0, alpha=0.7)
+axes[0].plot(
+    t_app,
+    dataset.approach.force,
+    ".",
+    color="k",
+    markersize=1.0,
+    label="Data",
+    alpha=0.7,
+)
+axes[0].plot(t_ret, dataset.retract.force, ".", color="k", markersize=1.0, alpha=0.7)
 
 color_palette = np.array(
     [
@@ -359,20 +363,18 @@ color_palette = np.array(
         [0.64313725, 0.14117647, 0.48627451],
     ]
 )
-names = ["Hertzian", "SLS", "MPLR", "KWW", "FKV", "GM"]
-color_inds = [0, 3, 6, 8, 5, 1]
+names = ["Hertzian", "SLS"]  # , "MPLR", "KWW", "FKV", "GM"]
+color_inds = [0, 3]  # , 6, 8, 5, 1]
 for n, c_ind in zip(names, color_inds):
     constit = fits_best[n]
 
     color = color_palette[c_ind]
-    axes[0].plot(
-        app.time, f_app_fits[n], color=color, linewidth=1.0, label=n, alpha=0.9
-    )
-    axes[0].plot(ret.time, f_ret_fits[n], color=color, linewidth=1.0, alpha=0.9)
+    axes[0].plot(t_app, f_app_fits[n], color=color, linewidth=1.0, label=n, alpha=0.9)
+    axes[0].plot(t_ret, f_ret_fits[n], color=color, linewidth=1.0, alpha=0.9)
     axes[0].set_xlabel("Time (norm.)")
     axes[0].set_ylabel("Force (norm.)")
 
-    axes[1] = plot_relaxation_fn(axes[1], constit, app.time, color=color, linewidth=1.0)
+    axes[1] = plot_relaxation_fn(axes[1], constit, t_app, color=color, linewidth=1.0)
     axes[1].set_ylim((0, 0.8))
     axes[1].set_xlabel("Time (norm.)")
     axes[1].set_ylabel("$G(t)$ (norm.)")
@@ -455,13 +457,13 @@ for n, r in results_best.items():
 
 # %%
 def residual(constit):
-    f_app_pred = _force_approach(app.time, constit, app_interp, tip)
+    f_app_pred = _force_approach(t_app, constit, app_interp, tip)
     if fit_type == "approach":
-        return f_app - f_app_pred
+        return dataset.approach.force - f_app_pred
     else:
-        f_ret_pred = _force_retract(ret.time, constit, (app_interp, ret_interp), tip)
+        f_ret_pred = _force_retract(t_ret, constit, (app_interp, ret_interp), tip)
         f_pred = jnp.concatenate((f_app_pred, f_ret_pred), axis=0)
-        f = jnp.concatenate((f_app, f_ret), axis=0)
+        f = jnp.concatenate((dataset.approach.force, dataset.retract.force), axis=0)
         return f - f_pred
 
 
@@ -495,8 +497,8 @@ def plot_eigval_spectrum(ax, eigvals, bar_offset=0.0, bar_length=1.0, **hlines_k
 
 
 fig, ax = plt.subplots(1, 1, figsize=(4.5, 4))
-names = ["Hertzian", "SLS", "MPLR", "KWW", "FKV", "GM"]
-color_inds = [0, 3, 6, 8, 5, 1]
+names = ["Hertzian", "SLS"]  # , "MPLR", "KWW", "FKV", "GM"]
+color_inds = [0, 3]  # , 6, 8, 5, 1]
 bar_offset = 0.0
 bar_length = 1.0
 x_tick_positions = []

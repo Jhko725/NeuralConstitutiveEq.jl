@@ -24,6 +24,7 @@ from neuralconstitutive.ting import (
 from neuralconstitutive.smoothing import make_smoothed_cubic_spline
 from neuralconstitutive.tipgeometry import AbstractTipGeometry
 from neuralconstitutive.utils import smooth_data
+from neuralconstitutive.io import ForceIndentDataset
 
 ConstitEqn = TypeVar("ConstitEqn", bound=AbstractConstitutiveEqn)
 
@@ -63,18 +64,18 @@ def _residual_app(constit, args):
 def fit_approach_lmfit(
     constitutive: AbstractConstitutiveEqn,
     bounds: Sequence[tuple[float, float] | None],
+    dataset: ForceIndentDataset,
     tip: AbstractTipGeometry,
-    approach: Indentation,
-    force: Float[Array, " {len(approach)}"],
 ):
     params = constitutive_to_params(constitutive, bounds)
-    app_interp = make_smoothed_cubic_spline(approach)
+    app = dataset.approach
+    app_interp = make_smoothed_cubic_spline(app)
 
     def residual(params: lmfit.Parameters, args) -> Float[Array, " N"]:
         constit = params_to_constitutive(params, constitutive)
         return _residual_app(constit, args)
 
-    args = (approach.time, app_interp, tip, force)
+    args = (app.time, app_interp, tip, app.force)
     minimizer = lmfit.Minimizer(residual, params, fcn_args=(args,))
     result = minimizer.minimize()
     constit_fit = params_to_constitutive(result.params, constitutive)
@@ -93,14 +94,12 @@ def _residual_jax(constit, args):
 def fit_all_lmfit(
     constitutive: AbstractConstitutiveEqn,
     bounds: Sequence[tuple[float, float] | None],
+    dataset: ForceIndentDataset,
     tip: AbstractTipGeometry,
-    indentations: tuple[Indentation, Indentation],
-    forces: tuple[Array, Array],
 ):
     params = constitutive_to_params(constitutive, bounds)
-    app, ret = indentations
-    # app_interp = interpolate_indentation(app)
-    # ret_interp = interpolate_indentation(ret)
+
+    app, ret = dataset.approach, dataset.retract
     app_interp = make_smoothed_cubic_spline(app)
     ret_interp = make_smoothed_cubic_spline(ret)
 
@@ -108,7 +107,7 @@ def fit_all_lmfit(
         constit = params_to_constitutive(params, constitutive)
         return _residual_jax(constit, args)
 
-    args = (app.time, ret.time, app_interp, ret_interp, tip, forces)
+    args = (app.time, ret.time, app_interp, ret_interp, tip, (app.force, ret.force))
     minimizer = lmfit.Minimizer(residual, params, fcn_args=(args,))
     result = minimizer.minimize()
     constit_fit = params_to_constitutive(result.params, constitutive)
@@ -148,8 +147,7 @@ FitType = Literal["approach", "both"]
 def fit_indentation_data(
     constit,
     bounds,
-    indentations,
-    forces,
+    dataset,
     tip,
     fit_type: FitType = "approach",
     init_val_sampler=None,
@@ -157,11 +155,8 @@ def fit_indentation_data(
 ):
     if fit_type == "approach":
         fit_func = fit_approach_lmfit
-        fit_data = (indentations[0], forces[0])
-
     else:
         fit_func = fit_all_lmfit
-        fit_data = (indentations, forces)
 
     constit_fits = []
     results = []
@@ -177,7 +172,7 @@ def fit_indentation_data(
         else:
             constit_ = constit
         try:
-            constit_fit, result, minimizer = fit_func(constit_, bounds, tip, *fit_data)
+            constit_fit, result, minimizer = fit_func(constit_, bounds, dataset, tip)
         except ValueError:
             print(f"Fit #{i} aborted")
             constit_fit, result, minimizer = None, None, None

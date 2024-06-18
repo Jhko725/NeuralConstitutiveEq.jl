@@ -17,24 +17,25 @@ from neuralconstitutive.constitutive import (
     StandardLinearSolid,
 )
 from neuralconstitutive.indentation import Indentation
-from neuralconstitutive.io import import_data
+from neuralconstitutive.io import import_data, truncate_adhesion, normalize_dataset
 from neuralconstitutive.smoothing import make_smoothed_cubic_spline
 from neuralconstitutive.ting import _force_approach, _force_retract
 from neuralconstitutive.tipgeometry import Spherical
 from neuralconstitutive.utils import normalize_forces, normalize_indentations
+from neuralconstitutive.plotting import plot_forceindent
 
 jax.config.update("jax_enable_x64", True)
 
-prob_E_inf = distrax.Uniform(0.0, 10)
-prob_E1 = distrax.Uniform(0.0, 10)
-prob_tau = distrax.Uniform(1e-5, 1e2)
-prob_eps = distrax.Uniform(1e-6, 0.1)
+prob_E_inf = distrax.Uniform(-3, 1.5)
+prob_E1 = distrax.Uniform(-3, 1.5)
+prob_tau = distrax.Uniform(-5, 2)
+prob_eps = distrax.Uniform(-6, -1)
 
 params_test = (jnp.asarray(0.0), StandardLinearSolid(1.0, 1.0, 1.0))
 
 
 # %%
-#@partial(eqx.filter_vmap, in_axes=eqx.if_array(0))
+@partial(eqx.filter_vmap, in_axes=eqx.if_array(0))
 def log_prior_fn(params):
     sls, eps = params
     log_p_E_inf = prob_E_inf.log_prob(sls.E_inf)
@@ -44,7 +45,7 @@ def log_prior_fn(params):
     return log_p_E_inf + log_p_E1 + log_p_tau + log_p_eps
 
 
-N_samples = 500
+N_samples = 100
 
 rng_key = jax.random.PRNGKey(0)
 rng_key, *sub_keys = jax.random.split(rng_key, 5)
@@ -64,42 +65,141 @@ params_batched = make_params(E1_samples, E_inf_samples, tau_samples, eps_samples
 
 
 # %%
-
-
 datadir = Path("data/abuhattum_iscience_2022/Interphase rep 2")
 name = "interphase_speed 2_2nN"
-(app, ret), (f_app_data, f_ret_data) = import_data(
-    datadir / f"{name}.tab", datadir / f"{name}.tsv"
-)
-# f_ret_data = jnp.clip(f_ret_data, 0.0)
-f_ret_data = jnp.trim_zeros(jnp.clip(f_ret_data, 0.0), "b")
-ret = Indentation(ret.time[: len(f_ret_data)], ret.depth[: len(f_ret_data)])
-(f_app_data, f_ret_data), _ = normalize_forces(f_app_data, f_ret_data)
-(app, ret), (_, h_m) = normalize_indentations(app, ret)
+dataset = import_data(datadir / f"{name}.tab", datadir / f"{name}.tsv")
+fig = plot_forceindent(dataset)
+# %%
+dataset = truncate_adhesion(dataset)
+dataset, scale = normalize_dataset(dataset)
+fig = plot_forceindent(dataset)
+# %%
+tip = Spherical(
+    2.5e-6 / scale.depth
+)  # Scale tip radius by the length scale we are using
 
-tip = Spherical(2.5e-6 / h_m)
+# %%
+app_interp = make_smoothed_cubic_spline(dataset.approach)
+ret_interp = make_smoothed_cubic_spline(dataset.retract)
 
-app_interp = make_smoothed_cubic_spline(app)
-ret_interp = make_smoothed_cubic_spline(ret)
+t_app = dataset.approach.time
+t_ret = dataset.retract.time
+f_app_data = dataset.approach.force
+f_ret_data = dataset.retract.force
 
 
 # %%
-#@eqx.filter_jit
-#@partial(eqx.filter_vmap, in_axes=eqx.if_array(0))
+# @eqx.filter_jit
+@partial(eqx.filter_vmap, in_axes=eqx.if_array(0))
 def log_likelihood_fn(params):
     sls, eps = params
-    # sls = jtu.tree_map(lambda x: 10**x, sls)
-    f_app_pred = _force_approach(app.time, sls, app_interp, tip)
-    f_ret_pred = _force_retract(ret.time, sls, (app_interp, ret_interp), tip)
+    sls = jtu.tree_map(lambda x: 10**x, sls)
+    eps = 10**eps
+    f_app_pred = _force_approach(t_app, sls, app_interp, tip)
+    # f_ret_pred = _force_retract(t_ret, sls, (app_interp, ret_interp), tip)
     p_app = distrax.MultivariateNormalDiag(f_app_pred, jnp.ones_like(f_app_pred) * eps)
-    p_ret = distrax.MultivariateNormalDiag(f_ret_pred, jnp.ones_like(f_ret_pred) * eps)
+    # p_ret = distrax.MultivariateNormalDiag(f_ret_pred, jnp.ones_like(f_ret_pred) * eps)
     log_p_app = p_app.log_prob(f_app_data)
-    log_p_ret = p_ret.log_prob(f_ret_data)
-    return log_p_app + log_p_ret
+    # log_p_ret = p_ret.log_prob(f_ret_data)
+    return log_p_app  # + log_p_ret
+
+
+@eqx.filter_jit
+def log_posterior_fn(params):
+    return log_prior_fn(params) + log_likelihood_fn(params)
 
 
 # %%
+# params_batched = jtu.tree_map(lambda leaf: leaf[0], params_batched)
+log_posterior_fn(params_batched)
+# %%
+import time
+import blackjax
 
+num_adapt = 1000
+num_samples = 1000
+# %%
+
+warmup = blackjax.window_adaptation(
+    blackjax.nuts,
+    log_posterior_fn,
+    is_mass_matrix_diagonal=False,
+    target_acceptance_rate=0.65,
+)
+# warmup_run_func = eqx.filter_jit(warmup.run)
+rng_key, warmup_key = jax.random.split(rng_key)
+# %%
+start = time.time()
+(initial_state, tuned_parameters), _ = warmup.run(
+    warmup_key, params_batched, num_steps=num_adapt
+)
+
+# Initialise the chain
+print(f"Adaption time taken: {time.time() - start: .1f} seconds")
+
+
+# %%
+def inference_loop(rng_key, kernel, initial_state, num_samples):
+
+    @eqx.filter_jit
+    def one_step(state, rng_key):
+        jax.debug.print("key={key}", key=rng_key)
+        state, info = kernel(rng_key, state)
+        return state, (state, info)
+
+    keys = jax.random.split(rng_key, num_samples)
+    _, (states, infos) = jax.lax.scan(one_step, initial_state, keys)
+
+    return states, infos
+
+
+rng_key, sample_key = jax.random.split(rng_key)
+nuts_kernel = blackjax.nuts(log_posterior_fn, **tuned_parameters).step
+
+start = time.time()
+states, infos = inference_loop(
+    sample_key,
+    kernel=nuts_kernel,
+    initial_state=initial_state,
+    num_samples=num_samples,
+)
+print(f"Sampling time taken: {time.time() - start: .1f} seconds")
+# %%
+states.position[0].E1
+
+
+# %%
+@partial(eqx.filter_vmap, in_axes=eqx.if_array(0))
+def force_pred(params):
+    sls, eps = params
+    sls = jtu.tree_map(lambda x: 10**x, sls)
+    f_app_pred = _force_approach(t_app, sls, app_interp, tip)
+    f_ret_pred = _force_retract(t_ret, sls, (app_interp, ret_interp), tip)
+    return f_app_pred, f_ret_pred
+
+
+# %%
+f_apps, f_rets = force_pred(states.position)
+# %%
+fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+ax.plot(t_app, f_app_data, color="black", label="data")
+ax.plot(t_ret, f_ret_data, color="black")
+for i in range(num_samples):
+    ax.plot(t_app, f_apps[i], color="navy", alpha=0.2)
+    ax.plot(t_ret, f_rets[i], color="navy", alpha=0.2)
+# %%
+position = jtu.tree_map(lambda x: 10**x, states.position)
+
+fig, axes = plt.subplots(1, 4, figsize=(8, 2.5))
+axes[0].hist(position[0].E1)
+axes[1].hist(position[0].E_inf)
+axes[2].hist(position[0].tau)
+axes[3].hist(position[1])
+# %%
+import numpyro
+from numpyro import distributions as dist, infer
+
+# %%
 log_likelihood_fn(params_batched).block_until_ready()
 # %%
 log_prior_fn(params_batched)
@@ -537,7 +637,7 @@ from tqdm import tqdm
 lmbda_list = [state.lmbda]
 for i in tqdm(jnp.arange(100)):
     state = step2(
-        rng_key, state, log_prior_fn, log_likelihood_fn, ess_decrement_ratio=0.2
+        rng_key, state, log_prior_fn, log_likelihood_fn, ess_decrement_ratio=0.05
     )
     print(f"iter {i}, lmbda = {state.lmbda}, ess = {state.ess}")
     lmbda_list.append(state.lmbda)
@@ -560,6 +660,7 @@ import blackjax
 from blackjax.smc import resampling
 from blackjax.smc import extend_params
 
+
 def smc_inference_loop(rng_key, smc_kernel, initial_state):
     """Run the temepered SMC algorithm.
 
@@ -567,18 +668,19 @@ def smc_inference_loop(rng_key, smc_kernel, initial_state):
     lambda=1.
 
     """
+
     @eqx.filter_jit
     def cond(carry):
         i, state, _k = carry
         jax.debug.print("lmbda: {lmbda}", lmbda=state.lmbda)
         return state.lmbda < 1
-    
+
     @eqx.filter_jit
     def one_step(carry):
         i, state, k = carry
         k, subk = jax.random.split(k, 2)
         state, _ = smc_kernel(subk, state)
-        #jax.debug.print("E1: {E1}", E1 = state.particles[0].E1)
+        # jax.debug.print("E1: {E1}", E1 = state.particles[0].E1)
         return i + 1, state, k
 
     n_iter, final_state, _ = jax.lax.while_loop(
@@ -586,6 +688,7 @@ def smc_inference_loop(rng_key, smc_kernel, initial_state):
     )
 
     return n_iter, final_state
+
 
 inv_mass_matrix = jnp.eye(4)
 hmc_parameters = dict(
@@ -608,7 +711,7 @@ initial_smc_state = jax.random.multivariate_normal(
     init_key, jnp.zeros([1]), jnp.eye(1), (N_samples,)
 )
 initial_smc_state = tempered.init(params_batched)
-#%%
+# %%
 n_iter, smc_samples = smc_inference_loop(sample_key, tempered.step, initial_smc_state)
 print("Number of steps in the adaptive algorithm: ", n_iter.item())
 # %%
