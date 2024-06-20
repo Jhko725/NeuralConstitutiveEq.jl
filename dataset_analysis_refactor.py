@@ -48,10 +48,10 @@ jax.config.update("jax_enable_x64", True)
 # datadir = Path("open_data/PAAM hydrogel/speed 5")
 # name = "PAA_speed 5_4nN"
 
-datadir = Path("data/abuhattum_iscience_2022/Interphase rep 2")
-name = "interphase_speed 2_2nN"
-# datadir = Path("data/abuhattum_iscience_2022/Agarose/speed 5")
-# name = "Agarose_speed 5_2nN"
+#datadir = Path("data/abuhattum_iscience_2022/Interphase rep 2")
+#name = "interphase_speed 2_2nN"
+datadir = Path("data/abuhattum_iscience_2022/Agarose/speed 10")
+name = "Agarose_speed 10_2nN"
 dataset = import_data(datadir / f"{name}.tab", datadir / f"{name}.tsv")
 
 
@@ -75,8 +75,70 @@ f_app_func = eqx.Partial(force_approach_scalar, approach=app_interp, tip=tip)
 f_ret_func = eqx.Partial(
     force_retract_scalar, indentations=(app_interp, ret_interp), tip=tip
 )
+#%%
+import bayeux as bx
 
+@eqx.filter_jit
+def log_likelihood_unnormed(constit):
+    f_app_pred = eqx.filter_vmap(force_approach_scalar, in_axes=(0, None, None, None))(dataset.t_app, constit, app_interp, tip)
+    f_ret_pred = eqx.filter_vmap(force_retract_scalar, in_axes=(0, None, None, None))(dataset.t_ret, constit, (app_interp, ret_interp), tip)
+    return -jnp.sum((f_app_pred-dataset.f_app)**2)-jnp.sum((f_ret_pred-dataset.f_ret)**2)
 
+#log_likelihood_fn = eqx.filter_jit(eqx.Partial(log_likelihood_unnormed, dataset))
+#%%
+def transform_fn(sls: StandardLinearSolid):
+    return StandardLinearSolid(jnp.exp(sls.E1), jnp.exp(sls.E_inf), jnp.exp(sls.tau))
+
+model = bx.Model(log_density=log_likelihood_unnormed, test_point=StandardLinearSolid(10.0, 10.0, 10.0), transform_fn=transform_fn)
+
+#%%
+import time
+t_start = time.time()
+seed = jax.random.key(0)
+opt = model.optimize.optimistix_bfgs(seed = seed, num_particles = 10)
+print(f"Time elapsed: {time.time()-t_start}")
+#%%
+import time
+model.optimize.methods
+#%%
+sls_test = StandardLinearSolid(10.0, 10.0, 10.0)
+log_likelihood_unnormed(sls_test)
+#%%
+#%%
+from tqdm import tqdm
+f_app_fn = eqx.filter_jit(eqx.filter_vmap(f_app_func, in_axes = (0, None)))
+f_ret_fn = eqx.filter_jit(eqx.filter_vmap(f_ret_func, in_axes = (0, None)))
+
+f_app_list = []
+f_ret_list = []
+for i in tqdm(range(10)):
+    sls_fit = jtu.tree_map(lambda leaf: leaf[i], opt.params)
+    f_app_list.append(f_app_fn(dataset.t_app, sls_fit))
+    f_ret_list.append(f_ret_fn(dataset.t_ret, sls_fit))
+#%%
+fig, axes = plt.subplots(2, 1, figsize = (7, 3))
+
+ax = axes[0]
+for f_app_fit, f_ret_fit in zip(f_app_list, f_ret_list):
+    ax.plot(dataset.t_app, f_app_fit, color = "royalblue", linewidth = 1.0, alpha = 0.8)
+    ax.plot(dataset.t_ret, f_ret_fit, color = "royalblue", linewidth = 1.0, alpha = 0.8)
+
+    ax.plot(dataset.t_app, dataset.f_app, ".", color="black", alpha = 0.8)
+    ax.plot(dataset.t_ret, dataset.f_ret, ".", color="black", alpha = 0.8)
+
+ax1 = axes[1]
+for i in tqdm(range(10)):
+    sls_fit = jtu.tree_map(lambda leaf: leaf[i], opt.params)
+    ax1 = plot_relaxation_fn(ax1, sls_fit, dataset.t_app)
+#%%
+opt.params
+#%%
+model.mcmc.numpyro_nuts.get_kwargs()
+#%%
+idata = model.mcmc.numpyro_nuts(seed, dense_mass = True)
+#%%
+jax.grad(log_likelihood_unnormed)(sls_test).E1
+#%%
 @eqx.filter_jit
 def force_app_map(t, constit):
     def _f_app_func(t_):
