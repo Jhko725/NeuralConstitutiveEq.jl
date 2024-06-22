@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 
 from integrax.integrate import integrate as integratex
 from integrax.solvers import AdaptiveTrapezoid
-from neuralconstitutive.constitutive import AbstractConstitutiveEqn, StandardLinearSolid
+from neuralconstitutive.constitutive import AbstractConstitutive, StandardLinearSolid
 from neuralconstitutive.custom_types import FloatScalar
 from neuralconstitutive.indentation import Indentation, interpolate_indentation
 from neuralconstitutive.integrate import integrate
@@ -40,7 +40,7 @@ def force_integrandx(s, args):
 
 def force_approach_scalar(
     t: FloatScalar,
-    constitutive: AbstractConstitutiveEqn,
+    constitutive: AbstractConstitutive,
     approach: diffrax.AbstractPath,
     tip: AbstractTipGeometry,
 ) -> FloatScalar:
@@ -50,7 +50,7 @@ def force_approach_scalar(
 
 def force_approach_scalarx(
     t: FloatScalar,
-    constitutive: AbstractConstitutiveEqn,
+    constitutive: AbstractConstitutive,
     approach: diffrax.AbstractPath,
     tip: AbstractTipGeometry,
 ) -> FloatScalar:
@@ -206,7 +206,7 @@ def t1_integrandx(s, args):
 
 def t1_scalar(
     t: FloatScalar,
-    constitutive: AbstractConstitutiveEqn,
+    constitutive: AbstractConstitutive,
     indentations: tuple[diffrax.AbstractPath, diffrax.AbstractPath],
     *,
     newton_iterations: int = 5,
@@ -242,7 +242,7 @@ def t1_grad(t, constit, indentations):
 
 def t1_scalarx(
     t: FloatScalar,
-    constitutive: AbstractConstitutiveEqn,
+    constitutive: AbstractConstitutive,
     indentations: tuple[diffrax.AbstractPath, diffrax.AbstractPath],
     *,
     newton_iterations: int = 5,
@@ -313,7 +313,7 @@ args = (app_interp, ret_interp)
 # %%
 def force_retract_scalar(
     t: FloatScalar,
-    constitutive: AbstractConstitutiveEqn,
+    constitutive: AbstractConstitutive,
     indentations: tuple[diffrax.AbstractPath, diffrax.AbstractPath],
     tip: AbstractTipGeometry,
 ) -> FloatScalar:
@@ -335,7 +335,7 @@ def f_ret_grad(t, constit, indentations, tip):
 
 def force_retract_scalarx(
     t: FloatScalar,
-    constitutive: AbstractConstitutiveEqn,
+    constitutive: AbstractConstitutive,
     indentations: tuple[diffrax.AbstractPath, diffrax.AbstractPath],
     tip: AbstractTipGeometry,
 ) -> FloatScalar:

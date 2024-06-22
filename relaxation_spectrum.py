@@ -7,7 +7,7 @@ from neuralconstitutive.constitutive import (
     FromLogDiscreteSpectrum,
     StandardLinearSolid,
     ModifiedPowerLaw,
-    AbstractConstitutiveEqn,
+    AbstractConstitutive,
 )
 from neuralconstitutive.relaxation_spectrum import HonerkampWeeseBimodal
 from neuralconstitutive.indentation import Indentation, interpolate_indentation
@@ -161,7 +161,7 @@ from functools import partial
 import equinox as eqx
 
 
-class NeuralConstitutive(AbstractConstitutiveEqn):
+class NeuralConstitutive(AbstractConstitutive):
     nn: FullyConnectedNetwork
 
     def relaxation_function(self, t: FloatScalar) -> FloatScalar:
@@ -200,7 +200,7 @@ def l2_loss(x: Array, x_pred: Array) -> float:
 
 
 def loss_total(
-    model: AbstractConstitutiveEqn,
+    model: AbstractConstitutive,
     trajectories,
     forces: tuple[Array, Array],
     tip,

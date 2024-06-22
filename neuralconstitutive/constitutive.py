@@ -7,7 +7,7 @@ import equinox as eqx
 import jax.numpy as jnp
 from jax.scipy.special import exp1
 
-from neuralconstitutive.custom_types import FloatScalar, as_floatscalar
+from neuralconstitutive.custom_types import FloatScalar, floatscalar_field
 from neuralconstitutive.relaxation_spectrum import AbstractLogDiscreteSpectrum
 from neuralconstitutive.misc import stretched_exp
 
@@ -16,10 +16,7 @@ from mittag_leffler_master.mittag_leffler import ml
 from jax.scipy.special import gamma
 
 
-floatscalar_field = partial(eqx.field, converter=as_floatscalar)
-
-
-class AbstractConstitutiveEqn(eqx.Module):
+class AbstractConstitutive(eqx.Module):
     """Abstract base class for all constitutive equations"""
 
     def relaxation_function(
@@ -51,14 +48,14 @@ class AbstractConstitutiveEqn(eqx.Module):
 
 
 ## Constitutive equations that are nonsingular at t=0
-class Hertzian(AbstractConstitutiveEqn):
+class Hertzian(AbstractConstitutive):
     E0: FloatScalar = floatscalar_field()
 
     def _relaxation_function_1D(self, t: Float[Array, " N"]) -> Float[Array, " N"]:
         return self.E0 * jnp.ones_like(t)
 
 
-class ModifiedPowerLaw(AbstractConstitutiveEqn):
+class ModifiedPowerLaw(AbstractConstitutive):
     E0: FloatScalar = floatscalar_field()
     alpha: FloatScalar = floatscalar_field()
     t0: FloatScalar = floatscalar_field()
@@ -67,7 +64,7 @@ class ModifiedPowerLaw(AbstractConstitutiveEqn):
         return self.E0 * (1 + t / self.t0) ** (-self.alpha)
 
 
-class StandardLinearSolid(AbstractConstitutiveEqn):
+class StandardLinearSolid(AbstractConstitutive):
     E1: FloatScalar = floatscalar_field()
     E_inf: FloatScalar = floatscalar_field()
     tau: FloatScalar = floatscalar_field()
@@ -80,7 +77,7 @@ class StandardLinearSolid(AbstractConstitutiveEqn):
         return self.E_inf + self.E1 * jnp.exp(-t / self.tau)
 
 
-class GeneralizedMaxwellmodel(AbstractConstitutiveEqn):
+class GeneralizedMaxwellmodel(AbstractConstitutive):
     E1: FloatScalar = floatscalar_field()
     E2: FloatScalar = floatscalar_field()
     E_inf: FloatScalar = floatscalar_field()
@@ -99,7 +96,7 @@ class GeneralizedMaxwellmodel(AbstractConstitutiveEqn):
         )
 
 
-class KohlrauschWilliamsWatts(AbstractConstitutiveEqn):
+class KohlrauschWilliamsWatts(AbstractConstitutive):
     E1: FloatScalar = floatscalar_field()
     E_inf: FloatScalar = floatscalar_field()
     tau: FloatScalar = floatscalar_field()
@@ -113,7 +110,7 @@ class KohlrauschWilliamsWatts(AbstractConstitutiveEqn):
         return self.E_inf + self.E1 * stretched_exp(t, self.tau, self.beta)
 
 
-class Fung(AbstractConstitutiveEqn):
+class Fung(AbstractConstitutive):
     E0: FloatScalar = floatscalar_field()
     tau1: FloatScalar = floatscalar_field()
     tau2: FloatScalar = floatscalar_field()
@@ -135,7 +132,7 @@ class Fung(AbstractConstitutiveEqn):
         return self.E0 * numerator / denominator
 
 
-class FractionalKelvinVoigt(AbstractConstitutiveEqn):
+class FractionalKelvinVoigt(AbstractConstitutive):
     E1: FloatScalar = floatscalar_field()
     E_inf: FloatScalar = floatscalar_field()
     alpha: FloatScalar = floatscalar_field()
@@ -144,7 +141,7 @@ class FractionalKelvinVoigt(AbstractConstitutiveEqn):
         return self.E_inf + self.E1 * (t ** (-self.alpha) / gamma(1 - self.alpha))
 
 
-class FromLogDiscreteSpectrum(AbstractConstitutiveEqn):
+class FromLogDiscreteSpectrum(AbstractConstitutive):
     """
     Assume that log_t_grid is equispaced
     """
@@ -171,7 +168,7 @@ class FromLogDiscreteSpectrum(AbstractConstitutiveEqn):
 
 
 ## Constitutive equations that are singular ar t=0
-class PowerLaw(AbstractConstitutiveEqn):
+class PowerLaw(AbstractConstitutive):
     E0: FloatScalar = floatscalar_field()
     alpha: FloatScalar = floatscalar_field()
 

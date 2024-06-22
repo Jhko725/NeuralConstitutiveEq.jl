@@ -48,8 +48,8 @@ jax.config.update("jax_enable_x64", True)
 # datadir = Path("open_data/PAAM hydrogel/speed 5")
 # name = "PAA_speed 5_4nN"
 
-#datadir = Path("data/abuhattum_iscience_2022/Interphase rep 2")
-#name = "interphase_speed 2_2nN"
+# datadir = Path("data/abuhattum_iscience_2022/Interphase rep 2")
+# name = "interphase_speed 2_2nN"
 datadir = Path("data/abuhattum_iscience_2022/Agarose/speed 10")
 name = "Agarose_speed 10_2nN"
 dataset = import_data(datadir / f"{name}.tab", datadir / f"{name}.tsv")
@@ -67,6 +67,44 @@ tip = Spherical(
     2.5e-6 / scale.depth
 )  # Scale tip radius by the length scale we are using
 
+
+# %%
+def make_force_functions(dataset, tip):
+    app_interp = make_smoothed_cubic_spline(dataset.approach)
+    ret_interp = make_smoothed_cubic_spline(dataset.retract)
+
+    @eqx.filter_jit
+    def force_app_fn(t_app, constit):
+        return eqx.filter_vmap(force_approach_scalar, in_axes=(0, None, None, None))(
+            t_app, constit, app_interp, tip
+        )
+
+    @eqx.filter_jit
+    def force_ret_fn(t_ret, constit):
+        return eqx.filter_vmap(force_retract_scalar, in_axes=(0, None, None, None))(
+            t_ret, constit, (app_interp, ret_interp), tip
+        )
+
+    return force_app_fn, force_ret_fn
+
+
+f_app_fn, f_ret_fn = make_force_functions(dataset, tip)
+
+
+def residual_app(constit, dataset):
+    return dataset.f_app - f_app_fn(dataset.t_app, constit)
+
+
+def residual_ret(constit, dataset):
+    return dataset.f_ret - f_ret_fn(dataset.t_ret, constit)
+
+
+def residual(constit, dataset):
+    return jnp.concatenate(
+        (residual_app(constit, dataset), residual_ret(constit, dataset)), axis=0
+    )
+
+
 # %%
 app_interp = make_smoothed_cubic_spline(dataset.approach)
 ret_interp = make_smoothed_cubic_spline(dataset.retract)
@@ -75,39 +113,109 @@ f_app_func = eqx.Partial(force_approach_scalar, approach=app_interp, tip=tip)
 f_ret_func = eqx.Partial(
     force_retract_scalar, indentations=(app_interp, ret_interp), tip=tip
 )
-#%%
+# %%
 import bayeux as bx
+
 
 @eqx.filter_jit
 def log_likelihood_unnormed(constit):
-    f_app_pred = eqx.filter_vmap(force_approach_scalar, in_axes=(0, None, None, None))(dataset.t_app, constit, app_interp, tip)
-    f_ret_pred = eqx.filter_vmap(force_retract_scalar, in_axes=(0, None, None, None))(dataset.t_ret, constit, (app_interp, ret_interp), tip)
-    return -jnp.sum((f_app_pred-dataset.f_app)**2)-jnp.sum((f_ret_pred-dataset.f_ret)**2)
+    f_app_pred = eqx.filter_vmap(force_approach_scalar, in_axes=(0, None, None, None))(
+        dataset.t_app, constit, app_interp, tip
+    )
+    f_ret_pred = eqx.filter_vmap(force_retract_scalar, in_axes=(0, None, None, None))(
+        dataset.t_ret, constit, (app_interp, ret_interp), tip
+    )
+    return -jnp.sum((f_app_pred - dataset.f_app) ** 2) - jnp.sum(
+        (f_ret_pred - dataset.f_ret) ** 2
+    )
 
-#log_likelihood_fn = eqx.filter_jit(eqx.Partial(log_likelihood_unnormed, dataset))
-#%%
+
+# log_likelihood_fn = eqx.filter_jit(eqx.Partial(log_likelihood_unnormed, dataset))
+# %%
 def transform_fn(sls: StandardLinearSolid):
-    return StandardLinearSolid(jnp.exp(sls.E1), jnp.exp(sls.E_inf), jnp.exp(sls.tau))
+    return jax.tree.map(lambda x: 10**x, sls)
 
-model = bx.Model(log_density=log_likelihood_unnormed, test_point=StandardLinearSolid(10.0, 10.0, 10.0), transform_fn=transform_fn)
 
-#%%
+def sample_fn(seed, n_samples):
+    seeds = jax.random.split(seed, 3)
+    E1_samples = 10 ** jax.random.uniform(seeds[0], (n_samples,), minval=-2, maxval=2)
+    E_inf_samples = 10 ** jax.random.uniform(
+        seeds[1], (n_samples,), minval=-2, maxval=2
+    )
+    tau_samples = 10 ** jax.random.uniform(seeds[2], (n_samples,), minval=-4, maxval=2)
+    return eqx.filter_vmap(StandardLinearSolid)(E1_samples, E_inf_samples, tau_samples)
+
+
+import oryx
+
+oryx.core.inverse(transform_fn)(StandardLinearSolid(10.0, 10.0, 10.0)).E1
+# %%
+seed = jax.random.PRNGKey(0)
+sls_init = sample_fn(seed, 500)
+sls_init.E1
+
+
+# %%
+@eqx.filter_jit
+def least_squares(fn, y0, args, solver, transform_fn, **least_squares_kwargs):
+    y0_unconstrained = oryx.core.inverse(transform_fn)(y0)
+
+    def _fn(y_unconstrained, _):
+        y_ = transform_fn(y_unconstrained)
+        return fn(y_, args)
+
+    result = optx.least_squares(_fn, solver, y0_unconstrained, **least_squares_kwargs)
+    return eqx.tree_at(lambda res: res.value, result, transform_fn(result.value))
+
+
+solver = optx.LevenbergMarquardt(rtol=1e-6, atol=1e-6)
+# %%
 import time
+
+t_start = time.time()
+res = least_squares(
+    residual, StandardLinearSolid(10.0, 10.0, 10.0), dataset, solver, transform_fn
+)
+print(f"Elapsed time: {time.time()-t_start}")
+# %%
+res.value.E1
+# %%
+least_squares_batch = eqx.filter_jit(
+    eqx.filter_vmap(least_squares, in_axes=(None, 0, None, None, None))
+)
+
+
+t_start = time.time()
+res_batched = least_squares_batch(residual, sls_init, dataset, solver, transform_fn)
+print(f"Elapsed time: {time.time()-t_start}")
+# %%
+model = bx.Model(
+    log_density=log_likelihood_unnormed,
+    test_point=StandardLinearSolid(10.0, 10.0, 10.0),
+    transform_fn=transform_fn,
+)
+# %%
+res_batched.value.E_inf
+# %%
+import time
+
 t_start = time.time()
 seed = jax.random.key(0)
-opt = model.optimize.optimistix_bfgs(seed = seed, num_particles = 10)
+opt = model.optimize.optimistix_bfgs(seed=seed, num_particles=10)
 print(f"Time elapsed: {time.time()-t_start}")
-#%%
+# %%
 import time
+
 model.optimize.methods
-#%%
+# %%
 sls_test = StandardLinearSolid(10.0, 10.0, 10.0)
 log_likelihood_unnormed(sls_test)
-#%%
-#%%
+# %%
+# %%
 from tqdm import tqdm
-f_app_fn = eqx.filter_jit(eqx.filter_vmap(f_app_func, in_axes = (0, None)))
-f_ret_fn = eqx.filter_jit(eqx.filter_vmap(f_ret_func, in_axes = (0, None)))
+
+f_app_fn = eqx.filter_jit(eqx.filter_vmap(f_app_func, in_axes=(0, None)))
+f_ret_fn = eqx.filter_jit(eqx.filter_vmap(f_ret_func, in_axes=(0, None)))
 
 f_app_list = []
 f_ret_list = []
@@ -115,34 +223,37 @@ for i in tqdm(range(10)):
     sls_fit = jtu.tree_map(lambda leaf: leaf[i], opt.params)
     f_app_list.append(f_app_fn(dataset.t_app, sls_fit))
     f_ret_list.append(f_ret_fn(dataset.t_ret, sls_fit))
-#%%
-fig, axes = plt.subplots(2, 1, figsize = (7, 3))
+# %%
+fig, axes = plt.subplots(2, 1, figsize=(7, 3))
 
 ax = axes[0]
 for f_app_fit, f_ret_fit in zip(f_app_list, f_ret_list):
-    ax.plot(dataset.t_app, f_app_fit, color = "royalblue", linewidth = 1.0, alpha = 0.8)
-    ax.plot(dataset.t_ret, f_ret_fit, color = "royalblue", linewidth = 1.0, alpha = 0.8)
+    ax.plot(dataset.t_app, f_app_fit, color="royalblue", linewidth=1.0, alpha=0.8)
+    ax.plot(dataset.t_ret, f_ret_fit, color="royalblue", linewidth=1.0, alpha=0.8)
 
-    ax.plot(dataset.t_app, dataset.f_app, ".", color="black", alpha = 0.8)
-    ax.plot(dataset.t_ret, dataset.f_ret, ".", color="black", alpha = 0.8)
+    ax.plot(dataset.t_app, dataset.f_app, ".", color="black", alpha=0.8)
+    ax.plot(dataset.t_ret, dataset.f_ret, ".", color="black", alpha=0.8)
 
 ax1 = axes[1]
 for i in tqdm(range(10)):
     sls_fit = jtu.tree_map(lambda leaf: leaf[i], opt.params)
     ax1 = plot_relaxation_fn(ax1, sls_fit, dataset.t_app)
-#%%
+# %%
 opt.params
-#%%
+# %%
 model.mcmc.numpyro_nuts.get_kwargs()
-#%%
-idata = model.mcmc.numpyro_nuts(seed, dense_mass = True)
-#%%
+# %%
+idata = model.mcmc.numpyro_nuts(seed, dense_mass=True)
+# %%
 jax.grad(log_likelihood_unnormed)(sls_test).E1
-#%%
+
+
+# %%
 @eqx.filter_jit
 def force_app_map(t, constit):
     def _f_app_func(t_):
         return f_app_func(t_, constit)
+
     return jax.lax.map(_f_app_func, t)
 
 
@@ -155,6 +266,7 @@ def force_app_vmap(t, constit):
 def force_ret_map(t, constit):
     def _f_ret_func(t_):
         return f_ret_func(t_, constit)
+
     return jax.lax.map(_f_ret_func, t)
 
 
@@ -165,11 +277,11 @@ def force_ret_vmap(t, constit):
 
 constit_test = StandardLinearSolid(10.0, 10.0, 10.0)
 # %%
-%%timeit
+# %%timeit
 f_app_pred1 = force_app_map(dataset.t_app, constit_test)
 f_app_pred1.block_until_ready()
 # %%
-%%timeit
+# %%timeit
 f_app_pred2 = force_app_vmap(dataset.t_app, constit_test)
 f_app_pred2.block_until_ready()
 

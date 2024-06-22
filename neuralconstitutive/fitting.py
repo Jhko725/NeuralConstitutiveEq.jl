@@ -12,7 +12,7 @@ import scipy.interpolate as scinterp
 from tqdm import tqdm
 
 from neuralconstitutive.constitutive import (
-    AbstractConstitutiveEqn,
+    AbstractConstitutive,
 )
 from neuralconstitutive.indentation import Indentation, interpolate_indentation
 from neuralconstitutive.ting import (
@@ -26,7 +26,7 @@ from neuralconstitutive.tipgeometry import AbstractTipGeometry
 from neuralconstitutive.utils import smooth_data
 from neuralconstitutive.io import ForceIndentDataset
 
-ConstitEqn = TypeVar("ConstitEqn", bound=AbstractConstitutiveEqn)
+ConstitEqn = TypeVar("ConstitEqn", bound=AbstractConstitutive)
 
 
 def constitutive_to_params(
@@ -62,7 +62,7 @@ def _residual_app(constit, args):
 
 
 def fit_approach_lmfit(
-    constitutive: AbstractConstitutiveEqn,
+    constitutive: AbstractConstitutive,
     bounds: Sequence[tuple[float, float] | None],
     dataset: ForceIndentDataset,
     tip: AbstractTipGeometry,
@@ -92,7 +92,7 @@ def _residual_jax(constit, args):
 
 
 def fit_all_lmfit(
-    constitutive: AbstractConstitutiveEqn,
+    constitutive: AbstractConstitutive,
     bounds: Sequence[tuple[float, float] | None],
     dataset: ForceIndentDataset,
     tip: AbstractTipGeometry,

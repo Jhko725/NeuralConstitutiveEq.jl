@@ -6,7 +6,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 
-from neuralconstitutive.constitutive import AbstractConstitutiveEqn
+from neuralconstitutive.constitutive import AbstractConstitutive
 from neuralconstitutive.indentation import Indentation
 from neuralconstitutive.io import ForceIndentDataset
 
@@ -19,7 +19,7 @@ matplotlib.rc("figure.constrained_layout", use=True)
 
 def plot_relaxation_fn(
     ax: Axes,
-    constitutive: AbstractConstitutiveEqn,
+    constitutive: AbstractConstitutive,
     time: Float[Array, " time"],
     **plot_kwargs
 ) -> Axes:

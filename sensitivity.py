@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 from neuralconstitutive.constitutive import (
     ModifiedPowerLaw,
     floatscalar_field,
-    AbstractConstitutiveEqn,
+    AbstractConstitutive,
 )
 from neuralconstitutive.io import import_data
 from neuralconstitutive.plotting import plot_indentation
@@ -29,7 +29,7 @@ from neuralconstitutive.misc import stretched_exp
 jax.config.update("jax_enable_x64", True)
 
 
-class StandardLinearSolid(AbstractConstitutiveEqn):
+class StandardLinearSolid(AbstractConstitutive):
     E0: FloatScalar = floatscalar_field()
     E_inf: FloatScalar = floatscalar_field()
     tau: FloatScalar = floatscalar_field()
@@ -38,7 +38,7 @@ class StandardLinearSolid(AbstractConstitutiveEqn):
         return self.E_inf + (self.E0 - self.E_inf) * jnp.exp(-t / self.tau)
 
 
-class KohlrauschWilliamsWatts(AbstractConstitutiveEqn):
+class KohlrauschWilliamsWatts(AbstractConstitutive):
     E0: FloatScalar = floatscalar_field()
     E_inf: FloatScalar = floatscalar_field()
     tau: FloatScalar = floatscalar_field()

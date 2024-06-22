@@ -14,7 +14,7 @@ import scipy.interpolate as scinterp
 from jaxtyping import Array, Float
 
 from neuralconstitutive.constitutive import (
-    AbstractConstitutiveEqn,
+    AbstractConstitutive,
     FromLogDiscreteSpectrum,
 )
 from neuralconstitutive.custom_types import FloatScalar
@@ -61,7 +61,7 @@ def make_smoothed_cubic_spline(indentation, s=1.5e-4):
     return cubic_interp
 
 
-class Prony(AbstractConstitutiveEqn):
+class Prony(AbstractConstitutive):
     coeffs: Array
     # log10_taus: Array
     bias: Array
@@ -88,7 +88,7 @@ def L_mspline(s, k0, dK):
     return jnp.exp(-s * (3 * dK + k0)) * (c**3)
 
 
-class Mspline(AbstractConstitutiveEqn):
+class Mspline(AbstractConstitutive):
     coeffs: Array
     # log10_taus: Array
     bias: Array
@@ -148,8 +148,8 @@ ret_interp = make_smoothed_cubic_spline(ret)
 f_app_data = _force_approach(app.time, bimodal, app_interp, tip)
 f_ret_data = _force_retract(ret.time, bimodal, (app_interp, ret_interp), tip)
 f_ret_data = jnp.clip(f_ret_data, 0.0)
-#(f_app, f_ret), _ = normalize_forces(f_app, f_ret)
-#(app, ret), (_, h_m) = normalize_indentations(app, ret)
+# (f_app, f_ret), _ = normalize_forces(f_app, f_ret)
+# (app, ret), (_, h_m) = normalize_indentations(app, ret)
 f_ret = jnp.trim_zeros(jnp.clip(f_ret_data, 0.0), "b")
 ret = jtu.tree_map(lambda leaf: leaf[: len(f_ret)], ret)
 app_interp = make_smoothed_cubic_spline(app)
@@ -191,7 +191,7 @@ def make_step(constit, opt_state):
 
 
 # %%
-#constit = Prony(num_components=20)
+# constit = Prony(num_components=20)
 constit = Mspline(num_components=100)
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
 ax.plot(app.time, f_app_data, label="data")
