@@ -33,8 +33,8 @@ from neuralconstitutive.smoothing import make_smoothed_cubic_spline
 from neuralconstitutive.ting import (
     force_approach_scalar,
     force_retract_scalar,
-    _force_approach,
-    _force_retract,
+    force_approach,
+    force_retract,
 )
 from neuralconstitutive.tipgeometry import Spherical
 from neuralconstitutive.utils import (

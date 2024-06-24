@@ -16,10 +16,8 @@ from neuralconstitutive.constitutive import (
 )
 from neuralconstitutive.indentation import Indentation, interpolate_indentation
 from neuralconstitutive.ting import (
-    _force_approach,
     force_approach,
     force_retract,
-    _force_retract,
 )
 from neuralconstitutive.smoothing import make_smoothed_cubic_spline
 from neuralconstitutive.tipgeometry import AbstractTipGeometry
@@ -57,7 +55,7 @@ def params_to_constitutive(params: lmfit.Parameters, constit: ConstitEqn) -> Con
 @eqx.filter_jit
 def _residual_app(constit, args):
     t_app, app_interp, tip, force = args
-    f_pred = _force_approach(t_app, constit, app_interp, tip)
+    f_pred = force_approach(t_app, constit, app_interp, tip)
     return f_pred - force
 
 
@@ -85,8 +83,8 @@ def fit_approach_lmfit(
 @eqx.filter_jit
 def _residual_jax(constit, args):
     t_app, t_ret, app_interp, ret_interp, tip, forces = args
-    f_pred_app = _force_approach(t_app, constit, app_interp, tip)
-    f_pred_ret = _force_retract(t_ret, constit, (app_interp, ret_interp), tip)
+    f_pred_app = force_approach(t_app, constit, app_interp, tip)
+    f_pred_ret = force_retract(t_ret, constit, (app_interp, ret_interp), tip)
 
     return jnp.concatenate((f_pred_app, f_pred_ret)) - jnp.concatenate(forces)
 
