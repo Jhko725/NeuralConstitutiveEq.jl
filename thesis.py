@@ -67,17 +67,19 @@ axes[0] = plot_indentation(axes[0], app, marker=".")
 axes[0] = plot_indentation(axes[0], ret, marker=".")
 axes[0].set_xlabel("Time [s]")
 axes[0].set_ylabel("Indentation [m]")
+axes[0].grid(ls="--", color="darkgray")
 
 axes[1].plot(app.time, f_app, ".")
 axes[1].plot(ret.time, f_ret, ".")
 axes[1].set_xlabel("Time [s]")
 axes[1].set_ylabel("Force [N]")
+axes[1].grid(ls="--", color="darkgray")
 
 axes[2].plot(app.depth, f_app, ".")
 axes[2].plot(ret.depth, f_ret, ".")
 axes[2].set_xlabel("Indentation [m]")
 axes[2].set_ylabel("Force [N]")
-
+axes[2].grid(ls="--", color="darkgray")
 # %%
 
 ## Abstract fitting into three parts: init / step / postprocess
@@ -94,16 +96,19 @@ axes[0] = plot_indentation(axes[0], app, marker=".")
 axes[0] = plot_indentation(axes[0], ret, marker=".")
 axes[0].set_xlabel("Time [norm.]")
 axes[0].set_ylabel("Indentation [norm.]")
+axes[0].grid(ls="--", color="darkgray")
 
 axes[1].plot(app.time, f_app, ".")
 axes[1].plot(ret.time, f_ret, ".")
 axes[1].set_xlabel("Time [norm.]")
 axes[1].set_ylabel("Force [norm.]")
+axes[1].grid(ls="--", color="darkgray")
 
 axes[2].plot(app.depth, f_app, ".")
 axes[2].plot(ret.depth, f_ret, ".")
 axes[2].set_xlabel("Indentation [norm.]")
 axes[2].set_ylabel("Force [norm.]")
+axes[2].grid(ls="--", color="darkgray")
 
 app_interp = make_smoothed_cubic_spline(app)
 ret_interp = make_smoothed_cubic_spline(ret)
@@ -353,7 +358,7 @@ for ax in axes:
     ax.grid(ls="--", color="lightgray")
 
 # fig.suptitle("PAAM hydrogel curve fit results: Entire curve")
-fig.suptitle("PAAM hydrogel curve fit results: Entire")
+fig.suptitle("Hela cell(mitotic) curve fit results: Entire")
 
 # %%
 bics = jnp.asarray([results_best[n].bic for n in names])
@@ -363,7 +368,7 @@ ax.grid(ls="--", color="darkgray")
 ax.bar(names, bics, color=colors)
 ax.set_yscale("symlog")
 ax.set_ylabel("BIC")
-ax.set_title("PAAM hydrogel, Entire")
+ax.set_title("Hela cell(mitotic), Entire")
 
 
 # %%
@@ -462,8 +467,8 @@ def sensitivity_matrix(constit):
     S = jax.vmap(jnp.outer)(D_res_array, D_res_array)
     return jnp.sum(S, axis=0)
 
-
-S_matrix = sensitivity_matrix(fits_best["SLS"])
+#%%
+S_matrix = sensitivity_matrix(fits_best["KWW"])
 eigval, eigvec = jnp.linalg.eigh(S_matrix)
 # %%
 print(eigval)
@@ -499,16 +504,6 @@ for n, c_ind in zip(names, color_inds):
 ax.set_xticks(x_tick_positions, names)
 ax.set_ylabel("log (eigenvalues)")
 ax.grid(ls="--", color="lightgray")
-# %%
-
-
-
-
-
-
-
-
-
 #%%
 ## LatinHyperCube Sampling demonstration
 #%%
@@ -531,8 +526,8 @@ axes[0].plot(app.time, f_app, ".", color=color_palette[5], label="Data", alpha=0
 axes[0].plot(ret.time, f_ret, ".", color=color_palette[5], alpha=0.5)
 
 for i, (constit_fit, result) in enumerate(zip(htz_fits, tqdm(htz_results))):
-    f_fit_app = _force_approach(app.time, constit, app_interp, tip)
-    f_fit_ret = _force_retract(ret.time, constit, (app_interp, ret_interp), tip)
+    f_fit_app = _force_approach(app.time, constit_fit, app_interp, tip)
+    f_fit_ret = _force_retract(ret.time, constit_fit, (app_interp, ret_interp), tip)
 
     axes[0].plot(app.time, f_fit_app, color="gray", alpha=0.7)
     axes[0].plot(ret.time, f_fit_ret, color="gray", alpha=0.7)
@@ -568,8 +563,8 @@ axes[0].plot(app.time, f_app, ".", color=color_palette[5], label="Data", alpha=0
 axes[0].plot(ret.time, f_ret, ".", color=color_palette[5], alpha=0.5)
 
 for i, (constit_fit, result) in enumerate(zip(sls_fits, tqdm(sls_results))):
-    f_fit_app = _force_approach(app.time, constit, app_interp, tip)
-    f_fit_ret = _force_retract(ret.time, constit, (app_interp, ret_interp), tip)
+    f_fit_app = _force_approach(app.time, constit_fit, app_interp, tip)
+    f_fit_ret = _force_retract(ret.time, constit_fit, (app_interp, ret_interp), tip)
 
     axes[0].plot(app.time, f_fit_app, color="gray", alpha=0.7)
     axes[0].plot(ret.time, f_fit_ret, color="gray", alpha=0.7)
@@ -608,8 +603,8 @@ axes[0].plot(app.time, f_app, ".", color=color_palette[5], label="Data", alpha=0
 axes[0].plot(ret.time, f_ret, ".", color=color_palette[5], alpha=0.5)
 
 for i, (constit_fit, result) in enumerate(zip(mplr_fits, tqdm(mplr_results))):
-    f_fit_app = _force_approach(app.time, constit, app_interp, tip)
-    f_fit_ret = _force_retract(ret.time, constit, (app_interp, ret_interp), tip)
+    f_fit_app = _force_approach(app.time, constit_fit, app_interp, tip)
+    f_fit_ret = _force_retract(ret.time, constit_fit, (app_interp, ret_interp), tip)
 
     axes[0].plot(app.time, f_fit_app, color="gray", alpha=0.7)
     axes[0].plot(ret.time, f_fit_ret, color="gray", alpha=0.7)
@@ -648,8 +643,8 @@ axes[0].plot(app.time, f_app, ".", color=color_palette[5], label="Data", alpha=0
 axes[0].plot(ret.time, f_ret, ".", color=color_palette[5], alpha=0.5)
 
 for i, (constit_fit, result) in enumerate(zip(kww_fits, tqdm(kww_results))):
-    f_fit_app = _force_approach(app.time, constit, app_interp, tip)
-    f_fit_ret = _force_retract(ret.time, constit, (app_interp, ret_interp), tip)
+    f_fit_app = _force_approach(app.time, constit_fit, app_interp, tip)
+    f_fit_ret = _force_retract(ret.time, constit_fit, (app_interp, ret_interp), tip)
 
     axes[0].plot(app.time, f_fit_app, color="gray", alpha=0.7)
     axes[0].plot(ret.time, f_fit_ret, color="gray", alpha=0.7)
@@ -688,8 +683,8 @@ axes[0].plot(app.time, f_app, ".", color=color_palette[5], label="Data", alpha=0
 axes[0].plot(ret.time, f_ret, ".", color=color_palette[5], alpha=0.5)
 
 for i, (constit_fit, result) in enumerate(zip(fkv_fits, tqdm(fkv_results))):
-    f_fit_app = _force_approach(app.time, constit, app_interp, tip)
-    f_fit_ret = _force_retract(ret.time, constit, (app_interp, ret_interp), tip)
+    f_fit_app = _force_approach(app.time, constit_fit, app_interp, tip)
+    f_fit_ret = _force_retract(ret.time, constit_fit, (app_interp, ret_interp), tip)
 
     axes[0].plot(app.time, f_fit_app, color="gray", alpha=0.7)
     axes[0].plot(ret.time, f_fit_ret, color="gray", alpha=0.7)
@@ -726,8 +721,10 @@ axes[0].plot(app.time, f_app, ".", color=color_palette[5], label="Data", alpha=0
 axes[0].plot(ret.time, f_ret, ".", color=color_palette[5], alpha=0.5)
 
 for i, (constit_fit, result) in enumerate(zip(gm_fits, tqdm(gm_results))):
-    f_fit_app = _force_approach(app.time, constit, app_interp, tip)
-    f_fit_ret = _force_retract(ret.time, constit, (app_interp, ret_interp), tip)
+    if constit_fit is None:
+        continue
+    f_fit_app = _force_approach(app.time, constit_fit, app_interp, tip)
+    f_fit_ret = _force_retract(ret.time, constit_fit, (app_interp, ret_interp), tip)
 
     axes[0].plot(app.time, f_fit_app, color="gray", alpha=0.5)
     axes[0].plot(ret.time, f_fit_ret, color="gray", alpha=0.5)
@@ -743,4 +740,37 @@ for i, (constit_fit, result) in enumerate(zip(gm_fits, tqdm(gm_results))):
     axes[1].set_ylabel("$G(t)$[norm.]")
 
 fig.suptitle(f"GM model curve fit results(LHS=$5^{len(params_gm)}$) : Entire", position=(0.5,1.0+0.01))     
+#%%
+
+# %%
+# check BIC values, Eigen-params and values
+import os
+import pandas as pd
+
+f_path = './'
+f_name = "Slopiness_Entire"
+
+
+#%%
+df = pd.DataFrame()
+for model in names:
+    S_matrix = sensitivity_matrix(fits_best[f"{model}"])
+    eigval, eigvec = jnp.linalg.eigh(S_matrix)
+
+    new = pd.DataFrame({f'{model} eigen value': eigval,
+                        f'{model} eigen vector': eigvec[np.argmax(eigval)]})
+    df = pd.concat([df, new], axis=1)
+
+df.to_csv(os.path.join(f_path, f_name), index=False)
+# %%
+data = pd.read_csv("./Slopiness_Entire")
+data
+# %%
+bics
+# %%
+S_matrix = sensitivity_matrix(fits_best["GM"])
+eigval, eigvec = jnp.linalg.eigh(S_matrix)
+# %%
+print(eigval)
+print(eigvec)
 # %%
