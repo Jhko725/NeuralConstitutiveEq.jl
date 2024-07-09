@@ -52,8 +52,8 @@ from neuralconstitutive.utils import (
 # %%
 jax.config.update("jax_enable_x64", True)
 
-datadir = Path("open_data/Mitotic Rep 1/Adhesion(X)")
-name = "mitotic_speed 2_2nN"
+datadir = Path("open_data/PAAM hydrogel/speed 10")
+name = "PAA_speed 10_4nN"
 
 # datadir = Path("data/abuhattum_iscience_2022/Agarose/speed 5")
 # name = "Agarose_speed 5_2nN"
@@ -145,7 +145,7 @@ def fit_all_optx(constit, t_data, f_data, interp, tip, bounds):
 # %%
 # %%
 ## Fit using Latin hypercube sampling
-N_SAMPLES = 5
+N_SAMPLES = 150
 fit_type = "both"
 ### Hertzian model
 
@@ -170,7 +170,7 @@ htz_fits, htz_results, htz_initvals, htz_minimizers = fit_indentation_data(
 # %%
 # %%
 ### SLS model
-N_SAMPLES = 5**1
+N_SAMPLES = N_SAMPLES
 constit_sls = StandardLinearSolid(10.0, 10.0, 10.0)
 bounds_sls = [(0, 1e3), (0, 1e3), (1e-6, 1e3)]
 # %%
@@ -190,7 +190,7 @@ sls_fits, sls_results, sls_initvals, sls_minimizers = fit_indentation_data(
 )
 # %%
 ### Modified PLR model
-N_SAMPLES = 5**1
+N_SAMPLES = N_SAMPLES
 constit_mplr = ModifiedPowerLaw(10.0, 10.0, 10.0)
 bounds_mplr = [(0, 1e3), (0.0, 1.0), (1e-6, 1e3)]
 
@@ -211,7 +211,7 @@ mplr_fits, mplr_results, mplr_initvals, mplr_minimizers = fit_indentation_data(
 
 # %%
 ### KWW model
-N_SAMPLES = 5**1
+N_SAMPLES = N_SAMPLES
 constit_kww = KohlrauschWilliamsWatts(10.0, 10.0, 10.0, 10.0)
 bounds_kww = [(0, 1e3), (0, 1e3), (1e-6, 1e3), (0.0, 1.0)]
 
@@ -235,30 +235,10 @@ kww_fits, kww_results, kww_initvals, kww_minimizers = fit_indentation_data(
     init_val_sampler=sampler,
     n_samples=N_SAMPLES,
 )
-# %%
-### Fractional Kelvin Voigt model
-N_SAMPLES = 5**1
-constit_fkv = FractionalKelvinVoigt(10.0, 10.0, 10.0)
-bounds_fkv = [(0, 1e3), (0, 1e3), (0.0, 1.0)]
 
-sampler = LatinHypercubeSampler(
-    sample_range=[(1e-2, 1e2), (1e-2, 1e2), (0.0, 1.0)],
-    sample_scale=["log", "log", "linear"],
-)
-
-fkv_fits, fkv_results, fkv_initvals, fkv_minimizers = fit_indentation_data(
-    constit_fkv,
-    bounds_fkv,
-    (app, ret),
-    (f_app, f_ret),
-    tip,
-    fit_type=fit_type,
-    init_val_sampler=sampler,
-    n_samples=N_SAMPLES,
-)
 # %%
 ### Generalized Maxwell model
-N_SAMPLES = 5**1
+N_SAMPLES = N_SAMPLES
 constit_gm = GeneralizedMaxwellmodel(10.0, 10.0, 10.0, 10.0, 10.0)
 bounds_gm = [(0, 1e3), (0, 1e3), (0, 1e3), (0, 1e3), (0, 1e3)]
 
@@ -291,9 +271,9 @@ def get_best_model(results: list[lmfit.minimizer.MinimizerResult]):
 results_best = {}
 fits_best = {}
 for results, fits, name in zip(
-    [sls_results, mplr_results, kww_results, htz_results, fkv_results, gm_results],
-    [sls_fits, mplr_fits, kww_fits, htz_fits, fkv_fits, gm_fits],
-    ["SLS", "MPLR", "KWW", "Hertzian", "FKV", "GM"],
+    [sls_results, mplr_results, kww_results, htz_results, gm_results],
+    [sls_fits, mplr_fits, kww_fits, htz_fits,  gm_fits],
+    ["SLS", "MPLR", "KWW", "Hertzian", "GM"],
 ):
     res_best, ind_best = get_best_model(results)
     results_best[name] = res_best
@@ -334,8 +314,8 @@ color_palette = np.array(
         [0.64313725, 0.14117647, 0.48627451],
     ]
 )
-names = ["Hertzian", "SLS", "MPLR", "KWW", "FKV", "GM"]
-color_inds = [0, 3, 6, 8, 5, 1]
+names = ["Hertzian", "SLS", "MPLR", "KWW", "GM"]
+color_inds = [0, 3, 5, 8, 1]
 for n, c_ind in zip(names, color_inds):
     constit = fits_best[n]
 
@@ -358,7 +338,7 @@ for ax in axes:
     ax.grid(ls="--", color="lightgray")
 
 # fig.suptitle("PAAM hydrogel curve fit results: Entire curve")
-fig.suptitle("Hela cell(mitotic) curve fit results: Entire")
+fig.suptitle("PAAM hydrogel curve fit results: Entire")
 
 # %%
 bics = jnp.asarray([results_best[n].bic for n in names])
@@ -368,13 +348,33 @@ ax.grid(ls="--", color="darkgray")
 ax.bar(names, bics, color=colors)
 ax.set_yscale("symlog")
 ax.set_ylabel("BIC")
-ax.set_title("Hela cell(mitotic), Entire")
+ax.set_title("PAAM hydrogel, Entire")
 
 
 # %%
 def process_uvars(uvars: dict):
     if "E0" in uvars:
         return uvars
+    
+    elif ("E1" in uvars) and ("E3" in uvars) and ("E_inf" in uvars):
+        uvars_ = {}
+        uvars_["E0"] = uvars["E1"] + uvars["E3"] + uvars["E_inf"]
+
+        for k, v in uvars.items():
+            # if k == "E1":
+            #     uvars_["E0"] = uvars["E1"] + uvars["E3"] + uvars["E_inf"]
+            
+            if k == "E3":
+                uvars_["E2"] = uvars["E1"] + uvars["E3"]
+            
+            elif k == "tau3":
+                uvars_["tau2"] = uvars["tau1"] + uvars["tau3"]
+
+            else:
+                uvars_[k] = v
+
+        return uvars_
+    
     elif ("E1" in uvars) and ("E_inf" in uvars):
         uvars_ = {}
         for k, v in uvars.items():
@@ -383,6 +383,7 @@ def process_uvars(uvars: dict):
             else:
                 uvars_[k] = v
         return uvars_
+    
     else:
         raise ValueError("Unexpected combination of parameters!")
 
@@ -423,24 +424,10 @@ xticklabels[0] = "0 ($E_0$)"
 ax.set_xticklabels(xticklabels)
 ax.grid(ls="--", color="lightgray")
 
-fig, ax = plt.subplots(1, 1, figsize=(4, 3))
-names = ("Hertzian", "MPLR", "SLS", "KWW", "FKV", "GM")
-for name in names:
-    ax.plot(relative_errors[name], ".-", label=name, linewidth=1.0, markersize=8.0)
-ax.set_yscale("log", base=10)
-ax.set_xticks([0, 1, 2, 3])
-ax.legend()
-ax.set_ylabel("Relative error")
-ax.set_xlabel("Model free parameters")
-xticklabels = ax.get_xticks().tolist()
-# xticklabels[0] = "0 ($E_0$)"
-ax.set_xticklabels(xticklabels)
-ax.grid(ls="--", color="lightgray")
+relative_errors["GM"]
 # %%
 for n, r in results_best.items():
     print(n, r.params.valuesdict())
-
-
 # %%
 def residual(constit):
     f_app_pred = _force_approach(app.time, constit, app_interp, tip)
@@ -483,7 +470,7 @@ def plot_eigval_spectrum(ax, eigvals, bar_offset=0.0, bar_length=1.0, **hlines_k
 
 
 fig, ax = plt.subplots(1, 1, figsize=(4.5, 4))
-names = ["Hertzian", "SLS", "MPLR", "KWW", "FKV", "GM"]
+names = ["Hertzian", "SLS", "MPLR", "KWW", "GM"]
 color_inds = [0, 3, 6, 8, 5, 1]
 bar_offset = 0.0
 bar_length = 1.0
@@ -662,45 +649,6 @@ for i, (constit_fit, result) in enumerate(zip(kww_fits, tqdm(kww_results))):
 fig.suptitle(f"KWW model curve fit results(LHS=$5^{len(params_kww)}$) : Entire", position=(0.5,1.0+0.01)) 
 
 #%%
-## FKV model
-params_fkv= ['E_1','E_{\infty}', '\\alpha']
-fig, axes = plt.subplots(1, len(fkv_initvals[1]), figsize=(10, 5))
-for i, ax in enumerate(axes):
-    ax.set_xlabel(f"${params_fkv[i]}$")
-    if sampler.sample_scale[i] is True:
-        ax.hist(np.log10(fkv_initvals[:, i]), color=color_palette[5])
-        ax.grid(ls="--", color="darkgray")
-    else:
-        ax.hist(fkv_initvals[:, i], color=color_palette[5])
-        ax.grid(ls="--", color="darkgray")
-
-axes[0].set_ylabel("Frequency")
-axes[0].set_xscale("log")
-axes[1].set_xscale("log")
-
-fig, axes = plt.subplots(1, 2, figsize=(12, 3.6))
-axes[0].plot(app.time, f_app, ".", color=color_palette[5], label="Data", alpha=0.5)
-axes[0].plot(ret.time, f_ret, ".", color=color_palette[5], alpha=0.5)
-
-for i, (constit_fit, result) in enumerate(zip(fkv_fits, tqdm(fkv_results))):
-    f_fit_app = _force_approach(app.time, constit_fit, app_interp, tip)
-    f_fit_ret = _force_retract(ret.time, constit_fit, (app_interp, ret_interp), tip)
-
-    axes[0].plot(app.time, f_fit_app, color="gray", alpha=0.7)
-    axes[0].plot(ret.time, f_fit_ret, color="gray", alpha=0.7)
-
-    axes[1] = plot_relaxation_fn(axes[1], constit_fit, app.time, color="gray")
-
-    axes[0].grid(ls="--", color="darkgray")
-    axes[0].set_xlabel("Time[norm.]")
-    axes[0].set_ylabel("Force[norm.]")
-    
-    axes[1].grid(ls="--", color="darkgray")
-    axes[1].set_xlabel("Time[norm.]")
-    axes[1].set_ylabel("$G(t)$[norm.]")
-
-fig.suptitle(f"FKV model curve fit results(LHS=$5^{len(params_fkv)}$) : Entire", position=(0.5,1.0+0.01)) 
-#%%
 ## GM model
 params_gm= ['E_1','E_2','E_{\infty}','\\tau_1','\\tau_2']
 fig, axes = plt.subplots(1, len(gm_initvals[1]), figsize=(12, 6))
@@ -768,7 +716,7 @@ data
 # %%
 bics
 # %%
-S_matrix = sensitivity_matrix(fits_best["FKV"])
+S_matrix = sensitivity_matrix(fits_best["Hertzian"])
 eigval, eigvec = jnp.linalg.eigh(S_matrix)
 # %%
 print(eigval)

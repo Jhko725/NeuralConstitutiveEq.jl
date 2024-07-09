@@ -81,17 +81,25 @@ class StandardLinearSolid(AbstractConstitutiveEqn):
 
 class GeneralizedMaxwellmodel(AbstractConstitutiveEqn):
     E1: FloatScalar = floatscalar_field()
-    E2: FloatScalar = floatscalar_field()
+    E3: FloatScalar = floatscalar_field()
     E_inf: FloatScalar = floatscalar_field()
     tau1: FloatScalar = floatscalar_field()
-    tau2: FloatScalar = floatscalar_field()
+    tau3: FloatScalar = floatscalar_field()
 
     @property
     def E0(self) -> FloatScalar:
-        return self.E_inf + self.E1 + self.E2
+        return self.E_inf + self.E1 + self.E3
 
+    @property
+    def E2(self) -> FloatScalar:
+        return self.E1 + self.E3
+    
+    @property
+    def tau2(self) -> FloatScalar:
+        return self.tau1 + self.tau3
+    
     def _relaxation_function_1D(self, t):
-        return self.E_inf + self.E1 * jnp.exp(-t / self.tau1) + self.E2 * jnp.exp(-t / self.tau2)
+        return self.E_inf + self.E1 * jnp.exp(-t / self.tau1) + self.E3 * jnp.exp(-t / self.tau3)
 
 
 class KohlrauschWilliamsWatts(AbstractConstitutiveEqn):
