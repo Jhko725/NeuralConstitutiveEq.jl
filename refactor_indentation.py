@@ -138,9 +138,7 @@ class IndentationSequence(eqx.Module):
         return index
 
     def depth(self, time: FloatScalar) -> FloatScalar:
-        print(time)
         index = self._find_indentation_index(time)
-        print(index)
         return jax.lax.switch(index, self._depth_funcs, time)
 
     def velocity(self, time: FloatScalar) -> FloatScalar:
