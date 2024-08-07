@@ -2,12 +2,11 @@
 # ruff: noqa: F722
 import abc
 import dataclasses
-from typing import Callable, ClassVar, Literal, Self
+from typing import ClassVar, Literal, Self
 
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from jaxtyping import Array, Float
 
 from neuralconstitutive.custom_types import (
     FloatScalar,
@@ -24,7 +23,7 @@ class INDENT_TYPE(eqx.Enumeration):
     ret = "retract"
 
 
-class AbstractIndentation(eqx.Module):
+class AbstractIndentationSegment(eqx.Module):
     """Interface for the motion of the indenter during a particular segment of a force-indentation experiment.
 
     The kind of motion is one of approach / hold / retract.
@@ -43,7 +42,7 @@ class AbstractIndentation(eqx.Module):
 
         This function can be called via its alias- that is,
             indentation.depth(t) == indentation.h(t)
-        where indentation is an instance of a concrete class of AbstractIndentation
+        where indentation is an instance of a concrete class of AbstractIndentationSegment
 
         **Arguments**
 
@@ -63,7 +62,7 @@ class AbstractIndentation(eqx.Module):
 
         This function can be called via its alias- that is,
             indentation.velocity(t) == indentation.v(t)
-        where indentation is an instance of a concrete class of AbstractIndentation
+        where indentation is an instance of a concrete class of AbstractIndentationSegment
 
         **Arguments**
 
@@ -82,7 +81,7 @@ class AbstractIndentation(eqx.Module):
         return self.velocity(t)
 
 
-class ConstantVelocity(AbstractIndentation):
+class ConstantVelocity(AbstractIndentationSegment):
     velocity_: FloatScalar = floatscalar_field()
     depth_offset: FloatScalar = floatscalar_field(default=0.0)
     indent_type: Literal[INDENT_TYPE.app, INDENT_TYPE.ret] = eqx.field(init=False)
@@ -92,7 +91,7 @@ class ConstantVelocity(AbstractIndentation):
 
     def __check_init__(self):
         if self.velocity_ == 0.0:
-            raise ValueError("For zero velocity, use indentation.Hold instead.")
+            raise ValueError("For zero velocity, use indentation.Constant instead.")
 
     def depth(self, time: FloatScalarOr1D) -> FloatScalarOr1D:
         return self.depth_offset + self.velocity_ * time
@@ -101,7 +100,7 @@ class ConstantVelocity(AbstractIndentation):
         return self.velocity_ * jnp.ones_like(time)
 
 
-class Hold(AbstractIndentation):
+class Constant(AbstractIndentationSegment):
     depth_offset: FloatScalar = floatscalar_field(default=0.0)
     indent_type: ClassVar[INDENT_TYPE] = INDENT_TYPE.hold
 
@@ -112,47 +111,195 @@ class Hold(AbstractIndentation):
         return jnp.zeros_like(time)
 
 
-class IndentationSequence(eqx.Module):
-    indentations: list[AbstractIndentation]
-    breakpoints: Float[Array, " len(indentations)"] = eqx.field(converter=jnp.asarray)
-    _depth_funcs: list[Callable[[FloatScalar], FloatScalar]] = eqx.field(init=False)
-    _velocity_funcs: list[Callable[[FloatScalar], FloatScalar]] = eqx.field(init=False)
+class AbstractIndentation(eqx.Module):
+    t_hold: eqx.AbstractVar[float]
+    t_ret: eqx.AbstractVar[float]
 
-    def __post_init__(self):
-        # Use lambda t: ind.depth(t) instead of ind.depth due to https://github.com/patrick-kidger/equinox/issues/709
-        # Also define auxillary functions to create lambdas due to https://stackoverflow.com/questions/938429/scope-of-lambda-functions-and-their-parameters/938493#938493
-        def _make_depth_func(indentation):
-            return lambda t: indentation.depth(t)
+    @abc.abstractmethod
+    def h_app(self, t: FloatScalarOr1D) -> FloatScalarOr1D:
+        """Depth of the indenter as a function of time during approach."""
+        pass
 
-        def _make_velocity_func(indentation):
-            return lambda t: indentation.velocity(t)
+    @abc.abstractmethod
+    def v_app(self, t: FloatScalarOr1D) -> FloatScalarOr1D:
+        """Velocity of the indenter as a function of time during approach."""
+        pass
 
-        self._depth_funcs = [_make_depth_func(ind) for ind in self.indentations]
-        self._velocity_funcs = [_make_velocity_func(ind) for ind in self.indentations]
+    @abc.abstractmethod
+    def depth(self, t: FloatScalar) -> FloatScalar:
+        """Depth of the indenter $h(t)$ as a function of time $t$.
 
-    def _find_indentation_index(self, time):
-        index = (
-            jnp.searchsorted(self.breakpoints, time, side="right", method="compare_all")
-            - 1
-        )
-        return index
+        This function is useful when trying to calculate the depth of the indenter during the entire experiment,
+        and not just during a particular indentation segment."""
+
+    @abc.abstractmethod
+    def velocity(self, t: FloatScalar) -> FloatScalar:
+        """Depth of the indenter $v(t)$ as a function of time $t$.
+
+        This function is useful when trying to calculate the velocity of the indenter during the entire experiment,
+        and not just during a particular indentation segment."""
+
+
+class Approach(AbstractIndentation):
+    approach: AbstractIndentationSegment
+    t_hold: ClassVar[float] = jnp.inf
+    t_ret: ClassVar[float] = jnp.inf
+
+    def __check_init__(self):
+        if self.approach.indent_type != INDENT_TYPE.app:
+            raise ValueError("approach does not correspond to approaching motion.")
+
+    def h_app(self, t: FloatScalarOr1D) -> FloatScalarOr1D:
+        return self.approach.depth(t)
+
+    def v_app(self, t: FloatScalarOr1D) -> FloatScalarOr1D:
+        return self.approach.velocity(t)
 
     def depth(self, time: FloatScalar) -> FloatScalar:
-        index = self._find_indentation_index(time)
-        return jax.lax.switch(index, self._depth_funcs, time)
+        return self.h_app(time)
 
     def velocity(self, time: FloatScalar) -> FloatScalar:
-        index = self._find_indentation_index(time)
-        return jax.lax.switch(index, self._velocity_funcs, time)
+        return self.v_app(time)
 
 
-class IndentationSequenceBuilder:
-    """A class to create complicated indentatoin sequences using the builder pattern.
+class ApproachHold(AbstractIndentation):
+    approach: AbstractIndentationSegment
+    hold: Constant
+    t_hold: float
+    t_ret: ClassVar[float] = jnp.inf
+
+    def __check_init__(self):
+        if self.approach.indent_type != INDENT_TYPE.app:
+            raise ValueError("approach does not correspond to approaching motion.")
+
+        if self.t_hold <= 0:
+            raise ValueError(
+                "t_hold must be larger than zero - i.e., hold segment must start after approach"
+            )
+
+    def h_app(self, t: FloatScalarOr1D) -> FloatScalarOr1D:
+        return self.approach.depth(t)
+
+    def v_app(self, t: FloatScalarOr1D) -> FloatScalarOr1D:
+        return self.approach.velocity(t)
+
+    def h_hold(self, t: FloatScalarOr1D) -> FloatScalarOr1D:
+        return self.hold.depth(t)
+
+    def v_hold(self, t: FloatScalarOr1D) -> FloatScalarOr1D:
+        return self.hold.velocity(t)
+
+    def depth(self, time: FloatScalar) -> FloatScalar:
+        return jax.lax.cond(time <= self.t_hold, self.h_app, self.h_hold, time)
+
+    def velocity(self, time: FloatScalar) -> FloatScalar:
+        return jax.lax.cond(time <= self.t_hold, self.v_app, self.v_hold, time)
+
+
+class ApproachRetract(AbstractIndentation):
+    approach: AbstractIndentationSegment
+    retract: AbstractIndentationSegment
+    t_hold: float = eqx.field(init=False)
+    t_ret: float
+
+    def __post_init__(self):
+        self.t_hold = self.t_ret
+
+    def __check_init__(self):
+        if self.approach.indent_type != INDENT_TYPE.app:
+            raise ValueError("self.approach does not correspond to approaching motion.")
+
+        if self.retract.indent_type != INDENT_TYPE.ret:
+            raise ValueError("self.retract does not correspond to retracting motion.")
+
+        if self.t_ret <= 0:
+            raise ValueError(
+                "t_ret must be larger than zero - i.e., retract segment must start after approach"
+            )
+
+    def h_app(self, t: FloatScalarOr1D) -> FloatScalarOr1D:
+        return self.approach.depth(t)
+
+    def v_app(self, t: FloatScalarOr1D) -> FloatScalarOr1D:
+        return self.approach.velocity(t)
+
+    def h_ret(self, t: FloatScalarOr1D) -> FloatScalarOr1D:
+        return self.retract.depth(t)
+
+    def v_ret(self, t: FloatScalarOr1D) -> FloatScalarOr1D:
+        return self.retract.velocity(t)
+
+    def depth(self, time: FloatScalar) -> FloatScalar:
+        return jax.lax.cond(time < self.t_ret, self.h_app, self.h_ret, time)
+
+    def velocity(self, time: FloatScalar) -> FloatScalar:
+        return jax.lax.cond(time < self.t_ret, self.v_app, self.v_ret, time)
+
+
+class ApproachHoldRetract(AbstractIndentation):
+    approach: AbstractIndentationSegment
+    hold: Constant
+    retract: AbstractIndentationSegment
+    t_hold: float
+    t_ret: float
+
+    def __check_init__(self):
+        if self.approach.indent_type != INDENT_TYPE.app:
+            raise ValueError("self.approach does not correspond to approaching motion.")
+
+        if self.retract.indent_type != INDENT_TYPE.ret:
+            raise ValueError("self.retract does not correspond to retracting motion.")
+
+        if self.t_hold <= 0:
+            raise ValueError(
+                "t_hold must be larger than zero - i.e., hold segment must start after approach"
+            )
+
+        if self.t_ret <= self.t_hold:
+            raise ValueError(
+                "t_ret must be larger than t_hold - i.e., retract segment must start after hold"
+            )
+
+    def h_app(self, t: FloatScalarOr1D) -> FloatScalarOr1D:
+        return self.approach.depth(t)
+
+    def v_app(self, t: FloatScalarOr1D) -> FloatScalarOr1D:
+        return self.approach.velocity(t)
+
+    def h_hold(self, t: FloatScalarOr1D) -> FloatScalarOr1D:
+        return self.hold.depth(t)
+
+    def v_hold(self, t: FloatScalarOr1D) -> FloatScalarOr1D:
+        return self.hold.velocity(t)
+
+    def h_ret(self, t: FloatScalarOr1D) -> FloatScalarOr1D:
+        return self.retract.depth(t)
+
+    def v_ret(self, t: FloatScalarOr1D) -> FloatScalarOr1D:
+        return self.retract.velocity(t)
+
+    def depth(self, time: FloatScalar) -> FloatScalar:
+        return jnp.select(
+            [time < self.t_hold, time < self.t_ret],
+            [self.h_app(time), self.h_hold(time)],
+            default=self.h_ret(time),
+        )
+
+    def velocity(self, time: FloatScalar) -> FloatScalar:
+        return jnp.select(
+            [time < self.t_hold, time < self.t_ret],
+            [self.v_app(time), self.v_hold(time)],
+            default=self.v_ret(time),
+        )
+
+
+class IndentationBuilder:
+    """A class to create complicated indentation sequences using the builder pattern.
 
     This class is a regular class and not an equinox.Module as its state is intended to be mutable.
     """
 
-    indentations: list[AbstractIndentation]
+    indentations: list[AbstractIndentationSegment]
     breakpoints: list[float]
     enforce_continuity: bool
 
@@ -161,15 +308,14 @@ class IndentationSequenceBuilder:
         self.breakpoints = [0.0]
         self.enforce_continuity = enforce_continuity
 
-    def append(self, indentation: AbstractIndentation, duration: float) -> Self:
+    def append(self, indentation: AbstractIndentationSegment, duration: float) -> Self:
         if self.enforce_continuity:
             indentation = self._modify_depth_offset(indentation)
         self.indentations.append(indentation)
         self.breakpoints.append(self.breakpoints[-1] + duration)
         return self
 
-    def _modify_depth_offset(self, indentation: AbstractIndentation):
-
+    def _modify_depth_offset(self, indentation: AbstractIndentationSegment):
         if len(self.indentations) == 0:
             indentation_new = indentation
         else:
@@ -183,15 +329,25 @@ class IndentationSequenceBuilder:
             )
         return indentation_new
 
-    def build(self) -> IndentationSequence:
-        return IndentationSequence(self.indentations, self.breakpoints)
+    def build(self) -> AbstractIndentation:
+        match self.indentations, self.breakpoints:
+            case [[app], [0.0, *_]]:
+                return Approach(app)
+            case [[app, Constant() as hold], [0.0, t_hold, *_]]:
+                return ApproachHold(app, hold, t_hold)
+            case [[app, ret], [0.0, t_ret, *_]]:
+                return ApproachRetract(app, ret, t_ret)
+            case [[app, hold, ret], [0.0, t_hold, t_ret, *_]]:
+                return ApproachHoldRetract(app, hold, ret, t_hold, t_ret)
+            case _:
+                raise ValueError("Invalid combination of IndentationSegments")
 
 
 # %%
 indentation = (
-    IndentationSequenceBuilder()
+    IndentationBuilder()
     .append(ConstantVelocity(velocity_=3.0), duration=2.0)
-    .append(Hold(depth_offset=6.0), duration=4.0)
+    .append(Constant(depth_offset=6.0), duration=4.0)
     .append(ConstantVelocity(velocity_=-3.0, depth_offset=6.0), duration=2.0)
     .build()
 )
@@ -199,11 +355,10 @@ indentation = (
 # %%
 import matplotlib.pyplot as plt
 
-t_array = jnp.arange(0.0, indentation.breakpoints[-1] + 0.1, 0.1)
+t_array = jnp.arange(0.0, 8.0 + 0.1, 0.1)
 d_array = jax.vmap(indentation.depth)(t_array)
 v_array = jax.vmap(indentation.velocity)(t_array)
 
 fig, axes = plt.subplots(2, 1, figsize=(7, 5), sharex=True)
 axes[0].plot(t_array, d_array)
 axes[1].plot(t_array, v_array)
-# %%
