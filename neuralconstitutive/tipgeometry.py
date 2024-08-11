@@ -15,10 +15,10 @@ class AbstractTipGeometry(eqx.Module):
 
 
 class Spherical(AbstractTipGeometry):
-    R: float
+    r: float
 
     def a(self) -> float:
-        return (16 / 9) * jnp.sqrt(self.R)
+        return (16 / 9) * jnp.sqrt(self.r)
 
     def b(self) -> float:
         return 1.5

@@ -1,19 +1,14 @@
 # ruff: noqa: F722
 import abc
-from functools import partial
 
-from jaxtyping import ArrayLike, Array, Float
 import equinox as eqx
 import jax.numpy as jnp
-from jax.scipy.special import exp1
+from jax.scipy.special import exp1, gamma
+from jaxtyping import Array, ArrayLike, Float
 
 from neuralconstitutive.custom_types import FloatScalar, floatscalar_field
-from neuralconstitutive.relaxation_spectrum import AbstractLogDiscreteSpectrum
 from neuralconstitutive.misc import stretched_exp
-
-from mittag_leffler_master.mittag_leffler import ml
-
-from jax.scipy.special import gamma
+from neuralconstitutive.relaxation_spectrum import AbstractLogDiscreteSpectrum
 
 
 class AbstractConstitutive(eqx.Module):

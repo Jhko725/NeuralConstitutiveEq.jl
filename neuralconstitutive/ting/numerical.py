@@ -5,11 +5,15 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
-from jaxtyping import Array
+from jaxtyping import Array, Float
 
 from neuralconstitutive.constitutive import AbstractConstitutive
 from neuralconstitutive.custom_types import FloatScalar
-from neuralconstitutive.indentation import interpolate_indentation, AbstractIndentation
+from neuralconstitutive.indentation import (
+    AbstractIndentation,
+    ApproachRetract,
+    ApproachHoldRetract,
+)
 from neuralconstitutive.integrate import integrate
 from neuralconstitutive.tipgeometry import AbstractTipGeometry
 from neuralconstitutive.tree import tree_to_array1d
@@ -36,7 +40,8 @@ def force_approach_scalar(
     tip: AbstractTipGeometry,
 ) -> FloatScalar:
     args = (t, constitutive, indent, tip)
-    return integrate(force_integrand, (0, t), args)
+    t_upper = jnp.clip(t, 0.0, indent.t_hold)
+    return integrate(force_integrand, (0, t_upper), args)
 
 
 def _is_none(x: Any) -> bool:
@@ -90,7 +95,7 @@ def t1_integrand_ret(
     s: FloatScalar,
     t: FloatScalar,
     constit: AbstractConstitutive,
-    indent: AbstractIndentation,
+    indent: ApproachRetract | ApproachHoldRetract,
 ) -> FloatScalar:
     return constit.relaxation_function(t - s) * indent.v_ret(s)
 
@@ -99,25 +104,25 @@ def t1_integrand_ret(
 def t1_scalar(
     t: FloatScalar,
     constit: AbstractConstitutive,
-    indent: AbstractIndentation,
+    indent: ApproachRetract | ApproachHoldRetract,
     newton_iterations: int = 3,
 ) -> FloatScalar:
 
-    t_m = indent.t_m
+    t_hold, t_ret = indent.t_hold, indent.t_ret
     args = (t, constit, indent)
 
-    const = integrate(t1_integrand_ret, (t_m, t), args)
+    const = integrate(t1_integrand_ret, (t_ret, t), args)
 
     def residual(t1):
-        return integrate(t1_integrand_app, (t1, t_m), args) + const
+        return integrate(t1_integrand_app, (t1, t_hold), args) + const
 
     def Dresidual(t1):
         return -t1_integrand_app(t1, *args)
 
-    t1 = t_m
+    t1 = t_hold
     for _ in range(newton_iterations):
         f_t1, Df_t1 = residual(t1), Dresidual(t1)
-        t1 = jnp.clip(t1 - f_t1 / Df_t1, 0.0, t_m)
+        t1 = jnp.clip(t1 - f_t1 / Df_t1, 0.0, t_hold)
 
     return t1
 
@@ -152,10 +157,10 @@ def _t1_scalar_jvp(primals, tangents, *, newton_iterations: int = 5):
     def Dt1_integrand_ret(s, _t_constit_diff, indent):
         return tree_to_array1d(_Dt1_integrand_ret(_t_constit_diff, s, indent))
 
-    t_m = indent.t_m
+    t_hold, t_ret = indent.t_hold, indent.t_ret
 
-    Dt1 = integrate(Dt1_integrand_app, (t1, t_m), (t_constit_diff, indent))
-    Dt1 = Dt1 + integrate(Dt1_integrand_ret, (t_m, t), (t_constit_diff, indent))
+    Dt1 = integrate(Dt1_integrand_app, (t1, t_hold), (t_constit_diff, indent))
+    Dt1 = Dt1 + integrate(Dt1_integrand_ret, (t_ret, t), (t_constit_diff, indent))
     Dt1_boundary = jax.lax.cond(
         t_dot is None, _zeros_like_arg1, t1_integrand_ret, t, t, constit, indent
     )
@@ -169,7 +174,7 @@ def _t1_scalar_jvp(primals, tangents, *, newton_iterations: int = 5):
 def force_retract_scalar(
     t: FloatScalar,
     constitutive: AbstractConstitutive,
-    indent: AbstractIndentation,
+    indent: ApproachRetract | ApproachHoldRetract,
     tip: AbstractTipGeometry,
 ) -> FloatScalar:
     t1 = t1_scalar(t, constitutive, indent)
@@ -181,7 +186,7 @@ def _force_retract_scalar(
     t1: FloatScalar,
     t: FloatScalar,
     constitutive: AbstractConstitutive,
-    indent: AbstractIndentation,
+    indent: ApproachRetract | ApproachHoldRetract,
     tip: AbstractTipGeometry,
 ) -> FloatScalar:
     args = (t, constitutive, indent, tip)
@@ -232,3 +237,19 @@ def _force_retract_jvp(primals, tangents):
 force_approach = eqx.filter_vmap(force_approach_scalar, in_axes=(0, None, None, None))
 force_retract = eqx.filter_vmap(force_retract_scalar, in_axes=(0, None, None, None))
 t1_ting = eqx.filter_vmap(t1_scalar, in_axes=(0, None, None))
+
+
+def force_ting(
+    time: Float[Array, " N"],
+    constit: AbstractConstitutive,
+    indentation: AbstractIndentation,
+    tip: AbstractTipGeometry,
+) -> Float[Array, " N"]:
+    # TODO: handle cases without retract -> perhaps via isinstance checks?
+    t_ret = indentation.t_ret
+    is_ret = time >= t_ret
+    time_app_hold = jnp.where(~is_ret, time, 0.0)
+    time_ret = jnp.where(is_ret, time, t_ret)
+    f_app_hold = force_approach(time_app_hold, constit, indentation, tip)
+    f_ret = force_retract(time_ret, constit, indentation, tip)
+    return jnp.where(~is_ret, f_app_hold, f_ret)
