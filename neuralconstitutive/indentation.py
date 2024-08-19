@@ -229,10 +229,19 @@ class ApproachRetract(AbstractIndentation):
         return self.retract.velocity(t)
 
     def depth(self, time: FloatScalar) -> FloatScalar:
-        return jax.lax.cond(time < self.t_ret, self.h_app, self.h_ret, time)
+        return jnp.select(
+            [time < self.t_ret],
+            [self.h_app(time)],
+            default=self.h_ret(time),
+        )
+
 
     def velocity(self, time: FloatScalar) -> FloatScalar:
-        return jax.lax.cond(time < self.t_ret, self.v_app, self.v_ret, time)
+        return jnp.select(
+            [time < self.t_ret],
+            [self.v_app(time)],
+            default=self.v_ret(time),
+        )
 
 
 class ApproachHoldRetract(AbstractIndentation):

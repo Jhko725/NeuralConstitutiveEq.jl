@@ -19,6 +19,6 @@ def integrate(fn: Callable, bounds: tuple[float, float], args: tuple):
         cond,
         0.0,
         quadax.quadgk(
-            fn, (lower, upper_), args, epsabs=1e-6, epsrel=1e-6, max_ninter=40
+            fn, (lower, upper_), args, epsabs=1e-5, epsrel=1e-5, max_ninter=30
         )[0],
     )
