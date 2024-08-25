@@ -1,5 +1,7 @@
+# ruff: noqa: F722
 import diffrax
 import jax.numpy as jnp
+from jaxtyping import Float, Array
 import scipy.interpolate as scinterp
 
 
@@ -15,8 +17,10 @@ class PiecewiseCubic(diffrax.CubicInterpolation):
         return index, fractional_part
 
 
-def make_smoothed_cubic_spline(indentation, s=1.5e-4):
-    tck = scinterp.splrep(indentation.time, indentation.depth, s=s)
+def make_smoothed_cubic_spline(
+    time: Float[Array, " N"], depth: Float[Array, " N"], s=1.5e-4
+) -> PiecewiseCubic:
+    tck = scinterp.splrep(time, depth, s=s)
     ppoly = scinterp.PPoly.from_spline(tck)
     cubic_interp = PiecewiseCubic(ppoly.x[3:-3], tuple(ppoly.c[:, 3:-3]))
     return cubic_interp

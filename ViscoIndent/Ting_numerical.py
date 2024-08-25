@@ -85,6 +85,7 @@ def ting_numerical(
     ind2speed = np.diff(indentationfull**power) / dT
     ind2speed = np.append(ind2speed, ind2speed[-1])
     ind2speed = smoothM(ind2speed, 5)
+
     indspeed = np.diff(indentationfull) / dT
     indspeed = np.append(indspeed, indspeed[-1])
     indspeed = smoothM(indspeed, 5)

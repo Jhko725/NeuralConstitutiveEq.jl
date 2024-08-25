@@ -29,7 +29,7 @@ from neuralconstitutive.fitting import (
 )
 from neuralconstitutive.io import import_data, truncate_adhesion, normalize_dataset
 from neuralconstitutive.plotting import plot_relaxation_fn, plot_forceindent
-from neuralconstitutive.smoothing import make_smoothed_cubic_spline
+from neuralconstitutive.utils.smoothing import make_smoothed_cubic_spline
 from neuralconstitutive.ting import (
     force_approach_scalar,
     force_retract_scalar,

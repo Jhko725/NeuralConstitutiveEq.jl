@@ -119,7 +119,7 @@ import jax.numpy as jnp
 import jax
 from neuralconstitutive.tingx import force_approach_scalar
 from neuralconstitutive.indentation import interpolate_indentation
-from neuralconstitutive.smoothing import make_smoothed_cubic_spline
+from neuralconstitutive.utils.smoothing import make_smoothed_cubic_spline
 from functools import partial
 from neuralconstitutive.utils import smooth_data
 

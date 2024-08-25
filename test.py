@@ -38,7 +38,7 @@ from neuralconstitutive.fitting import (
 from neuralconstitutive.io import import_data
 from neuralconstitutive.indentation import Indentation
 from neuralconstitutive.plotting import plot_indentation, plot_relaxation_fn
-from neuralconstitutive.smoothing import make_smoothed_cubic_spline
+from neuralconstitutive.utils.smoothing import make_smoothed_cubic_spline
 from neuralconstitutive.ting import (
     _force_approach,
     _force_retract,
@@ -92,8 +92,8 @@ axes[2].set_ylabel("Force[N]")
 
 # %%
 f_ret = jnp.clip(f_ret, 0.0)
-#(f_app, f_ret), _ = normalize_forces(f_app, f_ret)
-#(app, ret), (_, h_m) = normalize_indentations(app, ret)
+# (f_app, f_ret), _ = normalize_forces(f_app, f_ret)
+# (app, ret), (_, h_m) = normalize_indentations(app, ret)
 f_ret = jnp.trim_zeros(jnp.clip(f_ret, 0.0), "b")
 ret = jtu.tree_map(lambda leaf: leaf[: len(f_ret)], ret)
 
@@ -341,7 +341,7 @@ for results, fits, name in zip(
 # %%
 for r in results_best.values():
     display(r)
- 
+
 
 # %%
 import equinox as eqx
@@ -387,13 +387,15 @@ for n, c_ind in zip(names, color_inds):
     axes[0].set_ylabel("Force (norm.)")
 
     axes[1] = plot_relaxation_fn(axes[1], constit, app.time, color=color, linewidth=2.0)
-    #axes[1].set_ylim((0, 0.8))
+    # axes[1].set_ylim((0, 0.8))
     axes[1].set_xlabel("Time (norm.)")
     axes[1].set_ylabel("$G(t)$ (norm.)")
 
     handles, labels = axes[0].get_legend_handles_labels()
     axes[1].legend(handles, labels, ncols=2, loc="upper right")
-axes[1] = plot_relaxation_fn(axes[1], constit_true, app.time, color="black", label = "ground truth", linewidth=1.0)
+axes[1] = plot_relaxation_fn(
+    axes[1], constit_true, app.time, color="black", label="ground truth", linewidth=1.0
+)
 for ax in axes:
     ax.grid(ls="--", color="lightgray")
 

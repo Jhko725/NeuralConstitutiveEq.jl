@@ -12,6 +12,10 @@ from neuralconstitutive.custom_types import (
     FloatScalarOr1D,
     floatscalar_field,
 )
+from neuralconstitutive.utils.smoothing import (
+    make_smoothed_cubic_spline,
+    PiecewiseCubic,
+)
 
 
 class INDENT_TYPE(eqx.Enumeration):
@@ -108,6 +112,41 @@ class Constant(AbstractIndentationSegment):
 
     def velocity(self, time: FloatScalarOr1D) -> FloatScalarOr1D:
         return jnp.zeros_like(time)
+
+
+class CubicSpline(AbstractIndentationSegment):
+    depth_offset: FloatScalar
+    spline: PiecewiseCubic
+    indent_type: INDENT_TYPE
+
+    def __init__(
+        self,
+        time_data,
+        depth_data,
+        smoothing: float = 1.5e-4,
+        depth_offset: float = 0.0,
+    ):
+        self.depth_offset = jnp.asarray(depth_offset)
+        self.spline = make_smoothed_cubic_spline(time_data, depth_data, s=smoothing)
+        self.indent_type = self._infer_indent_type()
+
+    def _infer_indent_type(self) -> INDENT_TYPE:
+        depth_start = self.depth(self.spline.t0)
+        depth_end = self.depth(self.spline.t1)
+
+        if depth_end > depth_start:
+            indent_type = INDENT_TYPE.app
+        elif depth_end < depth_start:
+            indent_type = INDENT_TYPE.ret
+        else:
+            indent_type = INDENT_TYPE.hold
+        return indent_type
+
+    def depth(self, time: FloatScalarOr1D) -> FloatScalarOr1D:
+        return self.spline.evaluate(time)
+
+    def velocity(self, time: FloatScalarOr1D) -> FloatScalarOr1D:
+        return self.spline.derivative(time)
 
 
 class AbstractIndentation(eqx.Module):
@@ -234,7 +273,6 @@ class ApproachRetract(AbstractIndentation):
             [self.h_app(time)],
             default=self.h_ret(time),
         )
-
 
     def velocity(self, time: FloatScalar) -> FloatScalar:
         return jnp.select(

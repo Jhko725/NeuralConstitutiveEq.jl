@@ -19,7 +19,7 @@ from neuralconstitutive.ting import (
     force_approach,
     force_retract,
 )
-from neuralconstitutive.smoothing import make_smoothed_cubic_spline
+from neuralconstitutive.utils.smoothing import make_smoothed_cubic_spline
 from neuralconstitutive.tipgeometry import AbstractTipGeometry
 from neuralconstitutive.utils import smooth_data
 from neuralconstitutive.io import ForceIndentDataset
