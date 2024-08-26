@@ -35,7 +35,7 @@ def connected_scatter(
     facecolor: str = "w",
     facealpha: float = 0.5,
     **plot_kwargs,
-):
+) -> Axes:
     """Draw a scatterplot connected by line.
 
     Basically a convenience wrapper around ax.plot(), but with more sensible function arguments.
