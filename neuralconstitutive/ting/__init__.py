@@ -6,4 +6,4 @@ from .numerical import (
     force_retract,
     t1_ting,
 )
-from .analytic import force_approach_analytic, force_retract_analytic, t1_analytic
+from .analytic import force_powerlaw, t1_powerlaw

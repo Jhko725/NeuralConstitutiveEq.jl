@@ -16,6 +16,7 @@ from neuralconstitutive.utils.smoothing import (
     make_smoothed_cubic_spline,
     PiecewiseCubic,
 )
+from neuralconstitutive.io import ForceIndentDataset
 
 
 class INDENT_TYPE(eqx.Enumeration):
@@ -141,6 +142,10 @@ class CubicSpline(AbstractIndentationSegment):
         else:
             indent_type = INDENT_TYPE.hold
         return indent_type
+
+    @property
+    def n_knots(self) -> int:
+        return len(self.spline.ts)
 
     def depth(self, time: FloatScalarOr1D) -> FloatScalarOr1D:
         return self.spline.evaluate(time)
@@ -387,3 +392,16 @@ class IndentationBuilder:
                 return ApproachHoldRetract(app, hold, ret, t_hold, t_ret)
             case _:
                 raise ValueError("Invalid combination of IndentationSegments")
+
+    def build_from_dataset(
+        self, dataset: ForceIndentDataset, smoothing: float = 1e-3
+    ) -> AbstractIndentation:
+        match dataset:
+            case ForceIndentDataset(approach=app_data, retract=None):
+                app = CubicSpline(app_data.time, app_data.depth, smoothing=smoothing)
+                return Approach(app)
+
+            case ForceIndentDataset(approach=app_data, retract=ret_data):
+                app = CubicSpline(app_data.time, app_data.depth, smoothing=smoothing)
+                ret = CubicSpline(ret_data.time, ret_data.depth, smoothing=smoothing)
+                return ApproachRetract(app, ret, ret_data.time[0])

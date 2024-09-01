@@ -1,5 +1,6 @@
 # ruff: noqa: F722
 import abc
+from typing import NamedTuple
 
 import equinox as eqx
 import jax.numpy as jnp
@@ -9,6 +10,11 @@ from jaxtyping import Array, ArrayLike, Float
 from neuralconstitutive.custom_types import FloatScalar, floatscalar_field
 from neuralconstitutive.misc import stretched_exp
 from neuralconstitutive.relaxation_spectrum import AbstractLogDiscreteSpectrum
+
+
+class Bound(NamedTuple):
+    lower: float = -jnp.inf
+    upper: float = jnp.inf
 
 
 class AbstractConstitutive(eqx.Module):
@@ -169,3 +175,13 @@ class PowerLaw(AbstractConstitutive):
 
     def _relaxation_function_1D(self, t: Float[Array, " N"]) -> Float[Array, " N"]:
         return self.E0 * t ** (-self.alpha)
+
+
+class DoublePowerLaw(AbstractConstitutive):
+    E0: FloatScalar = floatscalar_field()
+    alpha: FloatScalar = floatscalar_field()
+    E1: FloatScalar = floatscalar_field()
+    beta: FloatScalar = floatscalar_field()
+
+    def _relaxation_function_1D(self, t: Float[Array, " N"]) -> Float[Array, " N"]:
+        return self.E0 * t ** (-self.alpha) + self.E1 * t ** (-self.beta)

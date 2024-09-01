@@ -1,185 +1,189 @@
 # ruff: noqa: F722
+import operator
+from typing import Any
 import dataclasses
-from typing import Sequence, TypeVar, Literal
 
-import equinox as eqx
+import jax
 import jax.numpy as jnp
-import lmfit
+from jaxtyping import PyTree, Float, Array
+import equinox as eqx
+import optimistix as optx
 import numpy as np
-from jaxtyping import Array, Float
 from scipy.stats import qmc
-import scipy.interpolate as scinterp
-from tqdm import tqdm
 
-from neuralconstitutive.constitutive import (
-    AbstractConstitutive,
-)
-from neuralconstitutive.indentation import Indentation, interpolate_indentation
-from neuralconstitutive.ting import (
-    force_approach,
-    force_retract,
-)
-from neuralconstitutive.utils.smoothing import make_smoothed_cubic_spline
-from neuralconstitutive.tipgeometry import AbstractTipGeometry
-from neuralconstitutive.utils import smooth_data
-from neuralconstitutive.io import ForceIndentDataset
-
-ConstitEqn = TypeVar("ConstitEqn", bound=AbstractConstitutive)
+from neuralconstitutive.custom_types import FloatScalar
 
 
-def constitutive_to_params(
-    constit, bounds: Sequence[tuple[float, float] | None]
-) -> lmfit.Parameters:
-    params = lmfit.Parameters()
+def count_free_params(params: PyTree):
+    return jax.tree.reduce(operator.add, jax.tree.map(maybe_size, params))
 
-    constit_dict = dataclasses.asdict(constit)  # Equinox modules are dataclasses
-    assert len(constit_dict) == len(
-        bounds
-    ), "Length of bounds should match the number of parameters in consitt"
 
-    for (k, v), bound in zip(constit_dict.items(), bounds):
-        if bound is None:
-            max_, min_ = None, None
+def maybe_size(leaf: Any) -> int:
+    return leaf.size if isinstance(leaf, jax.Array) else 0
+
+
+def bayesian_information_criterion(residual_fn, y, args) -> FloatScalar:
+    residuals = residual_fn(y, args)
+    n_data = len(residuals)
+    n_params = count_free_params(y)
+    rss = jnp.sum(residuals**2) / n_data
+    bic = n_data * jnp.log(rss / n_data) + n_params * jnp.log(n_data)
+    return bic
+
+
+def get_num_params(sample_range: tuple) -> int:
+    lower, upper = sample_range
+    n_params = len(lower)
+    assert n_params == len(
+        upper
+    ), "Number of parameters for lower and upper bound must be the same"
+    return n_params
+
+
+def scale_linear(samples, lower, upper):
+    lower = np.atleast_1d(lower)
+    upper = np.atleast_1d(upper)
+
+    input_shape = samples.shape
+    samples = samples.reshape((-1, len(lower)))
+    scaled = qmc.scale(samples, lower, upper)
+    return scaled.reshape(input_shape)
+
+
+def scale_loglinear(samples, lower, upper):
+    log_lower, log_upper = np.log10(lower), np.log10(upper)
+    return 10 ** scale_linear(samples, log_lower, log_upper)
+
+
+def scale_samples(samples, range, scale):
+    samples_scaled = []
+    lower, upper = range
+    for i, s in enumerate(scale):
+        if s == "linear":
+            s_scaled = scale_linear(samples[:, i], lower[i], upper[i])
+            samples_scaled.append(s_scaled)
+        elif s == "log":
+            s_scaled = scale_loglinear(samples[:, i], lower[i], upper[i])
+            samples_scaled.append(s_scaled)
         else:
-            max_, min_ = bound
-
-        params.add(k, value=float(v), min=min_, max=max_)
-
-    return params
+            raise ValueError(f"Unrecognized scaling: scale = {s}")
+    return jnp.stack(samples_scaled, axis=-1)
 
 
-def params_to_constitutive(params: lmfit.Parameters, constit: ConstitEqn) -> ConstitEqn:
-    return type(constit)(**params.valuesdict())
+def sample_params_lhs(n_samples: int, sample_range, scale=None, seed: int = 0):
+    n_params = get_num_params(sample_range)
 
-
-@eqx.filter_jit
-def _residual_app(constit, args):
-    t_app, app_interp, tip, force = args
-    f_pred = force_approach(t_app, constit, app_interp, tip)
-    return f_pred - force
-
-
-def fit_approach_lmfit(
-    constitutive: AbstractConstitutive,
-    bounds: Sequence[tuple[float, float] | None],
-    dataset: ForceIndentDataset,
-    tip: AbstractTipGeometry,
-):
-    params = constitutive_to_params(constitutive, bounds)
-    app = dataset.approach
-    app_interp = make_smoothed_cubic_spline(app)
-
-    def residual(params: lmfit.Parameters, args) -> Float[Array, " N"]:
-        constit = params_to_constitutive(params, constitutive)
-        return _residual_app(constit, args)
-
-    args = (app.time, app_interp, tip, app.force)
-    minimizer = lmfit.Minimizer(residual, params, fcn_args=(args,))
-    result = minimizer.minimize()
-    constit_fit = params_to_constitutive(result.params, constitutive)
-    return constit_fit, result, minimizer
-
-
-@eqx.filter_jit
-def _residual_jax(constit, args):
-    t_app, t_ret, app_interp, ret_interp, tip, forces = args
-    f_pred_app = force_approach(t_app, constit, app_interp, tip)
-    f_pred_ret = force_retract(t_ret, constit, (app_interp, ret_interp), tip)
-
-    return jnp.concatenate((f_pred_app, f_pred_ret)) - jnp.concatenate(forces)
-
-
-def fit_all_lmfit(
-    constitutive: AbstractConstitutive,
-    bounds: Sequence[tuple[float, float] | None],
-    dataset: ForceIndentDataset,
-    tip: AbstractTipGeometry,
-):
-    params = constitutive_to_params(constitutive, bounds)
-
-    app, ret = dataset.approach, dataset.retract
-    app_interp = make_smoothed_cubic_spline(app)
-    ret_interp = make_smoothed_cubic_spline(ret)
-
-    def residual(params: lmfit.Parameters, args) -> Float[Array, " N"]:
-        constit = params_to_constitutive(params, constitutive)
-        return _residual_jax(constit, args)
-
-    args = (app.time, ret.time, app_interp, ret_interp, tip, (app.force, ret.force))
-    minimizer = lmfit.Minimizer(residual, params, fcn_args=(args,))
-    result = minimizer.minimize()
-    constit_fit = params_to_constitutive(result.params, constitutive)
-    return constit_fit, result, minimizer
-
-
-class LatinHypercubeSampler:
-
-    def __init__(self, sample_range, sample_scale, random_seed: int = 20):
-        self.random_seed = random_seed
-        self.sample_range = np.asarray(sample_range)
-        self.sample_scale = sample_scale
-
-        self.sampler = qmc.LatinHypercube(
-            d=self.sample_range.shape[0], seed=self.random_seed
-        )
-
-    @property
-    def n_dim(self) -> int:
-        return self.sample_range.shape[0]
-
-    def sample(self, n_samples: int) -> Float[np.ndarray, "{n_samples} {self.n_dim}"]:
-        samples_norm = self.sampler.random(n_samples)
-        is_logscale = [s == "log" for s in self.sample_scale]
-
-        sample_range = self.sample_range
-        sample_range[is_logscale, :] = np.log10(sample_range[is_logscale, :])
-
-        samples = qmc.scale(samples_norm, sample_range[:, 0], sample_range[:, 1])
-        samples[:, is_logscale] = 10 ** samples[:, is_logscale]
-        return samples
-
-
-FitType = Literal["approach", "both"]
-
-
-def fit_indentation_data(
-    constit,
-    bounds,
-    dataset,
-    tip,
-    fit_type: FitType = "approach",
-    init_val_sampler=None,
-    n_samples: int = 1,
-):
-    if fit_type == "approach":
-        fit_func = fit_approach_lmfit
+    if scale is None:
+        scale = ["linear"] * n_params
     else:
-        fit_func = fit_all_lmfit
+        assert (
+            len(scale) == n_params
+        ), "The length of scale does not match the actual number of parameters."
 
-    constit_fits = []
-    results = []
-    minimizers = []
+    sampler = qmc.LatinHypercube(d=n_params, seed=seed)
 
-    init_vals = None
-    if init_val_sampler is not None:
-        init_vals = init_val_sampler.sample(n_samples)
+    samples_normalized: Float[np.ndarray, "n_samples n_params"] = sampler.random(
+        n_samples
+    )
+    return scale_samples(samples_normalized, sample_range, scale)
 
-    for i in tqdm(range(n_samples)):
-        if init_vals is not None:
-            constit_ = type(constit)(*init_vals[i])
+
+class NoBound(eqx.Module):
+
+    def bound_value(self, x: FloatScalar) -> FloatScalar:
+        return x
+
+    def unbound_value(self, x: FloatScalar) -> FloatScalar:
+        return x
+
+
+class UpperBound(eqx.Module):
+    upper: float
+
+    def bound_value(self, x: FloatScalar) -> FloatScalar:
+        return self.upper + 1 - jnp.sqrt(x**2 + 1)
+
+    def unbound_value(self, x: FloatScalar) -> FloatScalar:
+        return jnp.sqrt((self.upper - x + 1) ** 2 - 1)
+
+
+class LowerBound(eqx.Module):
+    lower: float
+
+    def bound_value(self, x: FloatScalar) -> FloatScalar:
+        return self.lower - 1 + jnp.sqrt(x**2 + 1)
+
+    def unbound_value(self, x: FloatScalar) -> FloatScalar:
+        return jnp.sqrt((x - self.lower + 1) ** 2 - 1)
+
+
+class BothBound(eqx.Module):
+    lower: float
+    upper: float
+
+    def bound_value(self, x: FloatScalar) -> FloatScalar:
+        lo, up = self.lower, self.upper
+        return lo + 0.5 * (up - lo) * (jnp.sin(x) + 1)
+
+    def unbound_value(self, x: FloatScalar) -> FloatScalar:
+        lo, up = self.lower, self.upper
+        return jnp.arcsin(2 * (x - lo) / (up - lo) - 1)
+
+
+def make_transformation_function(bounds: tuple[PyTree, PyTree]):
+    bounds = jax.tree.map(float, bounds)
+    lower, upper = bounds
+    vals_l, treedef_l = jax.tree.flatten(lower)
+    vals_u, treedef_u = jax.tree.flatten(upper)
+
+    assert (
+        treedef_l == treedef_u
+    ), "PyTree structure of lower and upper bounds must be the same."
+
+    def make_bounds(lower: float, upper: float):
+        if lower == -jnp.inf:
+            if upper == jnp.inf:
+                bound = NoBound()
+            else:
+                bound = UpperBound(upper)
         else:
-            constit_ = constit
-        try:
-            constit_fit, result, minimizer = fit_func(constit_, bounds, dataset, tip)
-        except ValueError:
-            print(f"Fit #{i} aborted")
-            constit_fit, result, minimizer = None, None, None
-        constit_fits.append(constit_fit)
-        results.append(result)
-        minimizers.append(minimizer)
+            if upper == jnp.inf:
+                bound = LowerBound(lower)
+            else:
+                bound = BothBound(lower, upper)
+        return bound
 
-    constit_fits = np.array(constit_fits)
-    results = np.array(results)
-    init_vals = np.array(init_vals)
-    minimizers = np.array(minimizers)
-    return constit_fits, results, init_vals, minimizers
+    bounds = jax.tree.map(make_bounds, lower, upper)
+    bounds_list, _ = eqx.tree_flatten_one_level(bounds)
+
+    def to_bounded(params_unbounded: PyTree):
+        vals_unbounded, treedef = jax.tree.flatten(params_unbounded)
+        vals_bounded = [b.bound_value(v) for b, v in zip(bounds_list, vals_unbounded)]
+
+        return jax.tree.unflatten(treedef, vals_bounded)
+
+    def to_unbounded(params_bounded: PyTree):
+        vals_bounded, treedef = jax.tree.flatten(params_bounded)
+        vals_unbounded = [b.unbound_value(v) for b, v in zip(bounds_list, vals_bounded)]
+
+        return jax.tree.unflatten(treedef, vals_unbounded)
+
+    return to_bounded, to_unbounded
+
+
+def curve_fit(objective_fn, y0, args, y_bounds, **kwargs):
+    to_bounded, to_unbounded = make_transformation_function(y_bounds)
+
+    y0_unbounded = to_unbounded(y0)
+
+    @eqx.filter_jit
+    def objective_fn_unbounded(y, args):
+        y_bounded = to_bounded(y)
+        return objective_fn(y_bounded, args)
+
+    solver = optx.LevenbergMarquardt(rtol=1e-6, atol=1e-6)
+    sol = optx.least_squares(
+        objective_fn_unbounded, solver, y0_unbounded, args, **kwargs
+    )
+    sol_bounded = dataclasses.replace(sol, value=to_bounded(sol.value))
+    return sol_bounded

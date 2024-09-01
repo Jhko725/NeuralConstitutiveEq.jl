@@ -6,16 +6,66 @@ from jaxtyping import Array, ArrayLike, Float
 import equinox as eqx
 
 from neuralconstitutive.custom_types import FileName
-from neuralconstitutive.indentation import Indentation
 
 
 def to_jax_numpy(series: pd.Series) -> Array:
     return jnp.asarray(series.to_numpy())
 
 
-def import_data(
-    rawdata_file: FileName, metadata_file: FileName
-) -> tuple[tuple[Indentation, Indentation], tuple[Array, Array]]:
+def maybe_asarray(x: ArrayLike | None) -> Array | None:
+    return x if x is None else jnp.asarray(x)
+
+
+class ForceIndentDataSegment(eqx.Module):
+    time: Float[Array, " N"] = eqx.field(converter=jnp.asarray)
+    depth: Float[Array, " N"] = eqx.field(converter=jnp.asarray)
+    force: Float[Array, " N"] = eqx.field(converter=maybe_asarray)
+
+
+class ForceIndentDataset(eqx.Module):
+    # TODO: Maybe make this able to treat hold datam as well?
+    approach: ForceIndentDataSegment
+    retract: ForceIndentDataSegment | None = None
+
+    def __iter__(self):
+        if self.retract is None:
+            return iter((self.approach,))
+        else:
+            return iter((self.approach, self.retract))
+
+    @property
+    def total_time(self) -> Float[Array, " N"]:
+        """Returns the total time of the dataset as a 1D array"""
+        return jnp.concatenate([segment.time for segment in self])
+
+    @property
+    def total_depth(self) -> Float[Array, " N"]:
+        """Returns the total depth of the dataset as a 1D array"""
+        return jnp.concatenate([segment.depth for segment in self])
+
+    @property
+    def total_force(self) -> Float[Array, " N"]:
+        """Returns the total force of the dataset as a 1D array"""
+        return jnp.concatenate([segment.force for segment in self])
+
+    @property
+    def t_app(self):
+        return self.approach.time
+
+    @property
+    def t_ret(self):
+        return self.retract.time
+
+    @property
+    def f_app(self):
+        return self.approach.force
+
+    @property
+    def f_ret(self):
+        return self.retract.force
+
+
+def import_data(rawdata_file: FileName, metadata_file: FileName) -> ForceIndentDataset:
     # Read csv files
     df_raw = pd.read_csv(rawdata_file, sep="\t", skiprows=34)
     df_meta = pd.read_csv(metadata_file, sep="\t")
@@ -44,43 +94,6 @@ def import_data(
     )
 
     return ForceIndentDataset(approach, retract)
-
-
-def maybe_asarray(x: ArrayLike | None) -> Array | None:
-    return x if x is None else jnp.asarray(x)
-
-
-class ForceIndentDataSegment(eqx.Module):
-    time: Float[Array, " N"] = eqx.field(converter=jnp.asarray)
-    depth: Float[Array, " N"] = eqx.field(converter=jnp.asarray)
-    force: Float[Array, " N"] = eqx.field(converter=maybe_asarray)
-
-
-class ForceIndentDataset(eqx.Module):
-    approach: ForceIndentDataSegment
-    retract: ForceIndentDataSegment | None = None
-
-    def __iter__(self):
-        if self.retract is None:
-            return iter((self.approach,))
-        else:
-            return iter((self.approach, self.retract))
-
-    @property
-    def t_app(self):
-        return self.approach.time
-
-    @property
-    def t_ret(self):
-        return self.retract.time
-
-    @property
-    def f_app(self):
-        return self.approach.force
-
-    @property
-    def f_ret(self):
-        return self.retract.force
 
 
 def truncate_adhesion(dataset: ForceIndentDataset):

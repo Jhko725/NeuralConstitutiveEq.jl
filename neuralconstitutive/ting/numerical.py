@@ -239,6 +239,7 @@ force_retract = eqx.filter_vmap(force_retract_scalar, in_axes=(0, None, None, No
 t1_ting = eqx.filter_vmap(t1_scalar, in_axes=(0, None, None))
 
 
+@eqx.filter_jit
 def force_ting(
     time: Float[Array, " N"],
     constit: AbstractConstitutive,
