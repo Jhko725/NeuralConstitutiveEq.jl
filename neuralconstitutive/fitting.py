@@ -6,6 +6,7 @@ import dataclasses
 import jax
 import jax.numpy as jnp
 from jaxtyping import PyTree, Float, Array
+import jaxopt
 import equinox as eqx
 import optimistix as optx
 import numpy as np
@@ -171,19 +172,97 @@ def make_transformation_function(bounds: tuple[PyTree, PyTree]):
     return to_bounded, to_unbounded
 
 
-def curve_fit(objective_fn, y0, args, y_bounds, **kwargs):
-    to_bounded, to_unbounded = make_transformation_function(y_bounds)
+class LeastSquaresResult(eqx.Module):
+    value: PyTree
+    success: bool
+    n_eval: int
+
+
+def least_squares(
+    residual_fn,
+    y0,
+    args,
+    bounds,
+    *,
+    backend: str = "optimistix",
+    method: str = "levenbergmarquardt",
+    tol=1e-6,
+    max_iter: int = 256,
+    **kwargs,
+):
+    if backend == "optimistix":
+        return least_squares_optx(
+            residual_fn,
+            y0,
+            args,
+            bounds,
+            method=method,
+            tol=tol,
+            max_iter=max_iter,
+            **kwargs,
+        )
+    elif backend == "jaxopt":
+        return least_squares_jaxopt(
+            residual_fn,
+            y0,
+            args,
+            bounds,
+            method=method,
+            tol=tol,
+            max_iter=max_iter,
+            **kwargs,
+        )
+
+
+def least_squares_optx(
+    residual_fn,
+    y0,
+    args,
+    bounds,
+    *,
+    method: str = "levenbergmarquardt",
+    tol: float = 1e-6,
+    max_iter: int = 256,
+    **kwargs,
+) -> LeastSquaresResult:
+
+    to_bounded, to_unbounded = make_transformation_function(bounds)
 
     y0_unbounded = to_unbounded(y0)
 
     @eqx.filter_jit
     def objective_fn_unbounded(y, args):
         y_bounded = to_bounded(y)
-        return objective_fn(y_bounded, args)
+        return residual_fn(y_bounded, args)
 
-    solver = optx.LevenbergMarquardt(rtol=1e-6, atol=1e-6)
+    solver = optx.LevenbergMarquardt(rtol=tol, atol=tol)
     sol = optx.least_squares(
-        objective_fn_unbounded, solver, y0_unbounded, args, **kwargs
+        objective_fn_unbounded, solver, y0_unbounded, args, max_steps=max_iter, **kwargs
     )
     sol_bounded = dataclasses.replace(sol, value=to_bounded(sol.value))
-    return sol_bounded
+    return LeastSquaresResult(
+        sol_bounded.value,
+        sol_bounded.result == optx.RESULTS.successful,
+        sol_bounded.stats["num_steps"],
+    )
+
+
+def least_squares_jaxopt(
+    residual_fn,
+    y0,
+    args,
+    bounds,
+    *,
+    method: str = "dogbox",
+    tol: float = 1e-6,
+    max_iter: int = 256,
+    **kwargs,
+) -> LeastSquaresResult:
+    options = dict(max_nfev=max_iter, xtol=tol, ftol=tol, gtol=tol)
+    solver = jaxopt.ScipyBoundedLeastSquares(
+        fun=residual_fn, method=method, options=options
+    )
+    result = solver.run(y0, bounds=bounds, args=args, **kwargs)
+    return LeastSquaresResult(
+        result.params, result.state.success, result.state.num_fun_eval
+    )
