@@ -18,7 +18,7 @@ from neuralconstitutive.custom_types import FloatScalar
 from neuralconstitutive.indentation import Indentation, interpolate_indentation
 from neuralconstitutive.integrate import integrate
 from neuralconstitutive.tipgeometry import AbstractTipGeometry, Conical
-from neuralconstitutive.tree import tree_to_array1d
+from neuralconstitutive.utils.pytree import tree_to_array1d
 
 jax.config.update("jax_enable_x64", True)
 

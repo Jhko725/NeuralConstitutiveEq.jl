@@ -16,7 +16,7 @@ from neuralconstitutive.indentation import (
 )
 from neuralconstitutive.integrate import integrate
 from neuralconstitutive.tipgeometry import AbstractTipGeometry
-from neuralconstitutive.tree import tree_to_array1d
+from neuralconstitutive.utils.pytree import tree_to_array1d
 
 
 def force_integrand(
