@@ -8,7 +8,7 @@ from jax.scipy.special import exp1, gamma
 from jaxtyping import Array, ArrayLike, Float
 
 from neuralconstitutive.custom_types import FloatScalar, floatscalar_field
-from neuralconstitutive.misc import stretched_exp
+from neuralconstitutive.misc import stretched_exp, dirac_delta
 from neuralconstitutive.relaxation_spectrum import AbstractLogDiscreteSpectrum
 
 
@@ -185,3 +185,11 @@ class DoublePowerLaw(AbstractConstitutive):
 
     def _relaxation_function_1D(self, t: Float[Array, " N"]) -> Float[Array, " N"]:
         return self.E0 * t ** (-self.alpha) + self.E1 * t ** (-self.beta)
+
+
+class KelvinVoigt(AbstractConstitutive):
+    E0: FloatScalar = floatscalar_field()
+    eta: FloatScalar = floatscalar_field()
+
+    def _relaxation_function_1D(self, t: Array) -> Array:
+        return self.E0 + self.eta * dirac_delta(t)

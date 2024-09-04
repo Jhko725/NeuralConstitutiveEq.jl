@@ -5,7 +5,7 @@ from jax.scipy.special import beta  # , betainc
 from tensorflow_probability.substrates import jax as tfp
 from jaxtyping import Array, Float
 
-from neuralconstitutive.constitutive import PowerLaw
+from neuralconstitutive.constitutive import PowerLaw, KelvinVoigt
 from neuralconstitutive.indentation import (
     ApproachRetract,
 )
@@ -38,3 +38,30 @@ def force_powerlaw(
         t <= indentation.t_ret, 1.0, tfp.math.betainc(b, 1 - constit.alpha, t1 / t)
     )
     return force * correction_factor
+
+
+def t1_kelvinvoigt(
+    t: Float[Array, " N"],
+    constit: KelvinVoigt,
+    indentation: ApproachRetract,
+) -> Float[Array, " N"]:
+    """Computes the $t_1(t) $ function for a Kelvin-Voigt sample indented with constant velocity."""
+    v = indentation.approach.velocity_
+    tau = constit.eta / constit.E0
+    return jnp.clip(v * (2 * indentation.t_ret - t - tau), 0.0)
+
+
+def force_kelvinvoigt(
+    t: Float[Array, " N"],
+    constit: KelvinVoigt,
+    indentation: ApproachRetract,
+    tip: AbstractTipGeometry,
+) -> Float[Array, " N"]:
+    """Computes the force response of a Kelvin-Voigt sample indented with constant velocity."""
+    v = indentation.approach.velocity_
+    a, b = tip.a(), tip.b()
+    coeff = a * v**2
+    force_app = t ** (b - 1) * (constit.E0 * t + 2 * constit.eta)
+    t1 = t1_kelvinvoigt(t, constit, indentation)
+    force_ret = t1**b * constit.E0
+    return coeff * jnp.where(t <= indentation.t_ret, force_app, force_ret)

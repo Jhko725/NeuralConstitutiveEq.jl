@@ -27,3 +27,10 @@ def _stretched_exp_jvp(primals, tangents):
     grad_b = -primal_out * xT_b * jnp.log(xT)
     tangent_out = grad_x * x_dot + grad_T * t_dot + grad_b * b_dot
     return primal_out, tangent_out
+
+
+def dirac_delta(x, eps: float = 1e-5):
+    """Approximates the dirac delta function with the 4-point cosine function, as in"""
+    return jnp.where(
+        jnp.abs(x / eps) <= 1, (1 + jnp.cos(jnp.pi * x / eps)) / (2 * eps), 0.0
+    )
