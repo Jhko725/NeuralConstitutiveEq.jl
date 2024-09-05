@@ -16,7 +16,7 @@ from neuralconstitutive.utils.smoothing import (
     make_smoothed_cubic_spline,
     PiecewiseCubic,
 )
-from neuralconstitutive.io import ForceIndentDataset
+from neuralconstitutive.dataset import ForceIndentDataset
 
 
 class INDENT_TYPE(eqx.Enumeration):

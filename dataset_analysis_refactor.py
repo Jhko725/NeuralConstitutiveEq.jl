@@ -27,7 +27,7 @@ from neuralconstitutive.fitting import (
     fit_approach_lmfit,
     fit_indentation_data,
 )
-from neuralconstitutive.io import import_data, truncate_adhesion, normalize_dataset
+from neuralconstitutive.dataset import import_data, truncate_adhesion, normalize_dataset
 from neuralconstitutive.plotting import plot_relaxation_fn, plot_forceindent
 from neuralconstitutive.utils.smoothing import make_smoothed_cubic_spline
 from neuralconstitutive.ting import (

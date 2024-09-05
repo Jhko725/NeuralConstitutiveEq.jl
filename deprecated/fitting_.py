@@ -22,7 +22,7 @@ from neuralconstitutive.ting import (
 from neuralconstitutive.utils.smoothing import make_smoothed_cubic_spline
 from neuralconstitutive.tipgeometry import AbstractTipGeometry
 from neuralconstitutive.utils import smooth_data
-from neuralconstitutive.io import ForceIndentDataset
+from neuralconstitutive.dataset import ForceIndentDataset
 
 ConstitEqn = TypeVar("ConstitEqn", bound=AbstractConstitutive)
 

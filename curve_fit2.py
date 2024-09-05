@@ -11,7 +11,7 @@ from tqdm import tqdm
 from jaxtyping import PyTree, Array
 
 from neuralconstitutive.indentation import CubicSpline, IndentationBuilder
-from neuralconstitutive.io import import_data, normalize_dataset, truncate_adhesion
+from neuralconstitutive.dataset import import_data, normalize_dataset, truncate_adhesion
 from neuralconstitutive.ting.numerical import force_approach, force_retract, force_ting
 from neuralconstitutive.tipgeometry import Spherical
 from neuralconstitutive.constitutive import StandardLinearSolid

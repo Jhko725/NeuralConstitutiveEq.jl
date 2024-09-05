@@ -19,7 +19,7 @@ from neuralconstitutive.constitutive import (
 )
 from neuralconstitutive.custom_types import FloatScalar
 from neuralconstitutive.indentation import Indentation, interpolate_indentation
-from neuralconstitutive.io import import_data
+from neuralconstitutive.dataset import import_data
 
 # from neuralconstitutive.integrate import integrate
 from neuralconstitutive.plotting import plot_relaxation_fn

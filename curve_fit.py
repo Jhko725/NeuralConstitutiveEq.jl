@@ -17,7 +17,7 @@ from neuralconstitutive.constitutive import (
     StandardLinearSolid,
 )
 from neuralconstitutive.indentation import Indentation
-from neuralconstitutive.io import import_data, truncate_adhesion, normalize_dataset
+from neuralconstitutive.dataset import import_data, truncate_adhesion, normalize_dataset
 from neuralconstitutive.utils.smoothing import make_smoothed_cubic_spline
 from neuralconstitutive.ting import _force_approach, _force_retract
 from neuralconstitutive.tipgeometry import Spherical
