@@ -3,7 +3,7 @@ from typing import Sequence
 
 from jaxtyping import Array, ArrayLike, Float, Real
 from matplotlib.axes import Axes
-from matplotlib.colors import to_rgba
+from matplotlib.colors import to_rgba, Colormap
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
@@ -134,3 +134,34 @@ def plot_forceindent(dataset, figsize=(8, 2.5), **plot_kwargs):
     axes[1].set_xlabel("Depth [m]")
     axes[1].set_ylabel("Force [N]")
     return fig
+
+
+def plot_eigval_spectrum(
+    ax,
+    eigvals: list[Float[ArrayLike, " N"]],
+    xlabels: list[str] | None = None,
+    colormap: Colormap | None = None,
+    bar_width: float = 1.0,
+    bar_gap: float = 0.5,
+    bar_offset: float = 0.0,
+    normalize: bool = True,
+    **hlines_kwargs,
+):
+    # tab10 colormap gives the default matplotlib colors
+    colormap = plt.get_cmap("tab10") if colormap is None else colormap
+
+    if normalize:
+        eigvals = [e / np.max(e) for e in eigvals]
+
+    x_tick_positions = []
+    x_start = bar_offset
+    for i, eig in enumerate(eigvals):
+        x_end = x_start + bar_width
+        ax.hlines(eig, x_start, x_end, color=colormap(i), **hlines_kwargs)
+        x_tick_positions.append(0.5 * (x_start + x_end))
+        x_start = x_end + bar_gap
+
+    if xlabels is None:
+        xlabels = np.arange(len(eigvals))
+    ax.set_xticks(x_tick_positions, xlabels)
+    return ax
