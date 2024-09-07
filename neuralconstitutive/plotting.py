@@ -136,6 +136,53 @@ def plot_forceindent(dataset, figsize=(8, 2.5), **plot_kwargs):
     return fig
 
 
+def right_triangle_specs_from_slope(slope: float, hypotenuse: float = 1.0):
+    sec = np.sqrt(1 + slope**2)
+    width = hypotenuse / sec
+    height = np.sqrt(hypotenuse**2 - width**2) * np.sign(slope)
+    return width, height
+
+
+def data_coord_to_plot_coord(ax, x, y):
+    x_transform = ax.xaxis.get_transform()
+    y_transform = ax.yaxis.get_transform()
+    return x_transform.transform(x), y_transform.transform(y)
+
+
+def plot_coord_to_data_coord(ax, x, y):
+    x_inv_transform = ax.xaxis.get_transform().inverted()
+    y_inv_transform = ax.yaxis.get_transform().inverted()
+    return x_inv_transform(x), y_inv_transform(y)
+
+
+def draw_triangle(
+    ax: Axes,
+    origin: tuple[float, float],
+    slope: float,
+    hypotenuse: float = 1.0,
+    **polygon_kwargs,
+) -> Axes:
+    """Draws a triangle with the given slope and hypotenuse length.
+
+    `origin` specifies the coordinate of the lower left vertex of the triangle.
+    This automatically adjusts to the x, y scale of the plot (linear, log, etc.)
+    However, `hypotenuse` is in plot units, meaning calling this function before/after ax.set_xscale/ax.set_yscale
+    with the same value of `hypotenuse` will give different results."""
+    dx, dy = right_triangle_specs_from_slope(slope, hypotenuse)
+    x0, y0 = origin
+
+    x_transform = ax.xaxis.get_transform()
+    y_transform = ax.yaxis.get_transform()
+
+    x0_plot, y0_plot = x_transform.transform(x0), y_transform.transform(y0)
+    x1 = x_transform.inverted().transform(x0_plot + dx)
+    y1 = y_transform.inverted().transform(y0_plot + dy)
+    coords = np.stack([(x0, y0), (x1, y1), (x1, y0)], axis=0)
+    triangle = matplotlib.patches.Polygon(coords, **polygon_kwargs)
+    ax.add_patch(triangle)
+    return ax
+
+
 def plot_eigval_spectrum(
     ax,
     eigvals: list[Float[ArrayLike, " N"]],
