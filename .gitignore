@@ -3,4 +3,5 @@ wandb/
 lightning_logs/
 .vscode/
 hydrogel/
-data/
+data/*
+!data/abuhattum_iscience_2022/

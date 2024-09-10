@@ -5,6 +5,7 @@ from jaxtyping import Array, ArrayLike, Float, Real
 from matplotlib.axes import Axes
 from matplotlib.colors import to_rgba, Colormap
 import matplotlib
+from matplotlib.colors import ListedColormap
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -18,6 +19,21 @@ matplotlib.rc("figure.constrained_layout", use=True)
 
 MM = 0.0393701  # mm to inches conversion factor
 CM = 10 * MM  # cm to inches conversion factor
+
+cmap_gilpin = ListedColormap(
+    [
+        [0.86666667, 0.23137255, 0.20784314],
+        [1.0, 0.3882, 0.2784],
+        [0.92941176, 0.61568627, 0.24705882],
+        [0.63921569, 0.85490196, 0.52156863],
+        [0.19764706, 0.46431373, 0.34196078],
+        [0.17254902, 0.45098039, 0.69803922],
+        [0.372549, 0.596078, 1.0],
+        [0.7172549, 0.48117647, 0.92313726],
+        [0.64313725, 0.14117647, 0.48627451],
+    ],
+    name="gilpin",
+)
 
 
 def connected_scatter(
@@ -184,7 +200,7 @@ def draw_triangle(
 
 
 def plot_eigval_spectrum(
-    ax,
+    ax: Axes,
     eigvals: list[Float[ArrayLike, " N"]],
     xlabels: list[str] | None = None,
     colormap: Colormap | None = None,
@@ -193,7 +209,7 @@ def plot_eigval_spectrum(
     bar_offset: float = 0.0,
     normalize: bool = True,
     **hlines_kwargs,
-):
+) -> Axes:
     # tab10 colormap gives the default matplotlib colors
     colormap = plt.get_cmap("tab10") if colormap is None else colormap
 
